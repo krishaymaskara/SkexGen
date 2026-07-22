@@ -1,6 +1,7 @@
 from __future__ import division
 
-
+# Low-level tensor implementation of multi-head attention, closely following
+# PyTorch's own functional API. Most project code uses it through attention.py.
 import torch
 import torch.nn.functional as F
 
@@ -29,6 +30,8 @@ def multi_head_attention_forward(query,                           # type: Tensor
                                  static_k=None,                   # type: Optional[Tensor]
                                  static_v=None                    # type: Optional[Tensor]
                                  ):
+    # Project query/key/value, divide them into heads, apply masks, calculate
+    # scaled dot-product attention, then join heads back into the output tensor.
     # type: (...) -> Tuple[Tensor, Optional[Tensor]]
     r"""
     Args:

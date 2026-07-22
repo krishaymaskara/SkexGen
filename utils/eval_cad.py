@@ -1,3 +1,5 @@
+# Distribution-level evaluation for generated CAD shapes represented as 2,000-
+# point surface clouds. Reports Chamfer-based minimum matching/coverage and JSD.
 import torch
 import argparse
 import os
@@ -23,6 +25,7 @@ def find_files(folder, extension):
 
 
 def read_ply(path):
+    # Load XYZ vertex fields from a binary or text PLY point cloud.
     with open(path, 'rb') as f:
         plydata = PlyData.read(f)
         x = np.array(plydata['vertex']['x'])
@@ -33,6 +36,7 @@ def read_ply(path):
 
 
 def distChamfer(a, b):
+    # Pure-PyTorch squared nearest-neighbor distances in both directions.
     x, y = a, b
     bs, num_points, points_dim = x.size()
     xx = torch.bmm(x, x.transpose(2, 1))
@@ -46,6 +50,7 @@ def distChamfer(a, b):
 
 
 def _pairwise_CD(sample_pcs, ref_pcs, batch_size):
+    # Build the full generated-by-reference Chamfer-distance matrix on the GPU.
     N_sample = sample_pcs.shape[0]
     N_ref = ref_pcs.shape[0]
     all_cd = []
@@ -84,6 +89,8 @@ def _pairwise_CD(sample_pcs, ref_pcs, batch_size):
 
 
 def compute_cov_mmd(sample_pcs, ref_pcs, batch_size):
+    # MMD averages each reference's nearest generated distance; coverage counts
+    # how many distinct references are selected by generated nearest neighbors.
     all_dist = _pairwise_CD(sample_pcs, ref_pcs, batch_size)
     N_sample, N_ref = all_dist.size(0), all_dist.size(1)
     min_val_fromsmp, min_idx = torch.min(all_dist, dim=1)
@@ -117,6 +124,8 @@ def entropy_of_occupancy_grid(pclouds, grid_resolution, in_sphere=False):
         pclouds: (numpy array) #point-clouds x points per point-cloud x 3
         grid_resolution (int) size of occupancy grid that will be used.
     '''
+    # Assign points to a regular grid and count both total occupancy and the
+    # fraction of clouds activating each cell.
     epsilon = 10e-4
     bound = 1 + epsilon
     if abs(np.max(pclouds)) > bound or abs(np.min(pclouds)) > bound:
@@ -174,6 +183,7 @@ def unit_cube_grid_point_cloud(resolution, clip_sphere=False):
 
 
 def jensen_shannon_divergence(P, Q):
+    # Compare normalized occupancy histograms with symmetric JSD.
     if np.any(P < 0) or np.any(Q < 0):
         raise ValueError('Negative values.')
     if len(P) != len(Q):
@@ -215,17 +225,20 @@ def _jsdiv(P, Q):
 
 
 def downsample_pc(points, n):
+    # Randomly retain exactly n points without replacement.
     sample_idx = random.sample(list(range(points.shape[0])), n)
     return points[sample_idx]
 
 
 def normalize_pc(points):
+    # Scale each cloud independently into a unit maximum-absolute range.
     scale = np.max(np.abs(points))  
     points = points / scale
     return points
 
 
 def collect_pc(cad_folder):
+    # Load the final generated point cloud from one sample directory.
     pc_path = find_files(os.path.join(cad_folder, 'pcd'), 'final_pcd.ply')
     if len(pc_path) == 0:
         return []
@@ -245,6 +258,8 @@ def collect_pc2(cad_folder):
 
 
 def main():
+    # Load real and generated clouds in parallel, repeatedly draw evaluation
+    # subsets, compute all metrics, and write individual plus averaged results.
     parser = argparse.ArgumentParser()
     parser.add_argument("--fake", type=str)
     parser.add_argument("--real", type=str)

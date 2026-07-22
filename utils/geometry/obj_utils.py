@@ -1,3 +1,5 @@
+# Read/write helpers for the lightweight wireframe OBJ representation used
+# between CAD-kernel conversion and sequence parsing.
 import json
 import numpy as np
 from pathlib import Path
@@ -62,6 +64,7 @@ def read_wire_obj(obj_path):
 
 
 def write_wire_obj(vertices, faces, file_path, transpose=True, scale=1.0):
+    # Serialize normalized vertices and indexed curve records back to text OBJ.
     """Write vertices and hyperedges to obj."""
     vertex_dimension = vertices.shape[1]
     assert vertex_dimension in (2, 3)
@@ -90,4 +93,3 @@ def write_wire_obj(vertices, faces, file_path, transpose=True, scale=1.0):
                 line += " {}".format(i + 1)
             line += "\n"
             f.write(line)
-

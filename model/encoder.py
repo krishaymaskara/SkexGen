@@ -1,3 +1,5 @@
+# Transformer encoders for sketch commands, sketch geometry, and extrusion
+# parameters. Each reduces a variable-length sequence to fixed VQ code positions.
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -15,6 +17,7 @@ INITIAL_PASS = 25
 
 
 class PositionalEncoding(nn.Module):
+    # Adds a learned position vector so attention can distinguish token order.
 
     def __init__(self, d_model, dropout=0.1, max_len=250):
         super(PositionalEncoding, self).__init__()
@@ -34,6 +37,8 @@ class PositionalEncoding(nn.Module):
 
 
 class VectorQuantizerEMA(nn.Module):
+    # Replaces continuous vectors with nearest codebook entries. The codebook is
+    # updated with exponential moving averages rather than the Adam optimizer.
     def __init__(self, num_embeddings, embedding_dim, commitment_cost, decay, epsilon=1e-5):
         super(VectorQuantizerEMA, self).__init__()
         
@@ -53,6 +58,8 @@ class VectorQuantizerEMA(nn.Module):
 
 
     def forward(self, inputs):
+        # Find nearest entries, update them during training, and use a
+        # straight-through estimator to pass gradients back to the encoder.
         seqlen, bs = inputs.shape[0], inputs.shape[1]
         
         # Flatten input
@@ -100,6 +107,7 @@ class VectorQuantizerEMA(nn.Module):
 
 
 class Embedder(nn.Module):
+    # Thin wrapper around an integer-to-vector embedding lookup table.
     def __init__(self, vocab_size, d_model):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, d_model)
@@ -108,6 +116,7 @@ class Embedder(nn.Module):
 
 
 class CMDEncoder(nn.Module):
+  # Encodes sketch commands into four discrete topology-code positions.
 
   def __init__(self,
                config,
@@ -147,6 +156,8 @@ class CMDEncoder(nn.Module):
 
   def forward(self, command, mask, epoch):
     """ forward pass """
+    # Prepend latent-query tokens, attend over queries plus commands, and retain
+    # only the query outputs as the fixed-size sketch-structure summary.
     bs, seq_len = command.shape[0], command.shape[1]
 
     # Command embedding 
@@ -163,6 +174,7 @@ class CMDEncoder(nn.Module):
     outputs = self.encoder(src=encoder_input, src_key_padding_mask=mask)  
     z_encoded = outputs[0:self.code_len]
 
+    # Delay hard quantization so the continuous encoder stabilizes first.
     if epoch < INITIAL_PASS:
       vq_loss = 0.0 
       selection = None 
@@ -175,6 +187,7 @@ class CMDEncoder(nn.Module):
 
   def get_code(self, command, mask, return_np=True):
     """ forward pass """
+    # Run quantized inference and return the nearest topology-code indices.
     bs, seq_len = command.shape[0], command.shape[1]
 
     # Command embedding 
@@ -200,6 +213,7 @@ class CMDEncoder(nn.Module):
 
 
 class PARAMEncoder(nn.Module):
+  # Encodes rasterized sketch pixels and XY coordinates into two geometry codes.
 
   def __init__(self,
                config,
@@ -243,6 +257,8 @@ class PARAMEncoder(nn.Module):
 
   def forward(self, pixel_v, xy_v, mask, epoch):
     """ forward pass """
+    # Sum pixel and coordinate embeddings, summarize with latent queries, and
+    # enable vector quantization after the initial warm-up.
     bs, seqlen = pixel_v.shape[0], pixel_v.shape[1]
 
     # embedding 
@@ -270,6 +286,7 @@ class PARAMEncoder(nn.Module):
 
 
   def get_code(self, pixel_v, xy_v, mask, return_np=True):
+    # Produce final discrete sketch-geometry indices for extract_code.py.
     bs, seqlen = pixel_v.shape[0], pixel_v.shape[1]
 
     # embedding 
@@ -295,6 +312,7 @@ class PARAMEncoder(nn.Module):
 
 
 class EXTEncoder(nn.Module):
+  # Encodes flattened extrusion values and semantic flags into four codes.
 
   def __init__(self,
                config,
@@ -336,6 +354,8 @@ class EXTEncoder(nn.Module):
 
   def forward(self, ext_seq, flag_seq, mask, epoch):
     """ forward pass """
+    # Combine value/flag embeddings, summarize with latent queries, and quantize
+    # after the initial continuous-training period.
     bs, seqlen = ext_seq.shape[0], ext_seq.shape[1]
 
     # embedding 
@@ -365,6 +385,7 @@ class EXTEncoder(nn.Module):
 
   def get_code(self, ext_seq, flag_seq, mask, return_np=True):
     """ forward pass """
+    # Return four nearest extrusion-code indices for each CAD history.
     bs, seqlen = ext_seq.shape[0], ext_seq.shape[1]
 
     # embedding 
@@ -387,4 +408,3 @@ class EXTEncoder(nn.Module):
       return labels.detach().cpu().numpy().astype(int)
     else:
       return labels
-

@@ -1,8 +1,13 @@
+# Dataset adapters for the four learning stages. They read processed pickle
+# records, filter invalid/oversized histories, add special tokens, pad variable
+# lengths, and return NumPy arrays that PyTorch DataLoader converts to tensors.
 import torch
 import numpy as np
 import pickle 
 import random
 
+# Token offsets reserve low integer values for padding, start/end markers, and
+# entity separators rather than actual quantized coordinates or parameters.
 SKETCH_R = 1
 RADIUS_R = 1
 EXTRUDE_R = 1.0
@@ -21,6 +26,8 @@ MAX_EXT = 5
 class SketchData(torch.utils.data.Dataset):
     """ sketch dataset """
     def __init__(self, data_path, invalid_uid, MAX_LEN):  
+        # Load the invalid-ID list and keep only sketches within the requested
+        # length, while discovering the padding lengths needed by this dataset.
         self.maxlen = MAX_LEN 
         self.maxlen_pix = 0 
         self.maxlen_cmd = 0
@@ -70,6 +77,8 @@ class SketchData(torch.utils.data.Dataset):
 
 
     def prepare_batch_sketch(self, pixel_v, xy_v):
+        # Pad rasterized pixel tokens and paired XY tokens to maxlen_pix and
+        # return a Boolean mask whose True positions are padding.
         keys = np.ones(len(pixel_v))
         padding = np.zeros(self.maxlen_pix-len(pixel_v)).astype(int)  
         pixel_v_flat = np.concatenate([pixel_v, padding], axis=0)
@@ -80,6 +89,7 @@ class SketchData(torch.utils.data.Dataset):
 
 
     def prepare_batch_cmd(self, command):
+        # Pad the structural command sequence to the longest retained example.
         keys = np.ones(len(command))
         padding = np.zeros(self.maxlen_cmd-len(command)).astype(int)  
         command_pad = np.concatenate([command, padding])
@@ -88,6 +98,8 @@ class SketchData(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
+        # Convert one stored record into command, pixel, and XY sequences with
+        # terminal tokens, offsets, fixed lengths, and matching padding masks.
         uid = self.uids[index]
         vec_data = self.data[uid]
         pix_tokens = vec_data['se_pix']
@@ -106,7 +118,8 @@ class SketchData(torch.utils.data.Dataset):
         pix_seq, xy_seq, mask = self.prepare_batch_sketch(pixs, xys)
         cmd_seq, cmd_mask = self.prepare_batch_cmd(cmds)
 
-        # Quantization augmentation
+        # Randomly jitter real quantized coordinates, clip them to the 6-bit
+        # grid, and rebuild pixel IDs. Special tokens are left unchanged.
         aug_xys = []
         for xy in xys:
             if xy[0] <= COORD_PAD and xy[1] <= COORD_PAD:
@@ -136,6 +149,7 @@ class SketchData(torch.utils.data.Dataset):
 
 class CodeDataset(torch.utils.data.Dataset):
     """ Code dataset """
+    # A minimal wrapper around the unique ten-code rows saved by extract_code.py.
     def __init__(self, datapath, maxlen):
         with open(datapath, 'rb') as f:
             self.data = pickle.load(f)
@@ -153,6 +167,8 @@ class CodeDataset(torch.utils.data.Dataset):
 
 class SketchExtData(torch.utils.data.Dataset):
     """ sketch dataset """
+    # Joint sketch/extrusion records used only for extracting aligned topology,
+    # geometry, and extrusion codes after the separate autoencoders are trained.
     def __init__(self, data, invalid_uid, MAX_LEN):  
         self.maxlen = MAX_LEN 
         self.maxlen_pix = 0 
@@ -220,6 +236,7 @@ class SketchExtData(torch.utils.data.Dataset):
 
 
     def prepare_batch_extrude(self, ext, flags):
+        # Pad extrusion values and their parameter-type flags to one shared length.
         keys = np.ones(len(ext))
         padding = np.zeros(self.maxlen_ext-len(ext)).astype(int)  
         flag_pad = np.concatenate([flags, padding], axis=0)
@@ -229,6 +246,8 @@ class SketchExtData(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
+        # Return all three representations for one CAD history without the
+        # coordinate jitter used during sketch training.
         uid = self.uids[index]
         vec_data = self.data[uid]
         pix_tokens = vec_data['se_pix']
@@ -259,6 +278,8 @@ class SketchExtData(torch.utils.data.Dataset):
 
 class ExtData(torch.utils.data.Dataset):
     """ extrude dataset """
+    # Standalone extrusion dataset for train_extrude.py. MAX_LEN limits the
+    # number of sketch-extrude operations rather than the raw token count.
     def __init__(self, data_path, MAX_LEN):
         with open(data_path, 'rb') as f:
             data = pickle.load(f)
@@ -295,6 +316,8 @@ class ExtData(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
+        # Flatten each operation's 19 parameters, attach a repeating flag that
+        # identifies each parameter's semantic role, then pad the sequence.
         vec_data = self.data[index]
         ext_tokens = vec_data['se_ext']
        

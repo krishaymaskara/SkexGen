@@ -1,3 +1,6 @@
+# Bidirectional bridge between DeepCAD JSON/custom OBJ records and executable
+# OpenCascade B-rep geometry. This is the geometric core of preprocessing and
+# generated-history reconstruction.
 import numpy as np
 import os
 from collections import OrderedDict
@@ -22,6 +25,8 @@ from OCC.Extend.DataExchange import write_stl_file
 
 class DeepCADReconverter:
     """ DeepCAD Data Reconverter """
+    # Reads raw DeepCAD feature entities, constructs each extrusion in OCC, and
+    # writes the simplified geometry/metadata representation used by SkexGen.
     
     def __init__(self, data, fileName):
         self.data = data
@@ -33,6 +38,7 @@ class DeepCADReconverter:
 
 
     def my_op(self, big, small, op_name): 
+        # Apply a fuzzy-tolerant OCC Boolean cut, union, or intersection.
         if op_name == 'cut':
             op = BRepAlgoAPI_Cut(big, small) 
         elif op_name == 'fuse':
@@ -46,6 +52,8 @@ class DeepCADReconverter:
     
     def parse_json(self, save_folder):
         """ parse the json data to vector format """
+        # Walk the original feature timeline, execute supported extrusions in
+        # order, reject no-op/invalid results, and save every accepted step.
         cur_solid = None
         extrude_idx = 0
 
@@ -158,6 +166,8 @@ class DeepCADReconverter:
             extrude_type
             extrude_values  [small, large]
         """
+        # Normalize one-sided, two-sided, and symmetric DeepCAD variants to two
+        # signed bounds plus a Boolean operation label.
         extrude_dict = {}
 
         # Extrude set operation
@@ -225,6 +235,8 @@ class DeepCADReconverter:
         """ 
         Create extrusion for a single sketch-extrude step 
         """
+        # Turn all referenced profiles into planar faces, merge coplanar regions,
+        # and extrude the result between the normalized signed bounds.
         curve_strings = ""
         curve_count = 0
         sketch_id = []
@@ -268,6 +280,7 @@ class DeepCADReconverter:
 
 
     def build_body(self, face, normal, value):
+        # Sweep a planar face along its normal by one signed distance.
         extrusion_vec = gp_Vec(normal).Multiplied(value)
         make_prism = BRepPrimAPI_MakePrism(face, extrusion_vec)
         make_prism.Build()
@@ -276,6 +289,8 @@ class DeepCADReconverter:
 
 
     def extrudeBasedOnType(self, face, normal, distance):
+        # Construct an interval extrusion, combining or subtracting prisms when
+        # both bounds lie on the same or opposite sides of the sketch plane.
         # Extrude based on the two bound values 
         if not (distance[0] < distance[1]):
             raise Exception("incorrect distance")
@@ -312,6 +327,8 @@ class DeepCADReconverter:
 
 
     def parse_sketch(self, sketch, profile):
+        # Transform local sketch curves to world space, build closed wires, and
+        # form a face by fusing outer regions and subtracting holes.
         """ 
         Sketch in one closed loop (one out, multiple ins) 
         """
@@ -394,6 +411,7 @@ class DeepCADReconverter:
 
        
     def parse_loop(self, profile_loop, transform):
+        # Convert every curve in one loop to an OCC edge and repair the wire closure.
         """ Create face in one closed loop  """
         topo_wire = BRepBuilderAPI_MakeWire()
         curve_strings = ''
@@ -423,6 +441,7 @@ class DeepCADReconverter:
 
     
     def parse_curve(self, curve, transform):
+        # Dispatch the serialized curve type to its OCC constructor.
         if curve["type"] == "Line3D":
             round_float(curve['start_point'])
             round_float(curve['end_point'])
@@ -514,6 +533,7 @@ class DeepCADReconverter:
 
 
     def save_vertex(self, h_x, h_y, text):
+        # Deduplicate local sketch points/radii and return stable OBJ indices.
         unique_key = f"{text}:x{h_x}y{h_y}"
         index = 0
         for key in self.vertex_dict.keys():
@@ -541,6 +561,8 @@ class DeepCADReconverter:
 
 class OBJReconverter:
     """ OBJ Data Reconverter """
+    # Reverses the simplified OBJ representation back into OCC sketch faces and
+    # extrusion solids for normalization, validation, and final export.
     
     def __init__(self):
         self.vertex_dict = OrderedDict()
@@ -553,6 +575,8 @@ class OBJReconverter:
         """
         convert to json dict format 
         """
+        # Translate parsed curve objects into the common dictionary form used by
+        # the same sketch-building functions as raw DeepCAD conversion.
         json_curve = {}
 
         if curve.type == 'circle':
@@ -591,6 +615,8 @@ class OBJReconverter:
         """
         reconstruct brep from obj file 
         """
+        # Repair nearly coincident loop endpoints, reconstruct profile/transform
+        # dictionaries, build faces, and extrude the combined planar region.
         # At least one needs to match 
         for face in faces:
             for loop in face:
@@ -708,6 +734,7 @@ class OBJReconverter:
 
 
     def my_op(self, big, small, op_name): 
+        # Apply the requested OCC Boolean operation with a small fuzzy tolerance.
         if op_name == 'cut':
             op = BRepAlgoAPI_Cut(big, small) 
         elif op_name == 'fuse':
@@ -767,6 +794,7 @@ class OBJReconverter:
         """ 
         Sketch in one closed loop (one out, multiple ins) 
         """
+        # Build a valid planar face from outer and inner loops in world coordinates.
         # Transformation from local to global xyz coord
         transform = get_transform(sketch["transform"])
 
@@ -927,6 +955,7 @@ class SketchPoint:
     Used to weld curve points together
     """    
     def __init__(self, x=0.0, y=0.0, json_data=None):
+        # Accept either explicit coordinates or a DeepCAD-style point dictionary.
         if json_data:
             self.x = json_data["x"]
             self.y = json_data["y"]

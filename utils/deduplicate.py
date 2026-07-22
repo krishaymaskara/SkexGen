@@ -1,3 +1,5 @@
+# Remove repeated training histories by hashing canonical sketch tokens,
+# extrusion tokens, or their concatenation.
 import os
 import argparse
 from tqdm import tqdm
@@ -16,6 +18,7 @@ R_PAD = 2
 NUM_TRHEADS = 36
 
 def hash_loop_se(data):
+    # Hash the complete sketch-plus-extrusion serialization.
     if len(data['se_ext']) == 0: 
         return '', '' # empty
 
@@ -42,6 +45,7 @@ def hash_loop_se(data):
 
 
 def hash_loop_s(data):
+    # Hash sketch pixel sequences only for sketch-branch deduplication.
     if len(data['se_ext']) == 0: 
         return '', '' # empty
 
@@ -59,6 +63,7 @@ def hash_loop_s(data):
 
 
 def hash_loop_e(data):
+    # Hash extrusion sequences only for extrusion-branch deduplication.
     if len(data['se_ext']) == 0: 
         return '', '' # empty
 
@@ -81,6 +86,8 @@ def flatten(t):
 
 def parallel_hash_loops(loops, hash_type):
     """ Parallel hash generated data """
+    # Select the requested representation, hash records in worker processes,
+    # and group record IDs that produce identical digests.
     duplicate_groups = {}
     if hash_type =='se':
         objs_iter = Pool(NUM_TRHEADS).imap(hash_loop_se, loops)
@@ -97,6 +104,8 @@ def parallel_hash_loops(loops, hash_type):
 
 
 if __name__ == "__main__":
+    # Keep one representative from each duplicate group and save the filtered
+    # training pickle expected by the corresponding training script.
     parser = argparse.ArgumentParser()
     parser.add_argument("--datapath", type=str, required=True)
     parser.add_argument("--hash_type", type=str, required=True)

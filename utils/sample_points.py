@@ -1,3 +1,5 @@
+# Convert generated final STL meshes into fixed-size point clouds for the
+# distribution metrics in eval_cad.py.
 import os
 import argparse
 import ntpath
@@ -50,6 +52,7 @@ class SamplePoints:
 
 
     def run_parallel(self, project_folder):
+        # Uniformly sample 2,000 surface points from each final mesh and save PLY.
         out_folder =  os.path.join(project_folder, self.options.out_dir)
         if not os.path.exists(out_folder):
             os.makedirs(out_folder)
@@ -73,6 +76,7 @@ class SamplePoints:
         """
         Run simplification.
         """
+        # Process all generated sample folders in parallel.
         project_folders = sorted(glob(self.options.in_dir+'/*/'))
         convert_iter = Pool(NUM_TRHEADS).imap(self.run_parallel, project_folders) 
         for _ in tqdm(convert_iter, total=len(project_folders)):

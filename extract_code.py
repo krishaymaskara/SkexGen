@@ -1,3 +1,5 @@
+# This stage loads all three trained encoders and converts each processed CAD
+# history into the ten discrete indices consumed by train_code.py.
 import os
 import torch
 import argparse
@@ -9,6 +11,7 @@ from tqdm import tqdm
 
 
 def extract(args):
+    # Restrict inference to the requested GPU and load full sketch-plus-extrude histories.
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.device)
     device = torch.device("cuda:0")
 
@@ -17,7 +20,8 @@ def extract(args):
                                              shuffle=False, 
                                              batch_size=1024,
                                              num_workers=5)
-    # Load pretrained models
+    # Recreate the command encoder architecture, load its 300-epoch checkpoint,
+    # and switch it to inference mode.
     cmd_encoder = CMDEncoder(
         config={
             'hidden_dim': 512,
@@ -33,6 +37,7 @@ def extract(args):
     cmd_encoder.load_state_dict(torch.load(os.path.join(args.sketch_weight, 'cmdenc_epoch_300.pt')))
     cmd_encoder = cmd_encoder.to(device).eval()
 
+    # Recreate and load the sketch-geometry encoder (two code positions).
     param_encoder = PARAMEncoder(
         config={
             'hidden_dim': 512,
@@ -49,6 +54,7 @@ def extract(args):
     param_encoder.load_state_dict(torch.load(os.path.join(args.sketch_weight, 'paramenc_epoch_300.pt')))
     param_encoder = param_encoder.to(device).eval()
 
+    # Recreate and load the extrusion encoder (four code positions).
     ext_encoder = EXTEncoder(
         config={
             'hidden_dim': 512,
@@ -70,6 +76,8 @@ def extract(args):
         os.makedirs(args.output)
 
     total_z = []
+    # Inference requires no gradients: move each batch to CUDA and ask each
+    # encoder for integer codebook selections rather than continuous latents.
     with tqdm(dataloader, unit="batch") as batch_data:
         for cmd, cmd_mask, pix, xy, pix_mask, flag, ext, ext_mask in batch_data:
             with torch.no_grad():
@@ -86,9 +94,11 @@ def extract(args):
                 param_code = param_encoder.get_code(pix, xy, pix_mask) 
                 ext_code = ext_encoder.get_code(ext, flag, ext_mask) 
            
+            # Concatenate 4 topology + 2 geometry + 4 extrusion indices.
             codes = np.concatenate((cmd_code, param_code, ext_code), 1)
             total_z.append(codes)
 
+    # Remove duplicate ten-code rows before serializing the code-prior dataset.
     code = np.unique(np.vstack(total_z), return_counts=False, axis=0)
     print('Saving...')
     with open(os.path.join(args.output, 'code.pkl'), "wb") as tf:
@@ -97,6 +107,7 @@ def extract(args):
 
 
 if __name__ == "__main__":
+    # Parse checkpoint directories, processed data, GPU, and output settings.
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--sketch_weight", type=str, required=True)

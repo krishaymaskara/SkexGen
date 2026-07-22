@@ -1,8 +1,10 @@
+# Full-circle primitive represented by center and radius data.
 import numpy as np
 from geometry.curve import Curve
 import pdb
 
 class Circle(Curve):
+    # Recover circle geometry and its axis-aligned bounding box.
     def __init__(self, point_indices, point_data, is_outer):
         assert len(point_indices) == 2, "Circle must be defined by 1 points"
         assert point_data is not None
@@ -20,8 +22,3 @@ class Circle(Curve):
         self.pt4 = np.array([self.center[0]-self.radius, self.center[1]])
         self.bbox = self.verts_to_bbox(np.vstack([self.pt1, self.pt2, self.pt3, self.pt4]))
         self.bottom_left = np.array([self.bbox[0], self.bbox[2]])
-
-
-        
-
-   

@@ -1,3 +1,5 @@
+# Convert generated parameter OBJ files into executable OpenCascade solids,
+# validate the Boolean history, and export final STL and STEP files.
 import os 
 import argparse
 from pathlib import Path
@@ -36,6 +38,8 @@ def find_files(folder, extension):
 
 
 def run_parallel(project_folder):
+    # Replay one sample's operations in filename order, combining each new solid
+    # with fuse/cut/common according to its stored feature-operation mode.
     output_folder = project_folder
 
     param_objs = find_files(project_folder, 'param.obj')
@@ -62,6 +66,7 @@ def run_parallel(project_folder):
             else:
                 raise Exception("Unknown operation type")
 
+            # Reject the history immediately if an intermediate B-rep is invalid.
             analyzer = BRepCheck_Analyzer(cur_solid)
             if not analyzer.IsValid():
                 raise Exception("brep check failed")
@@ -72,6 +77,7 @@ def run_parallel(project_folder):
             msg = [project_folder, str(ex)[:100]]
             return None 
  
+    # Export the final successfully reconstructed solid in mesh and CAD formats.
     try:
       with timeout(30):
         stl_name = Path(output_folder).stem + '_'+ str(extrude_idx).zfill(3) + "_final.stl"
@@ -90,6 +96,7 @@ def run_parallel(project_folder):
 
 
 if __name__ == "__main__":
+    # Reconstruct every generated sample folder in parallel.
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_folder", type=str, required=True)
     args = parser.parse_args()

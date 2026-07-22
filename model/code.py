@@ -1,3 +1,5 @@
+# Autoregressive Transformer priors over discrete code sequences. CodeModel is
+# the unconditional ten-code generator; CondARModel is a conditional variant.
 from .layers.transformer import *
 from .layers.improved_transformer import *
 import torch
@@ -40,6 +42,7 @@ def top_k_top_p_filtering(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')
 
 
 class Embedder(nn.Module):
+    # Learned lookup table from integer code indices to Transformer vectors.
     def __init__(self, vocab_size, d_model):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, d_model)
@@ -48,6 +51,7 @@ class Embedder(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
+    # Learned embeddings that distinguish positions in the short code sequence.
 
     def __init__(self, d_model, dropout=0.1, max_len=250):
         super(PositionalEncoding, self).__init__()
@@ -67,6 +71,7 @@ class PositionalEncoding(nn.Module):
 
 
 class CodeModel(nn.Module):
+  # Unconditional causal model trained on unique 4+2+4 code rows.
 
   def __init__(self,
                config,
@@ -95,6 +100,8 @@ class CodeModel(nn.Module):
 
   def forward(self, code):
     """ forward pass """
+    # Prepend a zero context vector, hide future positions, and predict a
+    # categorical distribution for every next code.
     if code[0] is None:
       bs = len(code)
       seq_len = 0
@@ -127,6 +134,7 @@ class CodeModel(nn.Module):
     """
     sample from distribution (top-k, top-p)
     """
+    # Grow all requested sequences one position at a time with nucleus sampling.
     #samples = []
     temperature = 1.0
     top_k = 0
@@ -161,6 +169,7 @@ class CodeModel(nn.Module):
 
 class CondARModel(nn.Module):
   """Autoregressive generative model of quantized mesh vertices."""
+  # Conditional counterpart whose decoder cross-attends to supplied codes.
 
   def __init__(self,
                config,
@@ -191,6 +200,8 @@ class CondARModel(nn.Module):
 
   def forward(self, code, cond):
     """ forward pass """
+    # Encode the generated prefix as decoder input and conditioning codes as
+    # cross-attention memory.
     if code[0] is None:
       bs = len(code)
       seq_len = 0
@@ -226,6 +237,7 @@ class CondARModel(nn.Module):
     """
     sample from distribution (top-k, top-p)
     """
+    # Use the same position-by-position sampling under fixed conditioning.
     temperature = 1.0
     top_k = 0
     top_p = SAMPLE_PROB

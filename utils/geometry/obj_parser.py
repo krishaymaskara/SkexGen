@@ -1,3 +1,4 @@
+# Parser/serializer for the custom OBJ-like sketch/extrude interchange format.
 import os
 import sys
 import numpy as np
@@ -20,6 +21,7 @@ class OBJParser:
 
 
     def convert_vertices(self, vertices):
+        # Convert raw coordinate records into the normalized vertex array.
         """Convert all the vertices to .obj format"""
         vertex_strings = ""
         for pt in vertices:
@@ -30,6 +32,7 @@ class OBJParser:
 
 
     def convert_curves(self, faces):
+        # Instantiate Line, Arc, or Circle objects from indexed curve records.
         curve_strings = ""
         total_curve = 0
 
@@ -63,6 +66,7 @@ class OBJParser:
 
 
     def write_obj2(self, file, vertices, faces, meta_info, scale=None):
+        # Write structured vertices/faces plus operation metadata.
         """ Write to .obj file """
         vertex_strings = self.convert_vertices(vertices)
         curve_strings, total_curve = self.convert_curves(faces)
@@ -108,6 +112,7 @@ class OBJParser:
 
 
     def write_obj(self, file, curve_strings, total_curve, vertex_strings, total_v, meta_info, scale=None):
+        # Write preformatted curve and vertex records produced during conversion.
         """ Write to .obj file """
         #vertex_strings = self.convert_vertices(vertices)
         #curve_strings, total_curve = self.convert_curves(faces)
@@ -153,6 +158,8 @@ class OBJParser:
 
 
     def parse_file(self, scale=1.0):
+        # Read one file, separate records, construct curves, and return geometry
+        # together with the extrusion metadata required by later stages.
         """ 
         Parse obj file
         Return
@@ -236,6 +243,7 @@ class OBJParser:
 
 
     def read_face(self, lines, str_idx, vertices):
+        # Consume all loop and curve records belonging to one sketch face.
         loops = []
         loop = []
         for line in lines[str_idx:]:

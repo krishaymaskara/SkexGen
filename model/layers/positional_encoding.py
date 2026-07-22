@@ -1,9 +1,12 @@
+# Two interchangeable ways to inject token order: fixed sine/cosine signals or
+# a learned lookup table. The main models define a similar learned variant.
 import math
 import torch
 import torch.nn as nn
 
 
 class PositionalEncodingSinCos(nn.Module):
+    # Deterministic frequencies require no learned position parameters.
     def __init__(self, d_model, dropout=0.1, max_len=250):
         super(PositionalEncodingSinCos, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -22,6 +25,7 @@ class PositionalEncodingSinCos(nn.Module):
 
 
 class PositionalEncodingLUT(nn.Module):
+    # Learns one embedding vector for every supported sequence position.
 
     def __init__(self, d_model, dropout=0.1, max_len=250):
         super(PositionalEncodingLUT, self).__init__()

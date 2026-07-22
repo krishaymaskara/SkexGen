@@ -1,9 +1,11 @@
+# Circular-arc interpretation built from sampled/control points.
 import numpy as np
 import math
 from geometry.curve import Curve
 
 
 class Arc(Curve):
+    # Recover center, radius, angular span, and bounding-box information.
     def __init__(self, point_indices, point_data, is_outer):
         assert len(point_indices) == 4, "Arc must be defined by 3 points"
         assert point_data is not None

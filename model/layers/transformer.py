@@ -1,3 +1,5 @@
+# Container classes that stack the custom attention blocks into full encoders
+# and decoders. This file is adapted from PyTorch's Transformer implementation.
 import torch
 import copy
 
@@ -144,6 +146,7 @@ class Transformer(Module):
 
 
 class TransformerEncoder(Module):
+    # Sequentially applies cloned encoder layers and an optional final norm.
     r"""TransformerEncoder is a stack of N encoder layers
 
     Args:
@@ -190,6 +193,7 @@ class TransformerEncoder(Module):
 
 
 class TransformerDecoder_g(Module):
+    # Decoder stack that forwards both ordinary memory and optional global memory.
     r"""TransformerDecoder is a stack of N decoder layers
 
     Args:
@@ -245,6 +249,7 @@ class TransformerDecoder_g(Module):
 
 
 class TransformerDecoder(Module):
+    # Standard decoder stack used by the sketch, extrusion, and code models.
     r"""TransformerDecoder is a stack of N decoder layers
     Args:
         decoder_layer: an instance of the TransformerDecoderLayer() class (required).
@@ -294,10 +299,12 @@ class TransformerDecoder(Module):
 
 
 def _get_clones(module, N):
+    # Deep-copy one configured layer N times so each copy has independent weights.
     return ModuleList([copy.deepcopy(module) for i in range(N)])
 
 
 def _get_activation_fn(activation):
+    # Resolve the configuration string to the matching PyTorch function.
     if activation == "relu":
         return F.relu
     elif activation == "gelu":

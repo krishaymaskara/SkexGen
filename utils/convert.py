@@ -1,6 +1,8 @@
 """
 Create solids by the DeepCAD dataset
 """
+# First preprocessing stage: convert raw DeepCAD JSON feature histories into
+# per-operation OBJ metadata and STL solids using OpenCascade.
 import json
 import argparse
 from tqdm import tqdm
@@ -38,6 +40,8 @@ def load_json_data(pathname):
 
 
 def convert_folder_parallel(data):
+    # Convert one JSON file in a worker process, enforcing a timeout so malformed
+    # CAD operations cannot stall the complete dataset conversion.
     fileName, output_folder = data
     save_fileFolder = Path(output_folder) / fileName.stem
     if not save_fileFolder.exists():
@@ -71,6 +75,7 @@ def find_file_id(file_or_save_folder):
 
 
 def find_files_already_processed_in_sub_folder(sub_folder):
+    # Collect IDs already written so interrupted conversions can resume safely.
     already_processed_ids = set()
     for save_folder in sub_folder.glob("*"):
         file_id = find_file_id(save_folder)
@@ -89,6 +94,8 @@ def find_files_already_processed_in_output_folder(output_folder):
 
 
 if __name__ == "__main__":
+    # Discover unprocessed JSON files across DeepCAD's 100 numbered folders and
+    # distribute conversion work across the configured worker pool.
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_folder", type=str, required=True, help="Path to the containing DeepCAD data")
     parser.add_argument("--output_folder", type=str, required=True, help="Path to write the output")

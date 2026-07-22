@@ -1,3 +1,6 @@
+# Shared preprocessing, CAD serialization, sequence tokenization, generated-token
+# parsing, and learning-rate helpers. Despite its generic name, this file defines
+# much of SkexGen's exact sketch/extrusion representation.
 import os 
 from OCC.Core.gp import gp_Pnt, gp_Vec, gp_Dir, gp_XYZ, gp_Ax3, gp_Trsf, gp_Pln
 from OCC.Display.SimpleGui import init_display
@@ -12,6 +15,8 @@ import math
 from collections import OrderedDict
 from torch.optim.lr_scheduler import LambdaLR
 
+# Normalization ranges and reserved token offsets shared by preprocessing,
+# datasets, decoders, and the reverse parser.
 SKETCH_R = 1
 RADIUS_R = 1
 EXTRUDE_R = 1.0
@@ -48,6 +53,7 @@ def find_files(folder, extension):
 
 
 def plot(shape_list):
+    # Open an interactive OpenCascade viewer for manual geometry inspection.
     pyqt5_display, start_display, add_menu, add_function_to_menu = init_display('qt-pyqt5')
     for shape in shape_list:
         pyqt5_display.DisplayShape(shape, update=True)
@@ -89,6 +95,7 @@ def write_stl_file(a_shape, filename, mode="ascii", linear_deflection=0.001, ang
 
 
 def same_plane(plane1, plane2):
+    # Compare all stored reference-frame vectors exactly.
     same = True 
     trans1 = plane1['pt']
     trans2 = plane2['pt']
@@ -109,6 +116,7 @@ def create_xyz(xyz):
 
 
 def get_ax3(transform_dict):
+    # Convert a serialized origin and basis into an OpenCascade coordinate frame.
     origin = create_xyz(transform_dict["origin"])
     x_axis = create_xyz(transform_dict["x_axis"])
     y_axis = create_xyz(transform_dict["y_axis"])
@@ -119,6 +127,7 @@ def get_ax3(transform_dict):
 
 
 def get_transform(transform_dict):
+    # Build the local-sketch-to-world transformation used for curve construction.
     axis3 = get_ax3(transform_dict)
     transform_to_local = gp_Trsf()
     transform_to_local.SetTransformation(axis3) 
@@ -159,6 +168,8 @@ def create_unit_vec(vec_dict, transform):
 
 def write_obj(file, curve_strings, curve_count, vertex_strings, vertex_count, extrude_info, refP_info):
     """Write an .obj file with the curves and verts"""
+    # Serialize one processed operation: sketch vertices/curves, signed extrusion
+    # bounds, Boolean mode, and the complete reference-plane frame.
         
     with open(file, "w") as fh:
         # Write Meta info
@@ -210,6 +221,8 @@ def parse3d_sample(point3d):
 
 
 def write_obj_sample(save_folder, data):
+    # Serialize CADparser output from unconditional generation into the same
+    # parameter-OBJ format expected by visual_obj.py.
     for idx, write_data in enumerate(data):
         obj_name = Path(save_folder).stem + '_'+ str(idx).zfill(3) + "_param.obj"
         obj_file = Path(save_folder) / obj_name
@@ -282,6 +295,7 @@ def find_files_path(folder, extension):
 
 
 def get_loop_bbox(loop):
+    # Combine primitive bounding boxes into one loop bounding box.
     bbox = []
     for curve in loop:
         bbox.append(curve.bbox)
@@ -300,6 +314,7 @@ def get_face_bbox(face):
 
 
 def sort_faces(sketch):
+    # Canonically order faces by their bottom-left bounding-box coordinates.
     bbox_list = []
     for face in sketch:
         bbox_list.append(get_face_bbox(face))
@@ -312,6 +327,7 @@ def sort_faces(sketch):
 
 
 def sort_loops(face):
+    # Preserve the outer loop first and spatially order any holes.
     assert face[0][0].is_outer
     if len(face) == 1:
         return face # only one outer loop, no need to sort 
@@ -333,6 +349,7 @@ def sort_loops(face):
 
 
 def curve_connection(loop):
+    # Build endpoint pairs used to follow connectivity around a loop.
     adjM = np.zeros((len(loop), 2)) # 500 should be large enough
     for idx, curve in enumerate(loop):
         assert curve.type != 'circle'
@@ -361,6 +378,7 @@ def flip_curve(curve):
 
 
 def sort_start_end(sorted_loop):
+    # Flip curve directions in place until each end matches the next start.
     prev_curve = sorted_loop[0]
     for next_curve in sorted_loop[1:]:
         if prev_curve.end_idx != next_curve.start_idx:
@@ -397,6 +415,8 @@ def print_loop(loop):
 
 def sort_curves(loop):
     """ sort loop start / end vertex """
+    # Choose a deterministic bottom-left start curve, traverse connectivity,
+    # and orient the result as a closed ordered loop.
     if len(loop) == 1:
         assert loop[0].type == 'circle'
         return loop # no need to sort circle
@@ -458,6 +478,8 @@ def quantize(data, n_bits=8, min_range=-1.0, max_range=1.0):
 
     
 def parse_curve(line, curve, center, scale, command, bit):
+    # Convert a typed line/arc/circle into quantized coordinate tokens plus one
+    # structural command token and an explicit curve-end marker.
 
     if line.type == 'line':
         start = quantize((line.start-center)/scale, n_bits=bit, min_range=-SKETCH_R, max_range=+SKETCH_R)
@@ -489,6 +511,8 @@ def parse_curve(line, curve, center, scale, command, bit):
 
 def convert_code(sketch, bit):
     """ convert to code format """
+    # Canonically sort a sketch, normalize all geometry together, insert curve/
+    # loop/face/sketch delimiters, and rasterize XY pairs into pixel-token IDs.
 
     # Sort faces in sketch based on min bbox coords (X->Y) 
     sorted_sketch = sort_faces(sketch)
@@ -586,6 +610,8 @@ def normalize_vertices_scale(vertices):
 
 def process_obj_se(data):
     """Load a sequence of obj files and convert to vector format."""
+    # Convert every operation in one CAD folder into aligned sketch commands,
+    # sketch geometry, and the fixed 19-value extrusion representation.
     project_folder, bit = data
     obj_files = find_files(project_folder, '.obj')
     if len(obj_files) == 0:
@@ -612,7 +638,7 @@ def process_obj_se(data):
         pixel_coords += PIX_PAD # smallest is 0
         command += CMD_PAD # smalles is 0
     
-        # Set operation 
+        # Encode the operation's Boolean mode as add, cut, or intersect.
         set_op = meta_info['set_op']
         if set_op == 'JoinFeatureOperation' or set_op == 'NewBodyFeatureOperation':
             extrude_op = 1 #'add'
@@ -622,6 +648,8 @@ def process_obj_se(data):
             extrude_op = 3 #'intersect'
         ext_type = np.array([extrude_op])
         
+        # Quantize signed bounds, plane origin/orientation, Boolean mode, and the
+        # sketch normalization scale/offset into one extrusion parameter vector.
         # Extrude values
         ext_v = quantize(np.array(meta_info['extrude_value']), n_bits=bit, min_range=-EXTRUDE_R, max_range=+EXTRUDE_R)
         ext_v += EXT_PAD
@@ -711,6 +739,8 @@ def angle_from_vector_to_x(vec):
 
 
 def find_arc_geometry(a, b, c):
+        # Recover the circle center, radius, and direction-aware angle range from
+        # three dequantized arc points.
         A = b[0] - a[0] 
         B = b[1] - a[1]
         C = c[0] - a[0]
@@ -750,6 +780,8 @@ def find_arc_geometry(a, b, c):
 
 class CADparser:
     """ Parse into OBJ files """
+    # Reverse the model's merged sketch/extrusion token stream into structured
+    # geometry and operation dictionaries suitable for parameter-OBJ output.
     def __init__(self, bit):
         x=np.linspace(0, 2**bit-1, 2**bit)
         y=np.linspace(0, 2**bit-1, 2**bit)
@@ -760,6 +792,8 @@ class CADparser:
     
 
     def perform(self, tokens):     
+        # Remove padding; split alternating sketch/extrusion groups; decode nested
+        # face/loop/curve delimiters; and dequantize each operation's parameters.
         se_datas = []   
         # (0) Remove padding
         tokens = tokens[:np.where(tokens==0)[0][0]]
@@ -858,6 +892,8 @@ class CADparser:
 
 
     def obj_curve(self, curve, next_curve, cur_str, scale, offset):
+        # Infer primitive type from token count, dequantize points, reconstruct arc
+        # or circle geometry, and emit one custom OBJ curve record.
 
         if len(curve) == 4: # Circle
             assert len(list(set(np.unique(curve))-set(curve))) == 0
@@ -961,6 +997,7 @@ def get_constant_schedule_with_warmup(optimizer, num_warmup_steps, last_epoch = 
         :obj:`torch.optim.lr_scheduler.LambdaLR` with the appropriate schedule.
     """
 
+    # Return a multiplier that ramps from zero to one, then remains constant.
     def lr_lambda(current_step: int):
         if current_step < num_warmup_steps:
             return float(current_step) / float(max(1.0, num_warmup_steps))

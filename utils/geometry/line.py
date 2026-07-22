@@ -1,7 +1,9 @@
+# Line-specific interpretation of a parsed OBJ curve record.
 import numpy as np
 from geometry.curve import Curve
 
 class Line(Curve):
+    # Store endpoints plus canonical orientation/topology metadata.
     def __init__(self, point_indices, point_data, is_outer):
         assert len(point_indices) == 2, "Line must be defined by two points"
         assert point_data is not None
@@ -17,8 +19,3 @@ class Line(Curve):
 
         self.bbox = self.verts_to_bbox(np.vstack([pt0, pt1]))
         self.bottom_left = np.array([self.bbox[0], self.bbox[2]])
-
-        
-
-
-    

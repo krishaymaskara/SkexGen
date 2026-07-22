@@ -1,7 +1,9 @@
+# Numerical helpers for sketch angles, quantization, centering, and scaling.
 import math
 import numpy as np
 
 def angle_from_vector_to_x(vec):
+    # Return a directed angle from the positive X axis.
     assert vec.size == 2
     # We need to find a unit vector
     angle = 0.0
@@ -30,6 +32,7 @@ def angle_from_vector_to_x(vec):
 
 
 def convert_angle_to_1to360_range(angle_rad):
+    # Normalize a radian angle to one full positive revolution.
     """
     Converts the given angle in radians into 1-360 degrees range
     """
@@ -43,6 +46,7 @@ def convert_angle_to_1to360_range(angle_rad):
 
 
 def angle_is_between(angle_rad, a_rad, b_rad):
+    # Test membership in a directed interval, including wrap-around.
     """
     Checks if angle is in between the range of a and b
     (All angles must be given in radians)
@@ -56,6 +60,7 @@ def angle_is_between(angle_rad, a_rad, b_rad):
 
 
 def quantize_verts(verts, n_bits=8):
+    # Map normalized floating-point vertices onto an integer grid.
     """Convert vertices in [-1., 1.] to discrete values in [0, n_bits**2 - 1]."""
     min_range = -0.5
     max_range = 0.5
@@ -65,6 +70,7 @@ def quantize_verts(verts, n_bits=8):
 
 
 def dequantize_verts(verts, n_bits=8, add_noise=False):
+    # Map grid indices back to normalized coordinates, optionally with jitter.
     """Convert quantized vertices to floats."""
     min_range = -0.5
     max_range = 0.5
@@ -77,6 +83,7 @@ def dequantize_verts(verts, n_bits=8, add_noise=False):
 
 
 def center_vertices(vertices):
+    # Translate vertices so the bounding-box center lies at the origin.
     """Translate the vertices so that bounding box is centered at zero."""
     vert_min = vertices.min(axis=0)
     vert_max = vertices.max(axis=0)
@@ -85,6 +92,7 @@ def center_vertices(vertices):
 
 
 def scale_vertices(vertices):
+    # Uniformly scale centered vertices into the expected normalized range.
     """Scale the vertices so that the long diagonal of the bounding box is one."""
     vert_min = vertices.min(axis=0)
     vert_max = vertices.max(axis=0)

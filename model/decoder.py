@@ -1,3 +1,5 @@
+# Autoregressive decoders that reconstruct sketch and extrusion sequences from
+# the fixed latent codes produced by model/encoder.py.
 from .layers.transformer import *
 from .layers.improved_transformer import *
 import torch.nn as nn
@@ -46,6 +48,7 @@ def top_k_top_p_filtering(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')
 
 
 class Embedder(nn.Module):
+    # Converts integer vocabulary items into learned feature vectors.
     def __init__(self, vocab_size, d_model):
         super().__init__()
         self.embed = nn.Embedding(vocab_size, d_model)
@@ -54,6 +57,7 @@ class Embedder(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
+    # Adds learned sequence-position vectors before Transformer decoding.
 
     def __init__(self, d_model, dropout=0.1, max_len=250):
         super(PositionalEncoding, self).__init__()
@@ -108,6 +112,8 @@ class SketchDecoder(nn.Module):
 
   def forward(self, pixel_v, xy_v, pixel_mask, latent_z):
     """ forward pass """
+    # Embed the known sketch prefix, causally attend to earlier tokens,
+    # cross-attend to six sketch latents, and output next-pixel logits.
     if pixel_v[0] is None:
       c_bs = len(pixel_v)
       c_seqlen = 0
@@ -145,6 +151,8 @@ class SketchDecoder(nn.Module):
 
   def sample(self, n_samples,  latent_z, latent_ext):
     """ sample from distribution (top-k, top-p) """
+    # Generate pixels with nucleus sampling, recover XY from each pixel ID, and
+    # remove completed sequences from the active batch after an end token.
     pix_samples = []
     xy_samples = []
     latent_ext_samples = []
@@ -258,6 +266,8 @@ class EXTDecoder(nn.Module):
 
   def forward(self, ext_v, flags, ext_mask, code=None):
     """ forward pass """
+    # Embed the value prefix and parameter-role flags, then causally decode
+    # next-value logits while cross-attending to extrusion latent codes.
     if ext_v[0] is None:
       c_bs = len(ext_v)
       c_seqlen = 0
@@ -295,6 +305,8 @@ class EXTDecoder(nn.Module):
 
   def sample(self, n_samples, latent_z=None, sample_pixels=None):
     """ sample from distribution (top-k, top-p) """
+    # Sample values one at a time, infer flags from the fixed 19-value operation
+    # layout, and merge finished extrusion groups with their sketch groups.
     samples = []
     top_k = 0
     top_p = SAMPLE_PROB

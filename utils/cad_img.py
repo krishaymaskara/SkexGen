@@ -1,3 +1,4 @@
+# Render reconstructed STEP solids to PNG images with OpenCascade's off-screen viewer.
 import argparse
 from OCC.Core.Graphic3d import *
 from OCC.Display.OCCViewer import Viewer3d
@@ -12,6 +13,8 @@ from tqdm import tqdm
 
 
 def render(shape, filename, width=1024, height=768, face_color_rgb=(0.2, 0.2, 0.2), edge_color_rgb=(0, 0, 0), show_face_boundary=True):
+    # Configure lighting, shading, colors, tessellation quality, and camera fit,
+    # then dump the resulting view to an image file.
     viewer = Viewer3d()
     viewer.Create(phong_shading=True, create_default_lights=True)
     viewer.set_bg_gradient_color([255, 255, 255], [255, 255, 255])
@@ -45,6 +48,7 @@ def render(shape, filename, width=1024, height=768, face_color_rgb=(0.2, 0.2, 0.
 
 
 def main():
+    # Find STEP files in generated-sample subfolders and render each one.
     p = argparse.ArgumentParser()
     p.add_argument("--input_dir", type=str, required=True, help="Input folder of STP/STEP files")
     p.add_argument("--output_dir", type=str, required=True, help="Output folder of PNG files")
@@ -59,6 +63,7 @@ def main():
         input_path = pathlib.Path(folder)
         files += list(input_path.glob("*.st*p"))
     
+    # The original script deliberately renders only this fixed debug slice.
     files = files[1000:2000] # debug only (* remove *)
 
     output_path = pathlib.Path(args.output_dir)

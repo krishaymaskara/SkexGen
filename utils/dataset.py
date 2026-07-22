@@ -1,3 +1,5 @@
+# Dataset-building helper used by parse.py. It parses normalized OBJ folders in
+# parallel and assigns the resulting records to DeepCAD's official split lists.
 from utils import process_obj_se
 from tqdm import tqdm
 from multiprocessing import Pool
@@ -17,6 +19,8 @@ class SE():
         self.bit = bit
 
     def load_all_obj(self):
+        # Parse every project folder into serialized sketch/extrude sequences,
+        # then partition records by their source CAD model ID.
         print("Loading obj data...")
 
         with open('../data/train_val_test_split.json') as f:
@@ -56,4 +60,3 @@ class SE():
         print(f"\tValidation data: {len(val_samples)}")
         print(f"\tTest data: {len(test_samples)}")
         return train_samples, test_samples, val_samples
-

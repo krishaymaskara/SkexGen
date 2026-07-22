@@ -1,3 +1,5 @@
+# Local copy of PyTorch-style multi-head attention. Higher-level Transformer
+# layers call this module to mix information across sequence positions.
 import torch
 from torch.nn import Linear
 from torch.nn.init import xavier_uniform_
@@ -139,6 +141,8 @@ class MultiheadAttention(Module):
         - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
           L is the target sequence length, S is the source sequence length.
         """
+        # Delegate the projection, masking, attention-weight, and output math to
+        # the functional implementation below this abstraction layer.
         if not self._qkv_same_embed_dim:
             return multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,

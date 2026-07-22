@@ -1,3 +1,5 @@
+# Pre-layer-normalized Transformer blocks used by all SkexGen encoders and
+# decoders. These variants also support an optional second/global memory input.
 import torch
 import copy
 
@@ -15,6 +17,7 @@ from .transformer import _get_activation_fn
 import pdb 
 
 class TransformerEncoderLayerImproved(Module):
+    # Self-attention followed by a feed-forward block, each with residual paths.
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", d_global2=None):
         super(TransformerEncoderLayerImproved, self).__init__()
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
@@ -41,6 +44,7 @@ class TransformerEncoderLayerImproved(Module):
         super(TransformerEncoderLayerImproved, self).__setstate__(state)
 
     def forward(self, src, memory2=None, src_mask=None, src_key_padding_mask=None):
+        # Normalize before each sublayer, apply attention/MLP, and add residuals.
         src1 = self.norm1(src)
         src2 = self.self_attn(src1, src1, src1, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
@@ -56,6 +60,7 @@ class TransformerEncoderLayerImproved(Module):
 
 
 class TransformerDecoderLayerImproved(Module):
+    # Causal target self-attention, cross-attention to memory, then feed-forward.
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
         super(TransformerDecoderLayerImproved, self).__init__()
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
@@ -96,6 +101,8 @@ class TransformerDecoderLayerImproved(Module):
 
 
 class TransformerDecoderLayerGlobalImproved(Module):
+    # Decoder variant that can add a projected global conditioning vector in
+    # addition to ordinary cross-attention memory.
     def __init__(self, d_model, d_global, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", d_global2=None):
         super(TransformerDecoderLayerGlobalImproved, self).__init__()
         

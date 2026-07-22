@@ -1,3 +1,5 @@
+# Identify processed token histories that the CADparser cannot turn back into
+# valid structured CAD data, then save their IDs for dataset filtering.
 import torch
 import os
 import numpy as np
@@ -43,6 +45,8 @@ class SE(torch.utils.data.Dataset):
 
 
     def __getitem__(self, index):
+        # Interleave each sketch token group with its extrusion group to recreate
+        # the exact sequence layout consumed by CADparser.
         vec_data = self.data[index]
         pix_tokens = vec_data['se_pix']
         ext_tokens = vec_data['se_ext']
@@ -62,6 +66,7 @@ class SE(torch.utils.data.Dataset):
 
 
 def raster(data):   
+    # Attempt one round-trip parse; failures are returned as validity labels.
     pixels, uid = data
     try:
         parser = CADparser(args.bit)
@@ -72,6 +77,7 @@ def raster(data):
 
 
 if __name__ == "__main__":
+    # Batch histories, test parsing in parallel, and serialize all failed IDs.
     parser = argparse.ArgumentParser()
     parser.add_argument("--datapath", type=str, required=True)
     parser.add_argument("--bit", type=int, required=True)

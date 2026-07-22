@@ -1,3 +1,6 @@
+# Second preprocessing stage: choose a common scale that keeps mesh, sketch,
+# translation, and extrusion values inside SkexGen's normalized ranges, then
+# rebuild and validate each feature history at that scale.
 import meshio
 import os 
 import signal
@@ -36,6 +39,7 @@ NUM_TRHEADS = 36
 NUM_FOLDERS = 100 
 
 class NormalizeSE:
+    # Encapsulates normalization limits and reconstruction of one CAD history.
 
     def __init__(self, cube_size, norm_factor, extrude_size, sketch_size):
         self.MR = cube_size
@@ -65,7 +69,7 @@ class NormalizeSE:
         find best normalization scale,
         normalize cad mesh and modify the .obj file accordingly
         """
-        # Normalize mesh
+        # Derive an initial scale from all intermediate solid meshes.
         verts = []
         for stl in stl_files:
             # Load mesh 
@@ -75,7 +79,7 @@ class NormalizeSE:
         all_verts = np.vstack(verts)
         mesh_scale = self.MR / np.max(np.abs(all_verts))
         
-        # Reduce size to satisfy extrude
+        # Tighten the scale when extrusion distances or placements exceed bounds.
         scales = []
         for obj in extrude_param:
             # Load sketch and extrude parameters
@@ -99,7 +103,7 @@ class NormalizeSE:
         else:
             obj_scale = mesh_scale * min(scales)  
 
-        # Reduce size to satisfy sketch
+        # Tighten it again when any sketch bounding box exceeds its range.
         scales = []
         for obj in extrude_param:
             parser = OBJParser(obj)
@@ -119,7 +123,8 @@ class NormalizeSE:
         if len(scales) > 0:
             final_scale *= min(scales) 
 
-        # Reconstruct the normalized brep 
+        # Reconstruct operations in order, apply their Boolean modes, validate
+        # every intermediate B-rep, and save normalized OBJ parameter files.
         cur_solid = None
         extrude_idx = 0
         for obj in extrude_param:
@@ -160,6 +165,7 @@ def run_parallel(project_folder):
     """
     Parallel normalization
     """
+    # Normalize one project folder with a timeout and preserve DeepCAD's folder layout.
     subfolder1 = project_folder.split('/')[-3]
     subfolder2 = project_folder.split('/')[-2]
     output_folder = os.path.join(args.out_folder, subfolder1, subfolder2)
@@ -184,6 +190,7 @@ def run_parallel(project_folder):
     
 
 if __name__ == "__main__":
+    # Enumerate all converted projects and normalize them in worker processes.
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_folder", type=str, required=True)
     parser.add_argument("--out_folder", type=str, required=True)
@@ -202,9 +209,3 @@ if __name__ == "__main__":
         # if len(msg)>0:
         #     print(f'Normalization Error: {msg}')
         pass
-        
-    
-
-    
-
-    
