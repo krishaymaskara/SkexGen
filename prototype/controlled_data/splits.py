@@ -10,6 +10,42 @@ from .config import ConfigurationError, GeneratorConfig
 
 
 PARTITION_ORDER = ("train", "validation", "test")
+SPLIT_POLICY_VERSION = "controlled-data-splits-v1"
+OPERATION_TRAIN_VALIDATION_TEMPLATES = ("E", "R", "EE", "RE")
+OPERATION_TEST_TEMPLATES = ("ER",)
+OPERATION_SECONDARY_VALIDATION_TEMPLATES = ("RR",)
+
+
+def operation_template_partition_class(template: str) -> str:
+    """Return the non-IID partition class frozen by the controlled benchmark."""
+
+    if template in OPERATION_TRAIN_VALIDATION_TEMPLATES:
+        return "train_validation"
+    if template in OPERATION_TEST_TEMPLATES:
+        return "test"
+    if template in OPERATION_SECONDARY_VALIDATION_TEMPLATES:
+        return "secondary_systematic_validation"
+    raise ConfigurationError(f"unknown operation template {template!r}")
+
+
+def history_depth_partition_class(depth: int) -> str:
+    if isinstance(depth, bool) or not isinstance(depth, int):
+        raise ConfigurationError("history depth must be an integer")
+    if depth == 1:
+        return "train_validation"
+    if depth == 2:
+        return "test"
+    raise ConfigurationError(f"unsupported history depth {depth!r}")
+
+
+def geometry_extent_partition_class(
+    maximum_extent: float, config: GeneratorConfig
+) -> str:
+    if maximum_extent <= config.in_range_extent_max:
+        return "train_validation"
+    if maximum_extent >= config.extrapolation_extent_min:
+        return "test"
+    raise ConfigurationError("history extent lies in the excluded geometry gap")
 
 
 def build_split_manifests(
@@ -129,7 +165,8 @@ def _operation_template_assignment(
     eligible = [
         item["source_family_id"]
         for item in families
-        if item["operation_template"] in {"E", "R", "EE", "RE"}
+        if operation_template_partition_class(item["operation_template"])
+        == "train_validation"
     ]
     assignment = _ranked_partition(
         eligible,
@@ -140,9 +177,10 @@ def _operation_template_assignment(
     )
     for item in families:
         family_id = item["source_family_id"]
-        if item["operation_template"] == "ER":
+        partition_class = operation_template_partition_class(item["operation_template"])
+        if partition_class == "test":
             assignment[family_id] = "test"
-        elif item["operation_template"] == "RR":
+        elif partition_class == "secondary_systematic_validation":
             assignment[family_id] = "secondary_systematic_validation"
     return assignment
 
@@ -150,7 +188,11 @@ def _operation_template_assignment(
 def _depth_assignment(
     families: list[dict[str, Any]], config: GeneratorConfig
 ) -> dict[str, str]:
-    depth_one = [item["source_family_id"] for item in families if item["history_depth"] == 1]
+    depth_one = [
+        item["source_family_id"]
+        for item in families
+        if history_depth_partition_class(item["history_depth"]) == "train_validation"
+    ]
     assignment = _ranked_partition(
         depth_one,
         (1.0 - config.validation_ratio, config.validation_ratio),
@@ -162,7 +204,7 @@ def _depth_assignment(
         {
             item["source_family_id"]: "test"
             for item in families
-            if item["history_depth"] == 2
+            if history_depth_partition_class(item["history_depth"]) == "test"
         }
     )
     return assignment
@@ -174,7 +216,8 @@ def _geometry_assignment(
     in_range = [
         item["source_family_id"]
         for item in families
-        if item["history_max_sketch_extent"] <= config.in_range_extent_max
+        if geometry_extent_partition_class(item["history_max_sketch_extent"], config)
+        == "train_validation"
     ]
     assignment = _ranked_partition(
         in_range,
@@ -187,7 +230,8 @@ def _geometry_assignment(
         {
             item["source_family_id"]: "test"
             for item in families
-            if item["history_max_sketch_extent"] >= config.extrapolation_extent_min
+            if geometry_extent_partition_class(item["history_max_sketch_extent"], config)
+            == "test"
         }
     )
     return assignment

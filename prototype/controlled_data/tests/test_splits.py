@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
 
 from prototype.controlled_data.config import GeneratorConfig
 from prototype.controlled_data.dataset import generate_corpus
-from prototype.controlled_data.splits import _ranked_partition, largest_remainder_counts
+from prototype.controlled_data.splits import (
+    OPERATION_SECONDARY_VALIDATION_TEMPLATES,
+    OPERATION_TEST_TEMPLATES,
+    OPERATION_TRAIN_VALIDATION_TEMPLATES,
+    SPLIT_POLICY_VERSION,
+    _ranked_partition,
+    geometry_extent_partition_class,
+    history_depth_partition_class,
+    largest_remainder_counts,
+    operation_template_partition_class,
+)
 
 
 class SplitManifestTests(unittest.TestCase):
@@ -56,6 +67,43 @@ class SplitManifestTests(unittest.TestCase):
                 (observed["train"], observed["validation"], observed["test"]),
                 counts,
             )
+
+    def test_public_split_policy_matches_frozen_manifest_assignments(self):
+        self.assertEqual(SPLIT_POLICY_VERSION, "controlled-data-splits-v1")
+        self.assertEqual(OPERATION_TRAIN_VALIDATION_TEMPLATES, ("E", "R", "EE", "RE"))
+        self.assertEqual(OPERATION_TEST_TEMPLATES, ("ER",))
+        self.assertEqual(OPERATION_SECONDARY_VALIDATION_TEMPLATES, ("RR",))
+        self.assertEqual(operation_template_partition_class("ER"), "test")
+        self.assertEqual(history_depth_partition_class(2), "test")
+        self.assertEqual(
+            geometry_extent_partition_class(2.5, GeneratorConfig(68)), "test"
+        )
+
+    def test_public_helpers_preserve_golden_manifest_bytes(self):
+        expected_sha256 = {
+            "geometry_extrapolation": (
+                "ef046516172b01868b9df16fc42a6dc15608f2751f674039b66161777d270809"
+            ),
+            "history_depth": (
+                "c1fd9c527d90281a84031e4916ff8ab597cf324bb874caa004c4669608091857"
+            ),
+            "iid": (
+                "d7130ae932484b0ad760e8a4b819c34e962f4f0957e4898c412f2946fe9f8eb9"
+            ),
+            "operation_template": (
+                "434adea9237f88e5b59f41c83287f9e2f3293dad281512f6e553bd93a96ab343"
+            ),
+        }
+        observed = {}
+        for name, manifest in self.manifests.items():
+            payload = json.dumps(
+                manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            observed[name] = hashlib.sha256(payload).hexdigest()
+        self.assertEqual(observed, expected_sha256)
 
     def test_each_family_is_assigned_once_and_variants_inherit_partition(self):
         for manifest in self.manifests.values():
