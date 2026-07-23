@@ -254,6 +254,22 @@ def _coverage_report(
             "sketch_extent_bands": _unique(items, "sketch_extent_band"),
             "extrusion_distances": _flattened_unique(items, "extrusion_distances"),
             "revolution_angles": _flattened_unique(items, "revolution_angles"),
+            "extent_order_relations": _unique(items, "extent_order_relation"),
+            "direction_relations": _unique(items, "direction_relation"),
+            "boolean_extent_relations": sorted(
+                {
+                    f"{item['boolean_modes'][1]}:{item['extent_order_relation']}"
+                    for item in items
+                    if len(item["boolean_modes"]) == 2
+                }
+            ),
+            "boolean_direction_relations": sorted(
+                {
+                    f"{item['boolean_modes'][1]}:{item['direction_relation']}"
+                    for item in items
+                    if len(item["boolean_modes"]) == 2
+                }
+            ),
         }
         for partition, items in sorted(by_partition.items())
     }

@@ -12,10 +12,14 @@ defined in the same sketch as its profile; and every later operation depends
 on the immediately preceding operation. The first operation uses `NEW_BODY`,
 and a second operation uses `JOIN` or `CUT`.
 
-Generated histories are schema-valid and serialization-round-trip-valid.
-Their `kernel_status` is `not_checked`: in particular, a `JOIN` or `CUT`
-record must not be described as an executable solid until a CAD kernel has
-evaluated it.
+Generated histories satisfy two distinct contracts. The representation
+validator establishes schema and serialization validity. Before construction,
+the generator also applies the versioned pure-Python analytical feasibility
+policy to exclude Boolean assignments known to be disconnected, ineffective,
+or destructive of the complete body. This executable-corpus contract is an
+analytical promise about the frozen builders, not a claim that a kernel has
+run: every generated record still has `kernel_status: "not_checked"` until an
+independent OpenCascade audit evaluates it.
 
 ## Identities and immutable corpus
 
@@ -67,20 +71,47 @@ secondary systematic-validation partition.
 The depth-one versus depth-two split is a toy, provisional version 1 benchmark.
 It does not replace the later longer-history experiment in the research plan.
 
+## Analytical Boolean feasibility
+
+`JOIN` and `CUT` use different geometric contracts. A `JOIN` may be valid
+without volumetric overlap when the two features share a positive-area face;
+it must remain one connected solid and add volume. A `CUT` must have
+positive-volume overlap and leave a positive-volume residual. The policy uses
+exact extrusion intervals and revolve sectors for `EE` and `RR`. For `ER` and
+`RE`, it combines exact orientation/sector tests with primitive-specific
+radial containment certificates and explicit non-containment witnesses.
+
+The classifier records structured reasons including duplicate or contained
+joins, boundary-only cuts, complete subtraction, and disconnected joins.
+Mixed cases that overlap but cannot be safely proved contained or
+non-contained are classified as `mixed_containment_not_certified` and are not
+generated. The status remains explicit rather than being folded into a generic
+rejection. No OpenCascade result affects selection, IDs, or corpus ordering;
+OpenCascade remains an independent post-generation check for implementation
+mistakes and kernel robustness.
+
 ## Bounded deterministic selection
 
-The complete default grid contains 180,900 physical families and 361,800
-encoding variants. Generation uses mixed-radix block indexing, five coverage
-anchors per `(operation template, extent band)` block, and a deterministic
-affine permutation to fill the requested bounded subset. It never constructs
-the complete Cartesian collection of `CADHistory` objects.
+The complete default raw grid contains 180,900 physical assignments. The
+analytical policy accepts 120,060 source families, corresponding to 240,120
+continuous/quantized variants. Generation enumerates raw mixed-radix indices,
+filters before constructing `CADHistory` objects or identities, and uses a
+deterministic affine permutation to fill a bounded request. It never
+materializes the Cartesian collection of complete histories.
 
-With the default grids, full split coverage requires 60 source families. This
-is calculated as five diagonal anchors in each of the twelve
-`(operation template, extent band)` blocks: five is the largest mandatory
-factor-domain size, six templates are emitted, and each has two extent bands.
-Custom grids recalculate the minimum. Smaller requests are rejected rather
-than silently weakening held-out-factor coverage.
+Accepted coverage anchors explicitly cover primitive family, reference plane,
+direction values, numerical parameter grids, and—within every depth-two
+template/band block—all six combinations of `JOIN`/`CUT` with smaller, equal,
+and larger second-sketch extents. Same/opposite direction relations remain
+represented wherever feasible.
+
+With the default grids, full coverage requires 68 source families. This is
+derived as five anchors for each of the four depth-one template/band blocks
+and six relational anchors for each of the eight depth-two template/band
+blocks: `4 * 5 + 8 * 6 = 68`. Custom grids recalculate the marginal maximum,
+while the six declared Boolean/extent tokens remain mandatory. Smaller
+requests are rejected rather than silently weakening held-out-factor
+coverage.
 
 ## CLI
 

@@ -9,7 +9,8 @@ import math
 from typing import Any
 
 
-GENERATOR_VERSION = "1.0"
+GENERATOR_VERSION = "1.1"
+FEASIBILITY_POLICY_VERSION = "analytical-boolean-v1"
 CANONICALIZATION_VERSION = "cad-history-json-v1"
 REPRESENTATION_SCHEMA_VERSION = 1
 PHYSICAL_ID_DECIMAL_PLACES = 12
@@ -134,7 +135,7 @@ def _require_quantizable(value: float, scale: float, name: str) -> None:
 
 
 def required_coverage_family_count(config: GeneratorConfig) -> int:
-    """Families needed by diagonal anchors in all template/band blocks."""
+    """Families needed by factor and relational anchors in every block."""
 
     total = 0
     for template in ("E", "R", "EE", "ER", "RE", "RR"):
@@ -146,7 +147,11 @@ def required_coverage_family_count(config: GeneratorConfig) -> int:
             3,  # primitive families
             3,  # reference planes
             2,  # both direction values
-            2 if len(template) == 2 else 1,  # later JOIN/CUT where applicable
+            (
+                len(("join", "cut")) * len(("smaller", "equal", "larger"))
+                if len(template) == 2
+                else 1
+            ),  # Boolean-mode by extent-order relational tokens
             *parameter_sizes,
         )
         total += 2 * anchors_per_band  # in-range and extrapolation blocks

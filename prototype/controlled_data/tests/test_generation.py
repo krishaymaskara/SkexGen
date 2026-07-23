@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from collections import Counter
+import hashlib
 import json
 import getpass
 from pathlib import Path
@@ -17,6 +19,7 @@ from prototype.representation.validation import validate_history
 
 from prototype.controlled_data.builders import build_history
 from prototype.controlled_data.config import (
+    FEASIBILITY_POLICY_VERSION,
     PHYSICAL_ID_DECIMAL_PLACES,
     ConfigurationError,
     GeneratorConfig,
@@ -25,13 +28,30 @@ from prototype.controlled_data.config import (
 from prototype.controlled_data.dataset import GenerationError, generate_corpus
 from prototype.controlled_data.factors import (
     _coverage_anchor_indices,
+    _coverage_tokens,
     _mixed_radix_decode,
     _mixed_radix_encode,
     _permuted_index,
     factor_blocks,
+    feasibility_status_counts,
+    feasible_block_counts,
     select_sources,
     total_candidate_count,
+    total_raw_candidate_count,
 )
+from prototype.controlled_data.factors import (
+    ExtentBand,
+    OperationTemplate,
+    PhysicalSource,
+    PrimitiveFamily,
+    ReferencePlane,
+)
+from prototype.controlled_data.feasibility import (
+    direction_relation,
+    evaluate_feasibility,
+    extent_order_relation,
+)
+from prototype.representation.model import BooleanMode, Direction
 from prototype.controlled_data.identity import (
     canonical_physical_source_bytes,
     sample_id,
@@ -46,7 +66,7 @@ class GeneratedCorpusTests(unittest.TestCase):
         root = Path(cls.temporary.name)
         cls.first = root / "first"
         cls.second = root / "second"
-        cls.config = GeneratorConfig(num_source_families=60, seed=17)
+        cls.config = GeneratorConfig(num_source_families=68, seed=17)
         generate_corpus(cls.first, cls.config)
         generate_corpus(cls.second, cls.config)
         cls.corpus = json.loads((cls.first / "corpus_manifest.json").read_text())
@@ -56,10 +76,10 @@ class GeneratedCorpusTests(unittest.TestCase):
         cls.temporary.cleanup()
 
     def test_requested_family_count_produces_exactly_two_variants_each(self):
-        self.assertEqual(self.corpus["total_source_family_count"], 60)
-        self.assertEqual(self.corpus["total_sample_variant_count"], 120)
-        self.assertEqual(len(self.corpus["families"]), 60)
-        self.assertEqual(len(self.corpus["samples"]), 120)
+        self.assertEqual(self.corpus["total_source_family_count"], 68)
+        self.assertEqual(self.corpus["total_sample_variant_count"], 136)
+        self.assertEqual(len(self.corpus["families"]), 68)
+        self.assertEqual(len(self.corpus["samples"]), 136)
         for family in self.corpus["families"]:
             self.assertEqual(len(family["sample_ids"]), 2)
             variants = [
@@ -111,6 +131,7 @@ class GeneratedCorpusTests(unittest.TestCase):
     def test_corpus_reproducibility_metadata_is_complete(self):
         expected = {
             "generator_version",
+            "feasibility_policy_version",
             "representation_schema_version",
             "canonicalization_version",
             "normalized_configuration",
@@ -118,8 +139,15 @@ class GeneratedCorpusTests(unittest.TestCase):
             "generation_seed",
             "total_source_family_count",
             "total_sample_variant_count",
+            "candidate_source_family_count",
+            "raw_candidate_source_family_count",
         }
         self.assertTrue(expected.issubset(self.corpus))
+        self.assertEqual(
+            self.corpus["feasibility_policy_version"], FEASIBILITY_POLICY_VERSION
+        )
+        self.assertEqual(self.corpus["candidate_source_family_count"], 120_060)
+        self.assertEqual(self.corpus["raw_candidate_source_family_count"], 180_900)
         serialized = (self.first / "corpus_manifest.json").read_text()
         self.assertNotIn(str(self.first), serialized)
         self.assertNotIn("timestamp", serialized)
@@ -193,8 +221,8 @@ class GeneratedCorpusTests(unittest.TestCase):
         self.assertEqual(sample_id(integer_history), sample_id(float_history))
 
     def test_ids_are_independent_of_seed_selection_and_path_metadata(self):
-        block_seed_one = factor_blocks(GeneratorConfig(60, seed=1))[0]
-        block_seed_two = factor_blocks(GeneratorConfig(60, seed=999))[0]
+        block_seed_one = factor_blocks(GeneratorConfig(68, seed=1))[0]
+        block_seed_two = factor_blocks(GeneratorConfig(68, seed=999))[0]
         source_one = block_seed_one.decode(42)
         source_two = block_seed_two.decode(42)
         self.assertEqual(source_one, source_two)
@@ -309,24 +337,25 @@ class ConfigurationTests(unittest.TestCase):
         cases = (
             GeneratorConfig(num_source_families=True),
             GeneratorConfig(num_source_families=0),
-            GeneratorConfig(num_source_families=59),
-            GeneratorConfig(num_source_families=60, sketch_extents=(1.0, float("inf"), 2.5)),
-            GeneratorConfig(num_source_families=60, iid_ratios=(0.8, 0.3, -0.1)),
+            GeneratorConfig(num_source_families=67),
+            GeneratorConfig(num_source_families=68, sketch_extents=(1.0, float("inf"), 2.5)),
+            GeneratorConfig(num_source_families=68, iid_ratios=(0.8, 0.3, -0.1)),
         )
         for config in cases:
             with self.subTest(config=config), self.assertRaises(ConfigurationError):
                 config.validate()
 
     def test_default_candidate_space_size_is_exact(self):
-        config = GeneratorConfig(60)
+        config = GeneratorConfig(68)
         blocks = factor_blocks(config)
         self.assertEqual([block.size for block in blocks[:4]], [270, 180, 270, 180])
         self.assertEqual([block.size for block in blocks[4:]], [16_200, 28_800] * 4)
         self.assertEqual(sum(block.size for block in blocks), 180_900)
-        self.assertEqual(total_candidate_count(config), 180_900)
+        self.assertEqual(total_raw_candidate_count(config), 180_900)
+        self.assertEqual(total_candidate_count(config), 120_060)
 
     def test_twelve_decimal_normalization_cannot_merge_accepted_grid_values(self):
-        config = GeneratorConfig(60)
+        config = GeneratorConfig(68)
         for values in (
             config.sketch_extents,
             config.extrusion_distances,
@@ -337,17 +366,17 @@ class ConfigurationTests(unittest.TestCase):
             self.assertGreater(min(abs(left - right) for left in values for right in values if left != right), 1e-12)
         with self.assertRaisesRegex(ConfigurationError, "physical-ID normalization"):
             GeneratorConfig(
-                60,
+                68,
                 extrusion_distances=(1.0, 1.0 + 1e-13),
             ).validate()
 
     def test_selection_count_and_order_are_stable(self):
-        config = GeneratorConfig(60, seed=9)
+        config = GeneratorConfig(68, seed=9)
         self.assertEqual(select_sources(config), select_sources(config))
-        self.assertEqual(len(select_sources(config)), 60)
+        self.assertEqual(len(select_sources(config)), 68)
 
     def test_affine_permutation_and_anchor_edge_cases(self):
-        config = GeneratorConfig(60, seed=3)
+        config = GeneratorConfig(68, seed=3)
         block = factor_blocks(config)[0]
         indices = [_permuted_index(block, index, config) for index in range(block.size)]
         self.assertEqual(set(indices), set(range(block.size)))
@@ -370,7 +399,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_mixed_radix_round_trips_first_last_and_random_indices(self):
         generator = random.Random(42)
-        for block in factor_blocks(GeneratorConfig(60)):
+        for block in factor_blocks(GeneratorConfig(68)):
             indices = [0, block.size - 1]
             indices.extend(generator.randrange(block.size) for _ in range(10))
             for index in indices:
@@ -382,10 +411,147 @@ class ConfigurationTests(unittest.TestCase):
             _mixed_radix_decode(0, (1, 0))
 
     def test_coverage_minimum_is_derived_from_unique_block_anchors(self):
-        config = GeneratorConfig(60)
+        config = GeneratorConfig(68)
         blocks = factor_blocks(config)
         anchors = [_coverage_anchor_indices(block, config) for block in blocks]
         self.assertEqual(required_coverage_family_count(config), sum(map(len, anchors)))
-        self.assertEqual(required_coverage_family_count(config), 60)
+        self.assertEqual(required_coverage_family_count(config), 68)
         self.assertTrue(all(len(items) == len(set(items)) for items in anchors))
-        self.assertEqual(len(select_sources(config)), 60)
+        self.assertEqual(len(select_sources(config)), 68)
+
+    def test_exact_feasible_counts_are_derived_from_the_grid(self):
+        config = GeneratorConfig(68)
+        self.assertEqual(
+            feasible_block_counts(config),
+            {
+                "E:in_range": 270,
+                "E:extrapolation": 180,
+                "R:in_range": 270,
+                "R:extrapolation": 180,
+                "EE:in_range": 8_910,
+                "EE:extrapolation": 16_740,
+                "ER:in_range": 12_096,
+                "ER:extrapolation": 20_484,
+                "RE:in_range": 12_096,
+                "RE:extrapolation": 20_484,
+                "RR:in_range": 9_774,
+                "RR:extrapolation": 18_576,
+            },
+        )
+        self.assertEqual(
+            feasibility_status_counts(config),
+            {
+                "accepted": 120_060,
+                "cut_complete_subtraction": 12_408,
+                "cut_no_positive_volume_overlap": 35_100,
+                "join_duplicate_geometry": 990,
+                "join_tool_contained": 11_418,
+                "mixed_containment_not_certified": 924,
+            },
+        )
+
+    def test_feasible_grid_preserves_mode_extent_and_direction_diversity(self):
+        modes = Counter()
+        relations = Counter()
+        directions = Counter()
+        for block in factor_blocks(GeneratorConfig(68)):
+            for index in range(block.size):
+                item = block.decode(index)
+                if not evaluate_feasibility(item).accepted:
+                    continue
+                mode = (
+                    BooleanMode.NEW_BODY.value
+                    if item.later_boolean_mode is None
+                    else item.later_boolean_mode.value
+                )
+                modes[mode] += 1
+                relations[(mode, extent_order_relation(item))] += 1
+                directions[(mode, direction_relation(item))] += 1
+        self.assertEqual(modes, {"join": 77_130, "cut": 42_030, "new_body": 900})
+        self.assertEqual(
+            relations,
+            {
+                ("join", "smaller"): 26_280,
+                ("join", "equal"): 14_850,
+                ("join", "larger"): 36_000,
+                ("cut", "smaller"): 21_960,
+                ("cut", "equal"): 7_830,
+                ("cut", "larger"): 12_240,
+                ("new_body", "single"): 900,
+            },
+        )
+        self.assertEqual(
+            directions,
+            {
+                ("join", "same"): 36_252,
+                ("join", "opposite"): 40_878,
+                ("cut", "same"): 18_252,
+                ("cut", "opposite"): 23_778,
+                ("new_body", "single"): 900,
+            },
+        )
+
+    def test_coverage_anchors_are_accepted_unique_and_relationally_complete(self):
+        config = GeneratorConfig(68)
+        expected = {
+            (mode, relation)
+            for mode in ("join", "cut")
+            for relation in ("smaller", "equal", "larger")
+        }
+        for block in factor_blocks(config):
+            indices = _coverage_anchor_indices(block, config)
+            self.assertEqual(len(indices), len(set(indices)))
+            selected = [block.decode(index) for index in indices]
+            expected_tokens = set()
+            for index in range(block.size):
+                item = block.decode(index)
+                if evaluate_feasibility(item).accepted:
+                    expected_tokens.update(_coverage_tokens(item))
+            observed_tokens = set()
+            for item in selected:
+                observed_tokens.update(_coverage_tokens(item))
+            self.assertEqual(observed_tokens, expected_tokens)
+            if len(block.template.operations) == 2:
+                self.assertEqual(
+                    {
+                        (item.later_boolean_mode.value, extent_order_relation(item))
+                        for item in selected
+                    },
+                    expected,
+                )
+
+    def test_deterministic_rejection_never_selects_an_infeasible_candidate(self):
+        first = select_sources(GeneratorConfig(100, seed=31))
+        second = select_sources(GeneratorConfig(100, seed=31))
+        self.assertEqual(first, second)
+        self.assertTrue(all(evaluate_feasibility(item).accepted for item in first))
+
+    def test_accepted_preexisting_history_keeps_identity_and_canonical_json(self):
+        item = PhysicalSource(
+            OperationTemplate.EE,
+            PrimitiveFamily.RECTANGLE_LINES,
+            ReferencePlane.XY,
+            (1.0, 1.5),
+            (Direction.POSITIVE, Direction.NEGATIVE),
+            BooleanMode.JOIN,
+            (1.0, 1.0),
+            ExtentBand.IN_RANGE,
+        )
+        expected = {
+            GeometryEncoding.CONTINUOUS: (
+                "sf_d9e863f8c8686eaccf92b0d68db9790339c8a27f3b9c5c263cee5b71e1ee0f4e",
+                "sv_66ea908d271ae821ff9b2582f82f0b53d53ee256aa79592f3c02d1b8c3735d90",
+                "ed683bd50b71da9157a92514d4ba421818b28f09fe3cfc47aac67e43084257f4",
+            ),
+            GeometryEncoding.QUANTIZED: (
+                "sf_d9e863f8c8686eaccf92b0d68db9790339c8a27f3b9c5c263cee5b71e1ee0f4e",
+                "sv_3c3b3a889ffbf03fbafe26117eaeeae039aa8c009282c078261404331a83636c",
+                "fac7f7358381639407c199724fd9600f421e4e991de711b6265261e8fec91e31",
+            ),
+        }
+        for encoding, golden in expected.items():
+            history = build_history(item, encoding)
+            payload = history_to_json(history)
+            self.assertEqual(source_family_id(history), golden[0])
+            self.assertEqual(sample_id(history), golden[1])
+            self.assertEqual(hashlib.sha256(payload.encode("utf-8")).hexdigest(), golden[2])

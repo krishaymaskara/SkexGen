@@ -11,6 +11,11 @@ import math
 from prototype.representation.model import BooleanMode, Direction
 
 from .config import ConfigurationError, GeneratorConfig, required_coverage_family_count
+from .feasibility import (
+    direction_relation,
+    evaluate_feasibility,
+    extent_order_relation,
+)
 
 
 class OperationTemplate(str, Enum):
@@ -91,6 +96,8 @@ class PhysicalSource:
             "extrusion_distances": distances,
             "revolution_angles": angles,
             "reference_plane": self.reference_plane.value,
+            "extent_order_relation": extent_order_relation(self),
+            "direction_relation": direction_relation(self),
         }
 
 
@@ -183,7 +190,7 @@ def select_sources(config: GeneratorConfig) -> tuple[PhysicalSource, ...]:
 
     config.validate()
     blocks = factor_blocks(config)
-    total = sum(block.size for block in blocks)
+    total = total_candidate_count(config)
     if config.num_source_families > total:
         raise ConfigurationError(
             f"requested {config.num_source_families} source families but the factor space contains {total}"
@@ -198,7 +205,12 @@ def select_sources(config: GeneratorConfig) -> tuple[PhysicalSource, ...]:
     if config.require_full_coverage:
         for block in blocks:
             for index in _coverage_anchor_indices(block, config):
-                selected[(block.name, index)] = block.decode(index)
+                source = block.decode(index)
+                if not evaluate_feasibility(source).accepted:
+                    raise ConfigurationError(
+                        f"coverage anchor {block.name}[{index}] is not feasible"
+                    )
+                selected[(block.name, index)] = source
 
     cursors = {block.name: 0 for block in blocks}
     while len(selected) < config.num_source_families:
@@ -211,8 +223,9 @@ def select_sources(config: GeneratorConfig) -> tuple[PhysicalSource, ...]:
                 index = _permuted_index(block, cursor, config)
                 cursor += 1
                 key = (block.name, index)
-                if key not in selected:
-                    selected[key] = block.decode(index)
+                source = block.decode(index)
+                if key not in selected and evaluate_feasibility(source).accepted:
+                    selected[key] = source
                     made_progress = True
                     break
             cursors[block.name] = cursor
@@ -225,55 +238,158 @@ def select_sources(config: GeneratorConfig) -> tuple[PhysicalSource, ...]:
 
 
 def total_candidate_count(config: GeneratorConfig) -> int:
+    """Return the exact accepted factor-space size by deterministic enumeration."""
+
+    return sum(
+        1
+        for block in factor_blocks(config)
+        for index in range(block.size)
+        if evaluate_feasibility(block.decode(index)).accepted
+    )
+
+
+def total_raw_candidate_count(config: GeneratorConfig) -> int:
     return sum(block.size for block in factor_blocks(config))
+
+
+def feasibility_status_counts(config: GeneratorConfig) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for block in factor_blocks(config):
+        for index in range(block.size):
+            status = evaluate_feasibility(block.decode(index)).status.value
+            result[status] = result.get(status, 0) + 1
+    return dict(sorted(result.items()))
+
+
+def feasible_block_counts(config: GeneratorConfig) -> dict[str, int]:
+    return {
+        block.name: sum(
+            evaluate_feasibility(block.decode(index)).accepted
+            for index in range(block.size)
+        )
+        for block in factor_blocks(config)
+    }
 
 
 def _coverage_anchor_indices(
     block: FactorBlock, config: GeneratorConfig
 ) -> tuple[int, ...]:
-    """Five diagonal anchors cover every size-five numerical grid per block."""
+    """Choose accepted anchors covering marginals and Boolean/extent relations."""
 
     if block.size == 0:
         return ()
-    target_count = min(
-        max(
-            len(PrimitiveFamily),
-            len(ReferencePlane),
-            2,
-            2 if len(block.template.operations) == 2 else 1,
-            *(len(domain) for domain in block.parameter_domains),
-        ),
-        block.size,
-    )
-    digest = hashlib.sha256(
-        b"controlled-data-anchor-v1\0"
-        + config.canonical_bytes()
-        + b"\0"
-        + block.name.encode("ascii")
-    ).digest()
-    offsets = tuple(digest[index] for index in range(len(block.radices) + len(block.parameter_domains)))
+    target_count = min(_coverage_anchor_count(block), block.size)
+    accepted_items: list[tuple[int, PhysicalSource]] = []
+    for index in range(block.size):
+        source = block.decode(index)
+        if evaluate_feasibility(source).accepted:
+            accepted_items.append((index, source))
+    accepted = tuple(accepted_items)
+    if len(accepted) < target_count:
+        raise ConfigurationError(
+            f"{block.name} has only {len(accepted)} feasible candidates for "
+            f"{target_count} coverage anchors"
+        )
+    universe: set[tuple[object, ...]] = set()
+    for _, source in accepted:
+        universe.update(_coverage_tokens(source))
+
+    depth = len(block.template.operations)
+    if depth == 1:
+        groups = tuple(accepted for _ in range(target_count))
+    else:
+        group_keys = tuple(
+            (mode.value, relation)
+            for mode in (BooleanMode.JOIN, BooleanMode.CUT)
+            for relation in ("smaller", "equal", "larger")
+        )
+        relational_groups = tuple(
+            tuple(
+                item
+                for item in accepted
+                if item[1].later_boolean_mode is not None
+                and item[1].later_boolean_mode.value == mode
+                and extent_order_relation(item[1]) == relation
+            )
+            for mode, relation in group_keys
+        )
+        if any(not group for group in relational_groups):
+            raise ConfigurationError(
+                f"{block.name} lacks an accepted Boolean/extent relational anchor"
+            )
+        groups = relational_groups + tuple(
+            accepted for _ in range(target_count - len(relational_groups))
+        )
+
     result: list[int] = []
-    seen: set[int] = set()
-    attempt = 0
-    max_attempts = max(20, block.size)
-    while len(result) < target_count and attempt < max_attempts:
-        digits = list(
-            (attempt + offsets[position]) % radix
-            for position, radix in enumerate(block.radices)
-        )
-        desired_parameters = tuple(
-            domain[(attempt + offsets[len(block.radices) + position]) % len(domain)]
-            for position, domain in enumerate(block.parameter_domains)
-        )
-        digits[5] = block.parameters.index(desired_parameters)
-        index = _mixed_radix_encode(tuple(digits), block.radices)
-        if index not in seen:
-            seen.add(index)
-            result.append(index)
-        attempt += 1
-    if len(result) != target_count:
+    covered: set[tuple[object, ...]] = set()
+    for group in groups:
+        candidates = (item for item in group if item[0] not in result)
+        try:
+            index, source = max(
+                candidates,
+                key=lambda item: (
+                    len(_coverage_tokens(item[1]) - covered),
+                    -item[0],
+                ),
+            )
+        except ValueError as exc:
+            raise ConfigurationError(
+                f"could not construct unique accepted coverage anchors for {block.name}"
+            ) from exc
+        result.append(index)
+        covered.update(_coverage_tokens(source))
+
+    if len(result) != target_count or len(result) != len(set(result)):
         raise ConfigurationError(f"could not construct unique coverage anchors for {block.name}")
+    missing = universe - covered
+    if missing:
+        raise ConfigurationError(
+            f"coverage anchors for {block.name} miss declared tokens: "
+            f"{sorted(missing, key=repr)!r}"
+        )
     return tuple(result)
+
+
+def _coverage_anchor_count(block: FactorBlock) -> int:
+    relational = 6 if len(block.template.operations) == 2 else 1
+    return max(
+        len(PrimitiveFamily),
+        len(ReferencePlane),
+        2,
+        relational,
+        *(len(domain) for domain in block.parameter_domains),
+    )
+
+
+def _coverage_tokens(source: PhysicalSource) -> set[tuple[object, ...]]:
+    tokens: set[tuple[object, ...]] = {
+        ("primitive_family", source.primitive_family.value),
+        ("reference_plane", source.reference_plane.value),
+    }
+    tokens.update(("direction_value", item.value) for item in source.directions)
+    tokens.update(
+        ("operation_parameter", operation, value)
+        for operation, value in zip(
+            source.operation_template.operations, source.operation_parameters
+        )
+    )
+    if source.later_boolean_mode is not None:
+        tokens.add(
+            (
+                "boolean_extent_relation",
+                source.later_boolean_mode.value,
+                extent_order_relation(source),
+            )
+        )
+        tokens.add(
+            (
+                "boolean_direction_relation",
+                source.later_boolean_mode.value,
+                direction_relation(source),
+            )
+        )
+    return tokens
 
 
 def _permuted_index(block: FactorBlock, position: int, config: GeneratorConfig) -> int:

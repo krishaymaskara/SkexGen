@@ -16,12 +16,18 @@ from prototype.representation.validation import validate_history
 from .builders import build_history
 from .config import (
     CANONICALIZATION_VERSION,
+    FEASIBILITY_POLICY_VERSION,
     GENERATOR_VERSION,
     REPRESENTATION_SCHEMA_VERSION,
     ConfigurationError,
     GeneratorConfig,
 )
-from .factors import PhysicalSource, select_sources, total_candidate_count
+from .factors import (
+    PhysicalSource,
+    select_sources,
+    total_candidate_count,
+    total_raw_candidate_count,
+)
 from .identity import canonical_physical_source_bytes, sample_id, source_family_id
 from .splits import build_split_manifests
 
@@ -123,12 +129,14 @@ def generate_corpus(
             manifest["corpus_configuration_sha256"] = config.sha256()
         corpus_manifest = {
             "generator_version": GENERATOR_VERSION,
+            "feasibility_policy_version": FEASIBILITY_POLICY_VERSION,
             "representation_schema_version": REPRESENTATION_SCHEMA_VERSION,
             "canonicalization_version": CANONICALIZATION_VERSION,
             "normalized_configuration": config.normalized(),
             "configuration_sha256": config.sha256(),
             "generation_seed": config.seed,
             "candidate_source_family_count": total_candidate_count(config),
+            "raw_candidate_source_family_count": total_raw_candidate_count(config),
             "total_source_family_count": len(families),
             "total_sample_variant_count": len(sample_records),
             "families": sorted(

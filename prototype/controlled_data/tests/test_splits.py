@@ -16,7 +16,7 @@ class SplitManifestTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory()
         cls.root = Path(cls.temporary.name) / "corpus"
-        generate_corpus(cls.root, GeneratorConfig(60, seed=23))
+        generate_corpus(cls.root, GeneratorConfig(68, seed=23))
         cls.corpus = json.loads((cls.root / "corpus_manifest.json").read_text())
         cls.manifests = {
             path.stem: json.loads(path.read_text())
@@ -32,7 +32,7 @@ class SplitManifestTests(unittest.TestCase):
 
     def test_iid_counts_are_exact_largest_remainder_allocations(self):
         manifest = self.manifests["iid"]
-        self.assertEqual(manifest["partition_counts"], {"test": 6, "train": 48, "validation": 6})
+        self.assertEqual(manifest["partition_counts"], {"test": 7, "train": 54, "validation": 7})
         self.assertEqual(largest_remainder_counts(7, (0.8, 0.1, 0.1)), (5, 1, 1))
         self.assertEqual(largest_remainder_counts(5, (0.8, 0.1, 0.1)), (4, 1, 0))
         expected = {
@@ -60,9 +60,9 @@ class SplitManifestTests(unittest.TestCase):
     def test_each_family_is_assigned_once_and_variants_inherit_partition(self):
         for manifest in self.manifests.values():
             families = manifest["families"]
-            self.assertEqual(len(families), 60)
+            self.assertEqual(len(families), 68)
             assignments = {item["source_family_id"]: item["partition"] for item in families}
-            self.assertEqual(len(assignments), 60)
+            self.assertEqual(len(assignments), 68)
             variants_by_family: dict[str, list[dict]] = {}
             for sample in manifest["samples"]:
                 variants_by_family.setdefault(sample["source_family_id"], []).append(sample)
@@ -128,6 +128,10 @@ class SplitManifestTests(unittest.TestCase):
             "sketch_extent_bands",
             "extrusion_distances",
             "revolution_angles",
+            "extent_order_relations",
+            "direction_relations",
+            "boolean_extent_relations",
+            "boolean_direction_relations",
         }
         for name in ("operation_template", "history_depth", "geometry_extrapolation"):
             coverage = self.manifests[name]["coverage"]
