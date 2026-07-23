@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TypeAlias
+from typing import Union
 
 
 class NodeType(str, Enum):
@@ -128,9 +128,14 @@ class RevolveNode:
     node_type: NodeType = field(init=False, default=NodeType.REVOLVE)
 
 
-GraphNode: TypeAlias = (
-    ReferencePlaneNode | SketchNode | ProfileNode | AxisNode | ExtrudeNode | RevolveNode
-)
+GraphNode = Union[
+    ReferencePlaneNode,
+    SketchNode,
+    ProfileNode,
+    AxisNode,
+    ExtrudeNode,
+    RevolveNode,
+]
 
 
 @dataclass(frozen=True)
@@ -189,15 +194,15 @@ class RevolveGeometry:
     angle_degrees: NumericValue
 
 
-GeometryPayload: TypeAlias = (
-    PlaneGeometry
-    | LineGeometry
-    | ArcGeometry
-    | CircleGeometry
-    | AxisGeometry
-    | ExtrudeGeometry
-    | RevolveGeometry
-)
+GeometryPayload = Union[
+    PlaneGeometry,
+    LineGeometry,
+    ArcGeometry,
+    CircleGeometry,
+    AxisGeometry,
+    ExtrudeGeometry,
+    RevolveGeometry,
+]
 
 
 @dataclass(frozen=True)
@@ -226,4 +231,3 @@ class CADHistory:
     schema_version: int
     structure: StructureGraph
     geometry: GeometryStore
-

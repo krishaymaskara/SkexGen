@@ -181,7 +181,7 @@ def _verify_written_tree(
             raise GenerationError("written corpus manifest failed verification")
     for sample in corpus_manifest["samples"]:
         payload = (root / sample["relative_json_path"]).read_text(encoding="utf-8")
-        canonical = payload.removesuffix("\n")
+        canonical = payload[:-1] if payload.endswith("\n") else payload
         restored = history_from_json(canonical)
         if history_to_json(restored) != canonical or sample_id(restored) != sample["sample_id"]:
             raise GenerationError(f"written sample failed verification: {sample['sample_id']}")
