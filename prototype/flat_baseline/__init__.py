@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __all__ = (
     "FlatBaselineConfig",
+    "TrainingConfig",
     "FlatMixedVQModel",
     "flat_mixed_vq_loss",
 )
@@ -16,6 +17,10 @@ def __getattr__(name):
         from .config import FlatBaselineConfig
 
         return FlatBaselineConfig
+    if name == "TrainingConfig":
+        from .training_config import TrainingConfig
+
+        return TrainingConfig
     if name == "FlatMixedVQModel":
         from .model import FlatMixedVQModel
 

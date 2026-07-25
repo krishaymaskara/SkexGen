@@ -13,6 +13,7 @@ from torch.nn import functional as F
 class VQOutput:
     quantized: torch.Tensor
     loss: torch.Tensor
+    per_example_loss: torch.Tensor
     indices: torch.Tensor
     assignment_counts: torch.Tensor
     active_code_count: torch.Tensor
@@ -80,9 +81,10 @@ class EMAVectorQuantizer(nn.Module):
                     self.ema_weight / smoothed.unsqueeze(1).clamp_min(self.epsilon)
                 )
 
-        loss = self.commitment_cost * F.mse_loss(
-            inputs, quantized.detach()
-        )
+        per_example_loss = self.commitment_cost * (
+            inputs - quantized.detach()
+        ).pow(2).reshape(inputs.size(0), -1).mean(dim=1)
+        loss = per_example_loss.mean()
         straight_through = inputs + (quantized - inputs).detach()
         probabilities = counts.to(inputs.dtype) / max(flat_indices.numel(), 1)
         nonzero = probabilities > 0
@@ -93,6 +95,7 @@ class EMAVectorQuantizer(nn.Module):
         return VQOutput(
             straight_through.contiguous(),
             loss,
+            per_example_loss,
             flat_indices.view(inputs.shape[:-1]),
             counts,
             active,

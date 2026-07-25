@@ -55,6 +55,7 @@ class CompatibilityTests(unittest.TestCase):
             package.__all__,
             (
                 "FlatBaselineConfig",
+                "TrainingConfig",
                 "FlatMixedVQModel",
                 "flat_mixed_vq_loss",
             ),

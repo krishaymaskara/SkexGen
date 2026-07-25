@@ -102,6 +102,7 @@ class ForwardTests(unittest.TestCase):
         self.assertEqual(
             output.assignment_counts.shape, (self.config.codebook_size,)
         )
+        self.assertEqual(output.vq_per_example_loss.shape, (batch_size,))
         for scalar in (
             output.vq_loss,
             output.active_code_count,

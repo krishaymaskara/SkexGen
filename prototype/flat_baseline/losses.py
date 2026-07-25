@@ -18,6 +18,7 @@ class FlatMixedVQLoss:
     edge_type: torch.Tensor
     operation_pointer: torch.Tensor
     vq_commitment: torch.Tensor
+    per_example: dict
 
     def as_dict(self):
         return {
@@ -85,91 +86,136 @@ def dense_edge_targets(target, node_count):
 
 
 def flat_mixed_vq_loss(output, target, config):
-    """Return independently normalized named components and their weighted sum."""
+    """Return scalar means plus exact independently normalized example losses."""
 
     node_mask = target["node_mask"]
-    node_type = _selected_cross_entropy(
+    per_node_type = _per_example_selected_cross_entropy(
         output.node_type_logits, target["node_type_ids"], node_mask
     )
-    categorical_parts = tuple(
-        _selected_cross_entropy(
+    per_categorical_parts = tuple(
+        _per_example_selected_cross_entropy(
             logits,
             target["categorical_attributes"][..., index],
             node_mask,
         )
         for index, logits in enumerate(output.categorical_logits)
     )
-    categorical = torch.stack(categorical_parts).mean()
+    per_categorical = torch.stack(per_categorical_parts).mean(dim=0)
 
     applicable = target["geometry_mask"] & node_mask.unsqueeze(-1)
-    if applicable.any():
-        geometry = F.smooth_l1_loss(
-            output.geometry[applicable],
-            target["geometry"][applicable],
-            reduction="mean",
-        )
-    else:
-        geometry = output.geometry.sum() * 0.0
+    per_geometry = _per_example_smooth_l1(
+        output.geometry, target["geometry"], applicable
+    )
 
     presence_target, edge_type_target, valid_pairs = dense_edge_targets(
         target, output.edge_presence_logits.size(1)
     )
     positives = valid_pairs & presence_target
     negatives = valid_pairs & ~presence_target
-    presence_parts = []
-    if positives.any():
-        presence_parts.append(
-            F.binary_cross_entropy_with_logits(
-                output.edge_presence_logits[positives],
-                torch.ones_like(output.edge_presence_logits[positives]),
-            )
-        )
-    if negatives.any():
-        presence_parts.append(
-            F.binary_cross_entropy_with_logits(
-                output.edge_presence_logits[negatives],
-                torch.zeros_like(output.edge_presence_logits[negatives]),
-            )
-        )
-    edge_presence = (
-        torch.stack(presence_parts).mean()
-        if presence_parts
-        else output.edge_presence_logits.sum() * 0.0
+    per_edge_presence = _per_example_balanced_presence(
+        output.edge_presence_logits, positives, negatives
     )
-    edge_type = _selected_cross_entropy(
+    per_edge_type = _per_example_selected_cross_entropy(
         output.edge_type_logits, edge_type_target, positives
     )
 
     operation_count = target["operation_sequence"].size(1)
     pointer_logits = output.operation_pointer_logits[:, :operation_count]
-    operation_pointer = _selected_cross_entropy(
+    per_operation_pointer = _per_example_selected_cross_entropy(
         pointer_logits,
         target["operation_sequence"],
         target["operation_mask"],
     )
-    vq = output.vq_loss
-    total = (
-        config.node_type_loss_weight * node_type
-        + config.categorical_loss_weight * categorical
-        + config.geometry_loss_weight * geometry
-        + config.edge_presence_loss_weight * edge_presence
-        + config.edge_type_loss_weight * edge_type
-        + config.operation_pointer_loss_weight * operation_pointer
-        + config.vq_loss_weight * vq
+    per_vq = output.vq_per_example_loss
+    batch_size = node_mask.size(0)
+    if per_vq.dim() != 1 or per_vq.numel() != batch_size:
+        raise ValueError("vq_per_example_loss must have shape [B]")
+    per_total = (
+        config.node_type_loss_weight * per_node_type
+        + config.categorical_loss_weight * per_categorical
+        + config.geometry_loss_weight * per_geometry
+        + config.edge_presence_loss_weight * per_edge_presence
+        + config.edge_type_loss_weight * per_edge_type
+        + config.operation_pointer_loss_weight * per_operation_pointer
+        + config.vq_loss_weight * per_vq
     )
+    per_example = {
+        "total": per_total,
+        "node_type": per_node_type,
+        "categorical_attributes": per_categorical,
+        "geometry": per_geometry,
+        "edge_presence": per_edge_presence,
+        "edge_type": per_edge_type,
+        "operation_pointer": per_operation_pointer,
+        "vq_commitment": per_vq,
+    }
     return FlatMixedVQLoss(
-        total,
-        node_type,
-        categorical,
-        geometry,
-        edge_presence,
-        edge_type,
-        operation_pointer,
-        vq,
+        per_total.mean(),
+        per_node_type.mean(),
+        per_categorical.mean(),
+        per_geometry.mean(),
+        per_edge_presence.mean(),
+        per_edge_type.mean(),
+        per_operation_pointer.mean(),
+        per_vq.mean(),
+        per_example,
     )
 
 
-def _selected_cross_entropy(logits, targets, mask):
-    if mask.any():
-        return F.cross_entropy(logits[mask], targets[mask], reduction="mean")
-    return logits.sum() * 0.0
+def _per_example_selected_cross_entropy(logits, targets, mask):
+    values = []
+    for index in range(logits.size(0)):
+        selected = mask[index]
+        if selected.any():
+            value = F.cross_entropy(
+                logits[index][selected],
+                targets[index][selected],
+                reduction="mean",
+            )
+        else:
+            value = logits[index].sum() * 0.0
+        values.append(value)
+    return torch.stack(values)
+
+
+def _per_example_smooth_l1(prediction, target, mask):
+    values = []
+    for index in range(prediction.size(0)):
+        selected = mask[index]
+        if selected.any():
+            value = F.smooth_l1_loss(
+                prediction[index][selected],
+                target[index][selected],
+                reduction="mean",
+            )
+        else:
+            value = prediction[index].sum() * 0.0
+        values.append(value)
+    return torch.stack(values)
+
+
+def _per_example_balanced_presence(logits, positives, negatives):
+    values = []
+    for index in range(logits.size(0)):
+        parts = []
+        if positives[index].any():
+            selected = logits[index][positives[index]]
+            parts.append(
+                F.binary_cross_entropy_with_logits(
+                    selected, torch.ones_like(selected)
+                )
+            )
+        if negatives[index].any():
+            selected = logits[index][negatives[index]]
+            parts.append(
+                F.binary_cross_entropy_with_logits(
+                    selected, torch.zeros_like(selected)
+                )
+            )
+        value = (
+            torch.stack(parts).mean()
+            if parts
+            else logits[index].sum() * 0.0
+        )
+        values.append(value)
+    return torch.stack(values)

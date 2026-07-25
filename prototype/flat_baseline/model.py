@@ -49,6 +49,7 @@ class FlatMixedVQOutput:
     operation_pointer_logits: torch.Tensor
     quantized_memory: torch.Tensor
     vq_loss: torch.Tensor
+    vq_per_example_loss: torch.Tensor
     code_indices: torch.Tensor
     assignment_counts: torch.Tensor
     active_code_count: torch.Tensor
@@ -256,6 +257,7 @@ class FlatMixedVQModel(nn.Module):
             operation_logits,
             memory,
             vq.loss,
+            vq.per_example_loss,
             vq.indices,
             vq.assignment_counts,
             vq.active_code_count,
