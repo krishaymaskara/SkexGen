@@ -19,6 +19,10 @@ jobs were subsequently committed as `19a1859`. These records therefore
 document dirty-tree validation preceding the canonical commit, rather than a
 clean-checkout validation of `19a1859`.
 
+The exact `source_tree_sha256`, `git_status_porcelain`, dirty-file list, and
+patch hash for that validation working tree are not preserved in Git and were
+not recoverable from the accessible referenced artifacts.
+
 ## CPU validation
 
 Slurm job `3322236` completed with exit code `0:0` in 27 seconds on a CPU

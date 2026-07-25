@@ -242,3 +242,9 @@ This milestone remains teacher-forced reconstruction plumbing. It does not
 implement autoregressive decoding, CAD-kernel execution of predictions,
 counterfactual training, a learned code prior, distributed training, or final
 research-scale hyperparameters.
+
+## Related evidence
+
+The [B0 training-infrastructure validation
+record](../../docs/experiments/b0_training_infrastructure_validation.md)
+documents the completed CPU validation and CUDA engineering smoke test.

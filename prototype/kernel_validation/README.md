@@ -62,8 +62,17 @@ These tests inject a fake adapter and do not establish real OpenCascade validity
 
 ## Adroit integration
 
-Prepare a controlled corpus containing 60 source families (120 variants), then run
-the integration as a CPU Slurm job. The command inside the job is:
+Prepare a current full-coverage controlled corpus containing 68 physical source
+families and 136 continuous/quantized representation variants:
+
+```bash
+python3 -m prototype.controlled_data.generate \
+  --output-dir <corpus> \
+  --seed 0 \
+  --num-source-families 68
+```
+
+Then run the integration as a CPU Slurm job. The command inside the job is:
 
 ```bash
 apptainer exec \
@@ -85,3 +94,10 @@ runtime type expressions and standard-library calls introduced after Python 3.8.
 They are intended to run with the container's Python 3.8.13 interpreter. The local
 fake-adapter tests and the container-side Python 3.8 test suite remain prerequisites
 for the real integration run.
+
+## Related evidence
+
+The [historical 60-family OpenCascade integration
+record](../../docs/experiments/kernel_validation_60.md) documents the earlier
+run that motivated the current analytical feasibility policy and 68-family
+full-coverage procedure.

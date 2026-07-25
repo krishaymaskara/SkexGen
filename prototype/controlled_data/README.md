@@ -127,3 +127,9 @@ python3 -m prototype.controlled_data.generate \
 Generation occurs in a temporary sibling directory. Only after samples,
 identities, manifests, split constraints, round trips, and written files pass
 verification is that directory atomically renamed to the requested path.
+
+## Related evidence
+
+The [B0 680-family pilot-corpus
+record](../../docs/experiments/b0_pilot_corpus_680.md) documents one completed
+bounded generation run without duplicating its evidence here.
