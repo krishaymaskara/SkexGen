@@ -238,6 +238,37 @@ legitimate run owns its logger, runtime
 failures are also appended as structured `failure` events. Errors detected
 before ownership is established never append to an unrelated `metrics.jsonl`.
 
+### Post-run analysis
+
+After a Slurm job has completed, failed, or been canceled, analyze its
+quiescent run directory on a CPU with:
+
+```bash
+python3 -m prototype.flat_baseline.analyze_run \
+  --run-dir /path/to/run \
+  --output-dir /path/to/new-analysis-directory
+```
+
+This is not a live-training monitor. The analyzer strictly validates the
+canonical JSONL history and CPU-loaded trusted project checkpoints, supports
+ordinary same-directory resumes, and atomically writes schema-versioned
+`summary.json` plus `metrics.csv`. Complete and valid incomplete runs return
+exit code 0; structurally invalid artifacts return one canonical error on
+standard error and exit code 2. Diagnostic warnings are labeled heuristics and
+do not change structural status or make scientific claims about autonomous
+decoding, CAD-kernel execution, or the Week 3 gate. Raw per-code assignment
+identities were not persisted and therefore cannot be reconstructed.
+
+Checkpoint evidence is confined to the resolved run directory before loading.
+A symbolic link is accepted only when it resolves to a regular file directly
+inside that same resolved directory; links escaping the run are rejected.
+Merely placing unlogged `best.pt` or `last.pt` files in a run cannot make it
+complete. The final `last.pt` and an ordinary `best.pt` require matching log
+events. The sole exception is an explicitly resumed relocated run whose
+compatible preserved `best.pt` predates the metric history available in the
+new directory. Such unavailable earlier epoch metrics remain `null` with a
+structured limitation reason.
+
 This milestone remains teacher-forced reconstruction plumbing. It does not
 implement autoregressive decoding, CAD-kernel execution of predictions,
 counterfactual training, a learned code prior, distributed training, or final
