@@ -270,9 +270,39 @@ new directory. Such unavailable earlier epoch metrics remain `null` with a
 structured limitation reason.
 
 This milestone remains teacher-forced reconstruction plumbing. It does not
-implement autoregressive decoding, CAD-kernel execution of predictions,
-counterfactual training, a learned code prior, distributed training, or final
-research-scale hyperparameters.
+implement CAD-kernel execution of predictions, counterfactual training, a
+learned code prior, distributed training, or final research-scale
+hyperparameters.
+
+## Phase A length-conditioned autoregressive decoding
+
+The package includes a raw, greedy
+`decode_length_conditioned()` interface for inspecting decoder behavior
+without shifted ground-truth node records. It starts from the model's
+existing learned BOS vector, feeds back each complete raw argmax node record,
+and predicts edges and operation pointers from one final aligned pass over
+the generated prefix.
+
+This is **oracle-node-count-conditioned**, not fully autonomous termination.
+The caller supplies each target canonical node count because the model has no
+trained EOS token or node-count head. For corpus evaluation,
+`node_count_source` must be recorded as `target_canonical_metadata`. Node
+count substantially leaks operation-template information in this version.
+The operation count is not supplied: it is derived from the generated raw
+extrude/revolve node types, and only the corresponding bounded pointer-query
+outputs are retained.
+
+The Phase A result contains raw categorical argmax selections, normalized
+continuous geometry, deterministically derived geometry-applicability masks,
+all directed edge predictions, and raw operation pointers. It does not add
+CAD identifiers, sanitize malformed output, convert predictions into the
+controlled representation, or claim representation validity or OpenCascade
+executability. No unconditional latent prior exists; latent indices must
+come from an encoded example or an explicitly supplied sequence.
+
+After Phase A is committed, Adroit validation must compare the ordered
+state-dict keys, shapes, and dtypes from a model instantiated at base commit
+`ba611fb` with those from the Phase A commit. The contracts must be identical.
 
 ## Related evidence
 

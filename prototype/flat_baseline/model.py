@@ -57,6 +57,27 @@ class FlatMixedVQOutput:
     codebook_perplexity: torch.Tensor
 
 
+@dataclass
+class EncodedMemory:
+    memory: torch.Tensor
+    vq: object
+
+
+@dataclass
+class PrefixDecoderOutput:
+    decoded_states: torch.Tensor
+    node_type_logits: torch.Tensor
+    categorical_logits: tuple
+    geometry: torch.Tensor
+
+
+@dataclass
+class RelationDecoderOutput:
+    edge_presence_logits: torch.Tensor
+    edge_type_logits: torch.Tensor
+    operation_pointer_logits: torch.Tensor
+
+
 class FlatMixedVQModel(nn.Module):
     """One-stream flat baseline with no dependency edges in its encoder."""
 
@@ -156,6 +177,75 @@ class FlatMixedVQModel(nn.Module):
         self._validate_inputs(
             categorical_ids, geometry, geometry_mask, padding_mask, target
         )
+        encoded = self.encode_to_memory(
+            categorical_ids, geometry, geometry_mask, padding_mask
+        )
+        target_categories = torch.cat(
+            (
+                target["node_type_ids"].unsqueeze(-1),
+                target["categorical_attributes"],
+            ),
+            dim=-1,
+        )
+        target_content = self._record_content(
+            target_categories,
+            target["geometry"],
+            target["geometry_mask"],
+        )
+        batch_size = categorical_ids.size(0)
+        bos = self.bos.view(1, 1, -1).expand(batch_size, 1, -1)
+        shifted = torch.cat((bos, target_content[:, :-1]), dim=1)
+        decoder_valid = torch.cat(
+            (
+                torch.ones(
+                    batch_size,
+                    1,
+                    dtype=torch.bool,
+                    device=padding_mask.device,
+                ),
+                target["node_mask"][:, :-1],
+            ),
+            dim=1,
+        )
+        decoded_states = self._decode_embedded_prefix(
+            shifted, encoded.memory, decoder_valid
+        )
+        decoded = PrefixDecoderOutput(
+            decoded_states,
+            self.node_type_head(decoded_states),
+            tuple(head(decoded_states) for head in self.categorical_heads),
+            torch.tanh(self.geometry_head(decoded_states)),
+        )
+        relations = self.decode_relations(
+            decoded.decoded_states, target["node_mask"]
+        )
+
+        return FlatMixedVQOutput(
+            decoded.decoded_states,
+            decoded.node_type_logits,
+            decoded.categorical_logits,
+            decoded.geometry,
+            relations.edge_presence_logits,
+            relations.edge_type_logits,
+            relations.operation_pointer_logits,
+            encoded.memory,
+            encoded.vq.loss,
+            encoded.vq.per_example_loss,
+            encoded.vq.indices,
+            encoded.vq.assignment_counts,
+            encoded.vq.active_code_count,
+            encoded.vq.utilization,
+            encoded.vq.perplexity,
+        )
+
+    def encode_to_memory(
+        self, categorical_ids, geometry, geometry_mask, padding_mask
+    ):
+        """Encode flat records and return quantized decoder memory."""
+
+        self._validate_encoder_inputs(
+            categorical_ids, geometry, geometry_mask, padding_mask
+        )
         batch_size, node_count = categorical_ids.shape[:2]
         positions = torch.arange(
             node_count, device=categorical_ids.device
@@ -184,85 +274,171 @@ class FlatMixedVQModel(nn.Module):
             encoded[:, : self.config.latent_tokens]
         )
         vq = self.vq(latent)
-        memory = self.from_codebook(vq.quantized)
+        return EncodedMemory(self.from_codebook(vq.quantized), vq)
 
-        target_categories = torch.cat(
-            (
-                target["node_type_ids"].unsqueeze(-1),
-                target["categorical_attributes"],
-            ),
-            dim=-1,
+    def memory_from_indices(self, indices):
+        """Look up supplied mixed-code indices without running or updating VQ."""
+
+        if indices.dtype != torch.long:
+            raise TypeError("latent indices must use torch.long")
+        if indices.dim() != 2 or indices.size(1) != self.config.latent_tokens:
+            raise ValueError(
+                "latent indices must have shape [B, latent_tokens]"
+            )
+        if indices.size(0) == 0:
+            raise ValueError("latent indices require a positive batch size")
+        if indices.numel() and (
+            int(indices.min().item()) < 0
+            or int(indices.max().item()) >= self.config.codebook_size
+        ):
+            raise ValueError("latent index is outside the configured codebook")
+        quantized = torch.nn.functional.embedding(
+            indices, self.vq.embedding
         )
-        target_content = self._record_content(
-            target_categories,
-            target["geometry"],
-            target["geometry_mask"],
+        return self.from_codebook(quantized)
+
+    def decode_prefix(
+        self,
+        memory,
+        categorical_prefix,
+        geometry_prefix,
+        geometry_mask_prefix,
+        prefix_mask=None,
+    ):
+        """Decode BOS plus the declared preceding node-record prefix."""
+
+        if memory.dim() != 3 or memory.size(1) != self.config.latent_tokens:
+            raise ValueError(
+                "memory must have shape [B, latent_tokens, model_dim]"
+            )
+        if memory.size(2) != self.config.model_dim:
+            raise ValueError("memory width disagrees with model_dim")
+        batch_size = memory.size(0)
+        prefix_length = categorical_prefix.size(1)
+        if (
+            categorical_prefix.dim() != 3
+            or categorical_prefix.shape
+            != (batch_size, prefix_length, len(_INPUT_VOCABULARIES))
+        ):
+            raise ValueError(
+                "categorical prefix must have shape [B, P, 10]"
+            )
+        if categorical_prefix.dtype != torch.long:
+            raise TypeError("categorical prefix must use torch.long")
+        expected_geometry = (batch_size, prefix_length, GEOMETRY_WIDTH)
+        if geometry_prefix.shape != expected_geometry:
+            raise ValueError("geometry prefix must have shape [B, P, 39]")
+        if geometry_mask_prefix.shape != expected_geometry:
+            raise ValueError("geometry-mask prefix must align with geometry")
+        if not geometry_prefix.dtype.is_floating_point:
+            raise TypeError("geometry prefix must be floating point")
+        if geometry_mask_prefix.dtype != torch.bool:
+            raise TypeError("geometry-mask prefix must use torch.bool")
+        output_length = prefix_length + 1
+        if output_length > self.config.max_nodes:
+            raise ValueError("decoded prefix exceeds configured max_nodes")
+        if prefix_mask is None:
+            prefix_mask = torch.ones(
+                batch_size,
+                prefix_length,
+                dtype=torch.bool,
+                device=memory.device,
+            )
+        if prefix_mask.shape != (batch_size, prefix_length):
+            raise ValueError("prefix mask must have shape [B, P]")
+        if prefix_mask.dtype != torch.bool:
+            raise TypeError("prefix mask must use torch.bool")
+        if (
+            categorical_prefix.device != memory.device
+            or geometry_prefix.device != memory.device
+            or geometry_mask_prefix.device != memory.device
+            or prefix_mask.device != memory.device
+        ):
+            raise ValueError("decoder prefix tensors must share memory device")
+
+        prefix_content = self._record_content(
+            categorical_prefix, geometry_prefix, geometry_mask_prefix
         )
         bos = self.bos.view(1, 1, -1).expand(batch_size, 1, -1)
-        shifted = torch.cat((bos, target_content[:, :-1]), dim=1)
-        decoder_input = self.decoder_input_norm(
-            shifted + self.decoder_position_embedding(positions)
-        )
-        causal_mask = torch.triu(
-            torch.ones(
-                node_count,
-                node_count,
-                dtype=torch.bool,
-                device=categorical_ids.device,
-            ),
-            diagonal=1,
-        )
+        shifted = torch.cat((bos, prefix_content), dim=1)
         decoder_valid = torch.cat(
             (
                 torch.ones(
                     batch_size,
                     1,
                     dtype=torch.bool,
-                    device=padding_mask.device,
+                    device=memory.device,
                 ),
-                target["node_mask"][:, :-1],
+                prefix_mask,
             ),
             dim=1,
         )
-        decoded = self.decoder(
+        decoded = self._decode_embedded_prefix(
+            shifted, memory, decoder_valid
+        )
+        return PrefixDecoderOutput(
+            decoded,
+            self.node_type_head(decoded),
+            tuple(head(decoded) for head in self.categorical_heads),
+            torch.tanh(self.geometry_head(decoded)),
+        )
+
+    def _decode_embedded_prefix(
+        self, shifted, memory, decoder_valid
+    ):
+        """Decode an embedded BOS-plus-prefix sequence with shared masking."""
+
+        output_length = shifted.size(1)
+        positions = torch.arange(
+            output_length, device=shifted.device
+        ).unsqueeze(0)
+        decoder_input = self.decoder_input_norm(
+            shifted + self.decoder_position_embedding(positions)
+        )
+        causal_mask = torch.triu(
+            torch.ones(
+                output_length,
+                output_length,
+                dtype=torch.bool,
+                device=shifted.device,
+            ),
+            diagonal=1,
+        )
+        return self.decoder(
             decoder_input,
             memory,
             tgt_mask=causal_mask,
             tgt_key_padding_mask=~decoder_valid,
         )
 
-        source = self.edge_source(decoded).unsqueeze(2)
-        destination = self.edge_target(decoded).unsqueeze(1)
+    def decode_relations(self, decoded_states, node_mask):
+        """Predict directed edges and ordered operation pointers."""
+
+        if decoded_states.dim() != 3:
+            raise ValueError("decoded states must have shape [B, N, model_dim]")
+        batch_size, node_count, width = decoded_states.shape
+        if width != self.config.model_dim:
+            raise ValueError("decoded-state width disagrees with model_dim")
+        if node_mask.shape != (batch_size, node_count):
+            raise ValueError("node mask must have shape [B, N]")
+        if node_mask.dtype != torch.bool:
+            raise TypeError("node mask must use torch.bool")
+        source = self.edge_source(decoded_states).unsqueeze(2)
+        destination = self.edge_target(decoded_states).unsqueeze(1)
         pairs = torch.tanh(source + destination)
         edge_presence = self.edge_presence_head(pairs).squeeze(-1)
         edge_types = self.edge_type_head(pairs)
-
         operation_logits = torch.einsum(
             "od,bnd->bon",
             self.operation_queries,
-            self.operation_keys(decoded),
+            self.operation_keys(decoded_states),
         )
         minimum = torch.finfo(operation_logits.dtype).min
         operation_logits = operation_logits.masked_fill(
-            ~target["node_mask"].unsqueeze(1), minimum
+            ~node_mask.unsqueeze(1), minimum
         )
-
-        return FlatMixedVQOutput(
-            decoded,
-            self.node_type_head(decoded),
-            tuple(head(decoded) for head in self.categorical_heads),
-            torch.tanh(self.geometry_head(decoded)),
-            edge_presence,
-            edge_types,
-            operation_logits,
-            memory,
-            vq.loss,
-            vq.per_example_loss,
-            vq.indices,
-            vq.assignment_counts,
-            vq.active_code_count,
-            vq.utilization,
-            vq.perplexity,
+        return RelationDecoderOutput(
+            edge_presence, edge_types, operation_logits
         )
 
     def _record_content(self, categorical_ids, geometry, geometry_mask):
@@ -280,23 +456,10 @@ class FlatMixedVQModel(nn.Module):
     def _validate_inputs(
         self, categorical_ids, geometry, geometry_mask, padding_mask, target
     ):
-        if categorical_ids.dim() != 3 or categorical_ids.size(-1) != 10:
-            raise ValueError("categorical_ids must have shape [B, N, 10]")
+        self._validate_encoder_inputs(
+            categorical_ids, geometry, geometry_mask, padding_mask
+        )
         batch_size, node_count = categorical_ids.shape[:2]
-        if node_count > self.config.max_nodes:
-            raise ValueError("node count exceeds configured max_nodes")
-        if geometry.shape != (batch_size, node_count, GEOMETRY_WIDTH):
-            raise ValueError("geometry must have shape [B, N, 39]")
-        if geometry_mask.shape != geometry.shape:
-            raise ValueError("geometry_mask must align with geometry")
-        if padding_mask.shape != (batch_size, node_count):
-            raise ValueError("padding_mask must have shape [B, N]")
-        if categorical_ids.dtype != torch.long:
-            raise TypeError("categorical_ids must use torch.long")
-        if not geometry.dtype.is_floating_point:
-            raise TypeError("geometry must be floating point")
-        if geometry_mask.dtype != torch.bool or padding_mask.dtype != torch.bool:
-            raise TypeError("all masks must use torch.bool")
         required = {
             "node_type_ids",
             "categorical_attributes",
@@ -315,3 +478,24 @@ class FlatMixedVQModel(nn.Module):
             raise ValueError("input padding_mask and target node_mask disagree")
         if target["operation_sequence"].size(1) > self.config.max_operations:
             raise ValueError("operation count exceeds configured max_operations")
+
+    def _validate_encoder_inputs(
+        self, categorical_ids, geometry, geometry_mask, padding_mask
+    ):
+        if categorical_ids.dim() != 3 or categorical_ids.size(-1) != 10:
+            raise ValueError("categorical_ids must have shape [B, N, 10]")
+        batch_size, node_count = categorical_ids.shape[:2]
+        if node_count > self.config.max_nodes:
+            raise ValueError("node count exceeds configured max_nodes")
+        if geometry.shape != (batch_size, node_count, GEOMETRY_WIDTH):
+            raise ValueError("geometry must have shape [B, N, 39]")
+        if geometry_mask.shape != geometry.shape:
+            raise ValueError("geometry_mask must align with geometry")
+        if padding_mask.shape != (batch_size, node_count):
+            raise ValueError("padding_mask must have shape [B, N]")
+        if categorical_ids.dtype != torch.long:
+            raise TypeError("categorical_ids must use torch.long")
+        if not geometry.dtype.is_floating_point:
+            raise TypeError("geometry must be floating point")
+        if geometry_mask.dtype != torch.bool or padding_mask.dtype != torch.bool:
+            raise TypeError("all masks must use torch.bool")
