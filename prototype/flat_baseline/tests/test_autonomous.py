@@ -34,6 +34,10 @@ if torch is not None:
         NODE_TYPES,
         PRIMITIVE_TYPES,
     )
+    # VQ returns inputs + (looked_up - inputs), which is mathematically the
+    # lookup but adds float32 subtraction/addition rounding before projection.
+    FLOAT32_STRAIGHT_THROUGH_RTOL = 8.0 * torch.finfo(torch.float32).eps
+    FLOAT32_STRAIGHT_THROUGH_ATOL = torch.finfo(torch.float32).eps
 
 
 TORCH_REASON = "real PyTorch execution is deferred to the Adroit environment"
@@ -373,10 +377,16 @@ class InterfaceEquivalenceTests(unittest.TestCase):
         memory = model.memory_from_indices(_indices())
         self.assertEqual(memory.shape, (1, 2, 8))
 
-    def test_encoded_indices_reproduce_evaluation_memory_exactly(self):
+    def test_encoded_indices_reproduce_evaluation_memory_numerically(self):
         temporary, inputs, _ = _batch(("E",))
         self.addCleanup(temporary.cleanup)
         model = FlatMixedVQModel(_config()).eval()
+        state_contract = _state_dict_contract(model)
+        ema_before = {
+            name: value.clone()
+            for name, value in model.named_buffers()
+            if name.startswith("vq.")
+        }
         with torch.no_grad():
             encoded = model.encode_to_memory(
                 inputs["categorical_ids"],
@@ -392,9 +402,53 @@ class InterfaceEquivalenceTests(unittest.TestCase):
                 ),
             ):
                 looked_up = model.memory_from_indices(encoded.vq.indices)
-        torch.testing.assert_close(
-            encoded.memory, looked_up, rtol=0.0, atol=0.0
+                looked_up_again = model.memory_from_indices(
+                    encoded.vq.indices
+                )
+            direct_code_vectors = torch.nn.functional.embedding(
+                encoded.vq.indices, model.vq.embedding
+            )
+            directly_projected = model.from_codebook(
+                direct_code_vectors
+            )
+
+        self.assertEqual(
+            encoded.vq.quantized.shape, direct_code_vectors.shape
         )
+        self.assertEqual(
+            encoded.vq.quantized.dtype, direct_code_vectors.dtype
+        )
+        self.assertEqual(
+            encoded.vq.quantized.device, direct_code_vectors.device
+        )
+        self.assertEqual(encoded.vq.quantized.dtype, torch.float32)
+        torch.testing.assert_close(
+            encoded.vq.quantized,
+            direct_code_vectors,
+            rtol=FLOAT32_STRAIGHT_THROUGH_RTOL,
+            atol=FLOAT32_STRAIGHT_THROUGH_ATOL,
+        )
+        self.assertEqual(encoded.memory.shape, looked_up.shape)
+        self.assertEqual(encoded.memory.dtype, looked_up.dtype)
+        self.assertEqual(encoded.memory.device, looked_up.device)
+        torch.testing.assert_close(
+            encoded.memory,
+            looked_up,
+            rtol=FLOAT32_STRAIGHT_THROUGH_RTOL,
+            atol=FLOAT32_STRAIGHT_THROUGH_ATOL,
+        )
+        torch.testing.assert_close(
+            looked_up, directly_projected, rtol=0.0, atol=0.0
+        )
+        torch.testing.assert_close(
+            looked_up, looked_up_again, rtol=0.0, atol=0.0
+        )
+        self.assertEqual(state_contract, _state_dict_contract(model))
+        buffers_after = dict(model.named_buffers())
+        for name, expected in ema_before.items():
+            torch.testing.assert_close(
+                expected, buffers_after[name], rtol=0.0, atol=0.0
+            )
 
     def test_state_dict_contract_is_ordered_and_repeatable(self):
         first = FlatMixedVQModel(_config())
