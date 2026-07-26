@@ -47,6 +47,18 @@ GEOMETRY_CHANNELS = (
 GEOMETRY_WIDTH = len(GEOMETRY_CHANNELS)
 NORMALIZED_MIN = -1.0
 NORMALIZED_MAX = 1.0
+GEOMETRY_CHANNEL_SCALES = (
+    *(LENGTH_SCALE,) * 3,
+    *(1.0,) * 6,
+    *(LENGTH_SCALE,) * (MAX_PRIMITIVES * PRIMITIVE_SLOT_WIDTH),
+    *(LENGTH_SCALE,) * 2,
+    *(1.0,) * 2,
+    LENGTH_SCALE,
+    ANGLE_SCALE,
+)
+
+if len(GEOMETRY_CHANNEL_SCALES) != GEOMETRY_WIDTH:
+    raise AssertionError("geometry channel scales must match geometry width")
 
 
 def decode(value) -> tuple[float, ...]:
@@ -59,6 +71,72 @@ def decode(value) -> tuple[float, ...]:
 
 def empty_geometry():
     return [0.0] * GEOMETRY_WIDTH, [False] * GEOMETRY_WIDTH
+
+
+def denormalize_applicable_geometry(values, mask):
+    """Return physical values for applicable channels and ``None`` otherwise."""
+
+    try:
+        normalized_values = tuple(values)
+        applicability = tuple(mask)
+    except TypeError as exc:
+        raise ModelDataError(
+            "invalid_geometry_container",
+            "geometry values and mask must be iterable",
+        ) from exc
+    if len(normalized_values) != GEOMETRY_WIDTH:
+        raise ModelDataError(
+            "invalid_geometry_width",
+            "geometry values must contain exactly {} entries".format(
+                GEOMETRY_WIDTH
+            ),
+        )
+    if len(applicability) != GEOMETRY_WIDTH:
+        raise ModelDataError(
+            "invalid_geometry_mask_width",
+            "geometry mask must contain exactly {} entries".format(
+                GEOMETRY_WIDTH
+            ),
+        )
+    result = []
+    for index, (value, applicable, scale) in enumerate(
+        zip(normalized_values, applicability, GEOMETRY_CHANNEL_SCALES)
+    ):
+        if not isinstance(applicable, bool):
+            raise ModelDataError(
+                "invalid_geometry_mask_type",
+                "geometry mask channel {} must be Boolean".format(index),
+            )
+        if not applicable:
+            result.append(None)
+            continue
+        if isinstance(value, bool):
+            raise ModelDataError(
+                "invalid_geometry_value_type",
+                "geometry channel {} must be numeric".format(index),
+            )
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ModelDataError(
+                "invalid_geometry_value_type",
+                "geometry channel {} must be numeric".format(index),
+            ) from exc
+        if not math.isfinite(normalized):
+            raise ModelDataError(
+                "nonfinite_geometry",
+                "geometry channel {} is nonfinite".format(index),
+            )
+        if not NORMALIZED_MIN <= normalized <= NORMALIZED_MAX:
+            raise ModelDataError(
+                "geometry_out_of_range",
+                "geometry channel {} is outside [{}, {}]".format(
+                    index, NORMALIZED_MIN, NORMALIZED_MAX
+                ),
+            )
+        physical = normalized * scale
+        result.append(0.0 if physical == 0.0 else physical)
+    return tuple(result)
 
 
 def place_node_geometry(values, mask, geometry):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import tempfile
 import unittest
 
@@ -9,7 +10,11 @@ from prototype.controlled_data.factors import PrimitiveFamily, ReferencePlane
 from prototype.model_data.adapters import adapt_flat_mixed, adapt_typed_graph
 from prototype.model_data.errors import ModelDataError
 from prototype.model_data.geometry import (
+    ANGLE_SCALE,
+    GEOMETRY_CHANNEL_SCALES,
     GEOMETRY_WIDTH,
+    LENGTH_SCALE,
+    denormalize_applicable_geometry,
     place_node_geometry,
     place_primitive_geometry,
 )
@@ -250,6 +255,81 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaises(ModelDataError) as caught:
                 load_physical_examples(temporary)
         self.assertEqual(caught.exception.code, "geometry_out_of_range")
+
+    def test_inverse_normalization_boundaries_scales_and_signed_zero(self):
+        values = [-1.0, 0.0, 1.0] * 13
+        mask = [True] * GEOMETRY_WIDTH
+        physical = denormalize_applicable_geometry(values, mask)
+        for index, (normalized, scale) in enumerate(
+            zip(values, GEOMETRY_CHANNEL_SCALES)
+        ):
+            self.assertEqual(physical[index], normalized * scale)
+        self.assertIn(LENGTH_SCALE, GEOMETRY_CHANNEL_SCALES)
+        self.assertIn(ANGLE_SCALE, GEOMETRY_CHANNEL_SCALES)
+        self.assertIn(1.0, GEOMETRY_CHANNEL_SCALES)
+
+        signed = [0.0] * GEOMETRY_WIDTH
+        signed[0] = -0.0
+        result = denormalize_applicable_geometry(signed, mask)
+        self.assertEqual(result[0], 0.0)
+        self.assertEqual(math.copysign(1.0, result[0]), 1.0)
+
+    def test_inverse_normalization_round_trip_and_masked_absence(self):
+        values = [
+            ((index % 9) - 4) / 4.0 for index in range(GEOMETRY_WIDTH)
+        ]
+        mask = [(index % 3) != 0 for index in range(GEOMETRY_WIDTH)]
+        physical = denormalize_applicable_geometry(values, mask)
+        reconstructed = tuple(
+            None if item is None else item / GEOMETRY_CHANNEL_SCALES[index]
+            for index, item in enumerate(physical)
+        )
+        self.assertEqual(
+            reconstructed,
+            tuple(value if present else None for value, present in zip(values, mask)),
+        )
+        values[0] = float("nan")
+        values[4] = 0.0
+        physical = denormalize_applicable_geometry(values, mask)
+        self.assertIsNone(physical[0])
+        self.assertEqual(physical[4], 0.0)
+
+    def test_inverse_normalization_rejects_invalid_inputs_deterministically(self):
+        valid_values = [0.0] * GEOMETRY_WIDTH
+        valid_mask = [True] * GEOMETRY_WIDTH
+        cases = (
+            (valid_values[:-1], valid_mask, "invalid_geometry_width"),
+            (valid_values, valid_mask[:-1], "invalid_geometry_mask_width"),
+            (valid_values, [1] + valid_mask[1:], "invalid_geometry_mask_type"),
+            (
+                [float("nan")] + valid_values[1:],
+                valid_mask,
+                "nonfinite_geometry",
+            ),
+            (
+                [float("inf")] + valid_values[1:],
+                valid_mask,
+                "nonfinite_geometry",
+            ),
+            ([1.000001] + valid_values[1:], valid_mask, "geometry_out_of_range"),
+            ([-1.000001] + valid_values[1:], valid_mask, "geometry_out_of_range"),
+        )
+        for values, mask, code in cases:
+            details = []
+            for _ in range(2):
+                with self.assertRaises(ModelDataError) as caught:
+                    denormalize_applicable_geometry(values, mask)
+                self.assertEqual(caught.exception.code, code)
+                details.append(caught.exception.detail)
+            self.assertEqual(details[0], details[1])
+
+    def test_inverse_normalization_repeatability(self):
+        values = tuple((index % 5) / 4.0 for index in range(GEOMETRY_WIDTH))
+        mask = tuple(index % 2 == 0 for index in range(GEOMETRY_WIDTH))
+        self.assertEqual(
+            denormalize_applicable_geometry(values, mask),
+            denormalize_applicable_geometry(values, mask),
+        )
 
     def test_current_controlled_grid_extrema_fit_normalization_contract(self):
         with tempfile.TemporaryDirectory() as temporary:
