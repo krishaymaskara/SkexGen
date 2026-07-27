@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import copy
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -30,6 +31,28 @@ if torch is not None:
         pilot_decision,
         run_pilot,
     )
+
+
+class CpuPilotSlurmContractTests(unittest.TestCase):
+    def test_cpu_workflow_explicitly_overrides_pilot_device(self):
+        script = (
+            Path(__file__).parents[1]
+            / "adroit"
+            / "train_kmeans_pilot_cpu.slurm"
+        ).read_text()
+        invocation = script.split("stage pilot_training", 1)[1].split(
+            "stage pilot_validation", 1
+        )[0]
+        self.assertIn("--device cpu", invocation)
+        self.assertIn("assert not torch.cuda.is_available()", script)
+        self.assertIn(
+            'checkpoint["training_config"]["device"] == "cpu"',
+            script,
+        )
+        self.assertIn(
+            'configuration["training_config"]["device"] == "cpu"',
+            script,
+        )
 
 
 def _record(mode, epoch, active, perplexity, distinct=3, finite=True):
@@ -198,7 +221,7 @@ class PilotPartitionExecutionTests(unittest.TestCase):
         )
         model_config = FlatBaselineConfig()
         training_config = TrainingConfig(
-            seed=2026, epochs=1, device="cpu"
+            seed=2026, epochs=1, device="cuda"
         )
         checkpoint = {
             "model_config": model_config.to_dict(),
@@ -329,8 +352,21 @@ class PilotPartitionExecutionTests(unittest.TestCase):
                     "reviewed",
                     {"train": 1, "validation": 1, "test": 1},
                     torch,
+                    device_override="cpu",
                 )
+            configuration = json.loads(
+                (output / "run_configuration.json").read_text()
+            )
+            last_checkpoint = torch.load(
+                str(output / "last.pt"), map_location="cpu"
+            )
         self.assertEqual(result["decision"], "PASS_FOR_FULL_RETRAIN")
+        self.assertEqual(
+            configuration["training_config"]["device"], "cpu"
+        )
+        self.assertEqual(
+            last_checkpoint["training_config"]["device"], "cpu"
+        )
         self.assertEqual(initialize.call_args.args[1], data)
         self.assertEqual(train_seen, [train_example] * 5)
         self.assertEqual(validation_seen, [validation_example] * 5)

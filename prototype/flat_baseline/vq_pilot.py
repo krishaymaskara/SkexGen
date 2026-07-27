@@ -213,6 +213,7 @@ def run_pilot(
     reviewed_commit,
     expected_counts=None,
     torch_module=torch,
+    device_override=None,
 ):
     """Run and atomically publish the bounded treatment pilot."""
 
@@ -277,6 +278,11 @@ def run_pilot(
             epochs=PILOT_EPOCHS,
             output_dir=str(destination),
             vq_init="train-kmeans",
+            device=(
+                baseline_training.device
+                if device_override is None
+                else device_override
+            ),
         )
         training_config.validate()
         seed_everything(training_config.seed, torch_module)
@@ -652,6 +658,7 @@ def _parser():
     parser.add_argument(
         "--vq-init", choices=("train-kmeans",), required=True
     )
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--expected-train-count", type=int)
     parser.add_argument("--expected-validation-count", type=int)
     parser.add_argument("--expected-test-count", type=int)
@@ -680,6 +687,7 @@ def main(argv=None):
             arguments.output_dir,
             arguments.reviewed_commit,
             counts,
+            device_override=arguments.device,
         )
     except (PilotError, OSError, TypeError, ValueError) as exc:
         decision = _decision_for_exception(exc)

@@ -185,6 +185,7 @@ container_python -B -m prototype.flat_baseline.vq_pilot \
   --output-dir "$OUTPUT" \
   --reviewed-commit "$REVIEWED_COMMIT" \
   --vq-init train-kmeans \
+  --device cpu \
   --expected-train-count 544 \
   --expected-validation-count 68 \
   --expected-test-count 68
@@ -224,6 +225,7 @@ if decision["completed_epoch"] >= 1:
         checkpoint = torch.load(str(root / name), map_location="cpu")
         assert checkpoint["training_config"]["vq_init"] == "train-kmeans"
         assert checkpoint["training_config"]["seed"] == 2026
+        assert checkpoint["training_config"]["device"] == "cpu"
         assert checkpoint["data_state"]["train_partition"] == "train"
         assert checkpoint["data_state"]["validation_partition"] == "validation"
         assert checkpoint["data_state"]["initialization_mode"] == "train-kmeans"
@@ -235,6 +237,10 @@ if decision["completed_epoch"] >= 1:
     partitions = json.loads(
         (root / "partition_provenance.json").read_text()
     )
+    configuration = json.loads(
+        (root / "run_configuration.json").read_text()
+    )
+    assert configuration["training_config"]["device"] == "cpu"
     assert partitions["test_partition_evaluated"] is False
     assert partitions["test_family_count_used_for_initialization"] == 0
 print("PILOT_ARTIFACT_VALIDATION=PASS")
