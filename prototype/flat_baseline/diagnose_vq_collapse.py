@@ -962,7 +962,11 @@ def validate_workflow_publications(
             raise DiagnosisError(
                 "publication_integrity", exc.detail
             ) from exc
-    present = set(root.glob(".vq-*.tmp-*"))
+    present = {
+        path
+        for public, _ in expected
+        for path in root.glob("." + public.name + ".tmp-*")
+    }
     unreferenced = sorted(
         path.name for path in present.difference(referenced)
     )

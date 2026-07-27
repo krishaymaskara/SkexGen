@@ -155,12 +155,18 @@ class DiagnosisTests(unittest.TestCase):
             "test_partition_evaluated": False,
         }
 
-    def workflow_publications(self, root, symlink):
+    def workflow_publications(
+        self, root, symlink, job="3325200", commit="ee03a777"
+    ):
         directories = tuple(
             root / name
-            for name in ("vq-smoke-a", "vq-smoke-b", "vq-diagnosis")
+            for name in (
+                "vq-smoke-{}-a".format(job),
+                "vq-smoke-{}-b".format(job),
+                "vq-diagnosis-{}-{}".format(commit, job),
+            )
         )
-        files = (root / "vq-diagnosis-report.json",)
+        files = (root / "vq-diagnosis-report-{}.json".format(job),)
         for public in directories + files:
             backing = root / ("." + public.name + ".tmp-backing")
             if public in directories:
@@ -443,8 +449,8 @@ class DiagnosisTests(unittest.TestCase):
     def test_dangling_public_symlink_fails_integrity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            public = root / "vq-smoke-a"
-            public.symlink_to(".vq-smoke-a.tmp-missing")
+            public = root / "vq-smoke-3325200-a"
+            public.symlink_to(".vq-smoke-3325200-a.tmp-missing")
             with self.assertRaisesRegex(
                 DiagnosisError, "publication_integrity"
             ):
@@ -455,7 +461,7 @@ class DiagnosisTests(unittest.TestCase):
             with self.subTest(target=target):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
-                    public = root / "vq-smoke-a"
+                    public = root / "vq-smoke-3325200-a"
                     public.symlink_to(target)
                     with self.assertRaisesRegex(
                         DiagnosisError, "publication_integrity"
@@ -468,13 +474,42 @@ class DiagnosisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             directories, files = self.workflow_publications(root, True)
-            (root / ".vq-unreferenced.tmp-residue").mkdir()
+            (
+                root / ("." + directories[0].name + ".tmp-residue")
+            ).mkdir()
             with self.assertRaisesRegex(
                 DiagnosisError, "unreferenced backing object"
             ):
                 validate_workflow_publications(
                     root, directories, files
                 )
+
+    def test_valid_historical_and_current_jobs_can_coexist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.workflow_publications(
+                root, True, job="3325172", commit="1173c799"
+            )
+            directories, files = self.workflow_publications(root, True)
+            referenced = validate_workflow_publications(
+                root, directories, files
+            )
+            self.assertEqual(len(referenced), 4)
+            self.assertTrue(all("3325200" in name for name in referenced))
+
+    def test_unreferenced_historical_backing_object_is_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            directories, files = self.workflow_publications(root, True)
+            historical = root / (
+                ".vq-diagnosis-1173c799-3325172.tmp-historical"
+            )
+            historical.mkdir()
+            referenced = validate_workflow_publications(
+                root, directories, files
+            )
+            self.assertEqual(len(referenced), 4)
+            self.assertTrue(historical.is_dir())
 
     def test_regular_rename_publications_are_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
