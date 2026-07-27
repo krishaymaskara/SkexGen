@@ -2438,6 +2438,28 @@ def _strict_json(path):
     return value
 
 
+def _require_identical_smoke_replay(first, second):
+    if first["artifact_sha256"] != second["artifact_sha256"]:
+        raise DiagnosisError(
+            "replay_mismatch",
+            "smoke diagnostic artifact bytes are not identical",
+        )
+    return True
+
+
+def build_final_report(full_result, smoke_first, smoke_second):
+    return {
+        "diagnostic_schema_version": DIAGNOSTIC_SCHEMA_VERSION,
+        "artifact_sha256": full_result["artifact_sha256"],
+        "root_cause_answers": full_result["root_cause_answers"],
+        "byte_identical_smoke_replay": _require_identical_smoke_replay(
+            smoke_first, smoke_second
+        ),
+        "full_diagnosis_verified": True,
+        "test_partition_evaluated": False,
+    }
+
+
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -2459,6 +2481,8 @@ def _parser():
     verify.add_argument("--reviewed-commit", required=True)
     verify.add_argument("--compare-output")
     verify.add_argument("--report-output")
+    verify.add_argument("--smoke-output-a")
+    verify.add_argument("--smoke-output-b")
     return parser
 
 
@@ -2484,22 +2508,33 @@ def main(argv=None):
                     training_run_dir=arguments.training_run_dir,
                     reviewed_commit=arguments.reviewed_commit,
                 )
-                if result["artifact_sha256"] != other["artifact_sha256"]:
-                    raise DiagnosisError(
-                        "replay_mismatch",
-                        "diagnostic artifact bytes are not identical",
-                    )
-                result["byte_identical_replay"] = True
+                result["byte_identical_smoke_replay"] = (
+                    _require_identical_smoke_replay(result, other)
+                )
             if arguments.report_output:
-                report = {
-                    "diagnostic_schema_version": DIAGNOSTIC_SCHEMA_VERSION,
-                    "artifact_sha256": result["artifact_sha256"],
-                    "root_cause_answers": result["root_cause_answers"],
-                    "byte_identical_replay": result.get(
-                        "byte_identical_replay", False
-                    ),
-                    "test_partition_evaluated": False,
-                }
+                if not (
+                    arguments.smoke_output_a
+                    and arguments.smoke_output_b
+                ):
+                    raise DiagnosisError(
+                        "missing_smoke_replay",
+                        "final report requires both smoke outputs",
+                    )
+                smoke_results = [
+                    validate_diagnostic_artifacts(
+                        output,
+                        authoritative_examples=authoritative,
+                        training_run_dir=arguments.training_run_dir,
+                        reviewed_commit=arguments.reviewed_commit,
+                    )
+                    for output in (
+                        arguments.smoke_output_a,
+                        arguments.smoke_output_b,
+                    )
+                ]
+                report = build_final_report(
+                    result, smoke_results[0], smoke_results[1]
+                )
                 publish_json_report(arguments.report_output, report)
                 result = report
     except (DiagnosisError, OSError, TypeError, ValueError) as exc:

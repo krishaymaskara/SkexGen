@@ -8,7 +8,26 @@
 #SBATCH --output=/scratch/network/km6349/phase-b-vq-diagnosis-%j.out
 #SBATCH --error=/scratch/network/km6349/phase-b-vq-diagnosis-%j.err
 
-set -euo pipefail
+set -Eeuo pipefail
+
+CURRENT_STAGE="startup"
+
+report_failure() {
+  local exit_code="$?"
+  local failed_line="$1"
+  trap - ERR
+  printf 'failed_stage=%s\n' "$CURRENT_STAGE" >&2
+  printf 'failed_line=%s\n' "$failed_line" >&2
+  printf 'exit_code=%s\n' "$exit_code" >&2
+  exit "$exit_code"
+}
+
+trap 'report_failure "$LINENO"' ERR
+
+stage() {
+  CURRENT_STAGE="$1"
+  printf 'stage=%s\n' "$CURRENT_STAGE"
+}
 
 REPOSITORY="/scratch/network/km6349/SkexGen"
 CORPUS="/scratch/network/km6349/controlled_corpora/b0-pilot-680-seed2026"
@@ -20,6 +39,7 @@ RUN_ROOT="/scratch/network/km6349/flat_baseline_vq_diagnostics"
 : "${REVIEWED_COMMIT:?set REVIEWED_COMMIT to the reviewed diagnosis commit}"
 : "${SLURM_JOB_ID:?this workflow must run under Slurm}"
 
+stage repository_preflight
 cd "$REPOSITORY"
 test "$(git branch --show-current)" = "flat-mixed-baseline"
 test "$(git rev-parse HEAD)" = "$REVIEWED_COMMIT"
@@ -83,6 +103,7 @@ print("checkpoint_sha256={}".format(digest))
 print("authoritative_partition_counts={}".format(counts))
 PY
 
+stage publication_preflight
 container_python - "$RUN_ROOT" "$SLURM_JOB_ID" <<'PY'
 from pathlib import Path
 import os
@@ -127,6 +148,7 @@ finally:
     shutil.rmtree(str(preflight))
 PY
 
+stage regressions
 container_python -B -m unittest discover \
   -s prototype/flat_baseline/tests -t .
 container_python -B -m unittest discover \
@@ -147,6 +169,7 @@ run_diagnosis() {
     "$@"
 }
 
+stage smoke_a
 run_diagnosis "$SMOKE_A" \
   --train-limit 4 \
   --validation-limit 4 \
@@ -157,10 +180,13 @@ container_python -B -m prototype.flat_baseline.diagnose_vq_collapse verify \
   --training-run-dir "$TRAINING_RUN" \
   --reviewed-commit "$REVIEWED_COMMIT"
 
+stage smoke_b
 run_diagnosis "$SMOKE_B" \
   --train-limit 4 \
   --validation-limit 4 \
   --sensitivity-family-limit 2
+
+stage smoke_replay
 container_python -B -m prototype.flat_baseline.diagnose_vq_collapse verify \
   --output "$SMOKE_A" \
   --compare-output "$SMOKE_B" \
@@ -168,12 +194,24 @@ container_python -B -m prototype.flat_baseline.diagnose_vq_collapse verify \
   --training-run-dir "$TRAINING_RUN" \
   --reviewed-commit "$REVIEWED_COMMIT"
 
+stage full_diagnosis
 run_diagnosis "$FULL" --sensitivity-family-limit 4
+
+stage full_verification
+container_python -B -m prototype.flat_baseline.diagnose_vq_collapse verify \
+  --output "$FULL" \
+  --corpus-dir "$CORPUS" \
+  --training-run-dir "$TRAINING_RUN" \
+  --reviewed-commit "$REVIEWED_COMMIT"
+
+stage final_report
 container_python -B -m prototype.flat_baseline.diagnose_vq_collapse verify \
   --output "$FULL" \
   --corpus-dir "$CORPUS" \
   --training-run-dir "$TRAINING_RUN" \
   --reviewed-commit "$REVIEWED_COMMIT" \
+  --smoke-output-a "$SMOKE_A" \
+  --smoke-output-b "$SMOKE_B" \
   --report-output "$REPORT"
 
 test -d "$SMOKE_A"
@@ -181,3 +219,16 @@ test -d "$SMOKE_B"
 test -d "$FULL"
 test -f "$REPORT"
 test -z "$(find "$RUN_ROOT" -maxdepth 1 -name '.vq-*.tmp-*' -print -quit)"
+
+container_python - "$REPORT" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+report = json.loads(Path(sys.argv[1]).read_text())
+assert report["byte_identical_smoke_replay"] is True
+assert report["full_diagnosis_verified"] is True
+assert report["test_partition_evaluated"] is False
+PY
+
+stage complete

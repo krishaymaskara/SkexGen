@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import math
@@ -10,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from prototype.flat_baseline.diagnose_vq_collapse import (
     DiagnosisError,
@@ -18,6 +20,7 @@ from prototype.flat_baseline.diagnose_vq_collapse import (
     _decoder_supervision_masks,
     _managed_checkpoint_contract,
     aggregate_gradients,
+    build_final_report,
     build_artifacts,
     checkpoint_inventory,
     checkpoint_timeline_limitation,
@@ -30,6 +33,7 @@ from prototype.flat_baseline.diagnose_vq_collapse import (
     loss_masking_accounting,
     partition_reconciliation,
     publish_diagnostic_artifacts,
+    main,
     select_permitted_ids,
     summarize_vectors,
     validate_diagnostic_artifacts,
@@ -141,6 +145,13 @@ class DiagnosisTests(unittest.TestCase):
                 ],
                 "test_partition_evaluated": False,
             },
+        }
+
+    def verification_result(self, digest):
+        return {
+            "artifact_sha256": {"artifact.json": digest},
+            "root_cause_answers": {"answer": digest},
+            "test_partition_evaluated": False,
         }
 
     def test_exact_partition_reconciliation_and_test_exclusion(self):
@@ -402,6 +413,111 @@ class DiagnosisTests(unittest.TestCase):
         self.assertFalse(gradient["optimizer_created"])
         self.assertFalse(gradient["optimizer_step_called"])
         self.assertFalse(gradient["checkpoint_mutated"])
+
+    def test_identical_smoke_hashes_pass(self):
+        smoke = self.verification_result("a" * 64)
+        report = build_final_report(
+            self.verification_result("b" * 64), smoke, dict(smoke)
+        )
+        self.assertTrue(report["byte_identical_smoke_replay"])
+
+    def test_different_smoke_hashes_fail(self):
+        with self.assertRaisesRegex(DiagnosisError, "replay_mismatch"):
+            build_final_report(
+                self.verification_result("c" * 64),
+                self.verification_result("a" * 64),
+                self.verification_result("b" * 64),
+            )
+
+    def test_full_hashes_may_differ_from_identical_smoke_hashes(self):
+        full = self.verification_result("f" * 64)
+        smoke = self.verification_result("e" * 64)
+        report = build_final_report(full, smoke, dict(smoke))
+        self.assertEqual(report["artifact_sha256"], full["artifact_sha256"])
+        self.assertTrue(report["byte_identical_smoke_replay"])
+        self.assertTrue(report["full_diagnosis_verified"])
+
+    def test_final_report_preserves_byte_identical_smoke_replay(self):
+        full = self.verification_result("b" * 64)
+        smoke = self.verification_result("a" * 64)
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "report.json"
+            arguments = [
+                "verify",
+                "--output", "full",
+                "--corpus-dir", "corpus",
+                "--training-run-dir", "training",
+                "--reviewed-commit", "commit",
+                "--smoke-output-a", "smoke-a",
+                "--smoke-output-b", "smoke-b",
+                "--report-output", str(report_path),
+            ]
+            with patch(
+                "prototype.flat_baseline.diagnose_vq_collapse."
+                "load_physical_examples",
+                return_value=(),
+            ), patch(
+                "prototype.flat_baseline.diagnose_vq_collapse."
+                "validate_diagnostic_artifacts",
+                side_effect=[full, smoke, dict(smoke)],
+            ), redirect_stdout(io.StringIO()):
+                self.assertEqual(main(arguments), 0)
+            report = json.loads(report_path.read_text())
+        self.assertIs(report["byte_identical_smoke_replay"], True)
+        self.assertIs(report["full_diagnosis_verified"], True)
+
+    def test_final_report_preserves_test_partition_protection(self):
+        smoke = self.verification_result("a" * 64)
+        report = build_final_report(
+            self.verification_result("f" * 64), smoke, dict(smoke)
+        )
+        self.assertFalse(report["test_partition_evaluated"])
+
+    def test_full_verification_failure_prevents_final_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            common = [
+                "verify",
+                "--output", "full",
+                "--corpus-dir", "corpus",
+                "--training-run-dir", "training",
+                "--reviewed-commit", "commit",
+                "--smoke-output-a", "smoke-a",
+                "--smoke-output-b", "smoke-b",
+                "--report-output", str(report),
+            ]
+            with patch(
+                "prototype.flat_baseline.diagnose_vq_collapse."
+                "load_physical_examples",
+                return_value=(),
+            ), patch(
+                "prototype.flat_baseline.diagnose_vq_collapse."
+                "validate_diagnostic_artifacts",
+                side_effect=DiagnosisError(
+                    "artifact_hash", "full diagnosis is invalid"
+                ),
+            ), redirect_stderr(io.StringIO()):
+                self.assertEqual(main(common), 1)
+            self.assertFalse(report.exists())
+
+    def test_slurm_success_gate_never_compares_full_and_smoke_hashes(self):
+        script = Path(__file__).parents[1] / (
+            "adroit/diagnose_vq_collapse_cpu.slurm"
+        )
+        content = script.read_text()
+        self.assertIn('--compare-output "$SMOKE_B"', content)
+        self.assertNotIn('--compare-output "$FULL"', content)
+        final_gate = content.split("stage final_report", 1)[1]
+        self.assertIn('--output "$FULL"', final_gate)
+        self.assertIn('--smoke-output-a "$SMOKE_A"', final_gate)
+        self.assertIn('--smoke-output-b "$SMOKE_B"', final_gate)
+        self.assertIn(
+            'report["byte_identical_smoke_replay"] is True',
+            final_gate,
+        )
+        self.assertIn(
+            'report["full_diagnosis_verified"] is True', final_gate
+        )
 
     def test_root_cause_classification_separates_observation_and_inference(self):
         prequant = [{
