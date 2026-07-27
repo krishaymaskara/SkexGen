@@ -37,6 +37,7 @@ from prototype.flat_baseline.diagnose_vq_collapse import (
     select_permitted_ids,
     summarize_vectors,
     validate_diagnostic_artifacts,
+    validate_workflow_publications,
 )
 from prototype.flat_baseline.evaluate_length_conditioned import (
     _identifier_sha256,
@@ -153,6 +154,26 @@ class DiagnosisTests(unittest.TestCase):
             "root_cause_answers": {"answer": digest},
             "test_partition_evaluated": False,
         }
+
+    def workflow_publications(self, root, symlink):
+        directories = tuple(
+            root / name
+            for name in ("vq-smoke-a", "vq-smoke-b", "vq-diagnosis")
+        )
+        files = (root / "vq-diagnosis-report.json",)
+        for public in directories + files:
+            backing = root / ("." + public.name + ".tmp-backing")
+            if public in directories:
+                backing.mkdir()
+            else:
+                backing.write_text("{}\n")
+            if symlink:
+                public.symlink_to(
+                    backing.name, target_is_directory=public in directories
+                )
+            else:
+                backing.rename(public)
+        return directories, files
 
     def test_exact_partition_reconciliation_and_test_exclusion(self):
         result = self.reconciliation()
@@ -406,6 +427,76 @@ class DiagnosisTests(unittest.TestCase):
             self.assertFalse(tuple(
                 Path(directory).glob(".diagnosis.tmp-*")
             ))
+
+    def test_referenced_symlink_backing_objects_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            directories, files = self.workflow_publications(root, True)
+            referenced = validate_workflow_publications(
+                root, directories, files
+            )
+            self.assertEqual(len(referenced), 4)
+            self.assertTrue(all(
+                (root / name).exists() for name in referenced
+            ))
+
+    def test_dangling_public_symlink_fails_integrity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public = root / "vq-smoke-a"
+            public.symlink_to(".vq-smoke-a.tmp-missing")
+            with self.assertRaisesRegex(
+                DiagnosisError, "publication_integrity"
+            ):
+                validate_workflow_publications(root, (public,), ())
+
+    def test_absolute_or_escaping_public_symlink_fails_integrity(self):
+        for target in ("/tmp/backing", "../backing"):
+            with self.subTest(target=target):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    public = root / "vq-smoke-a"
+                    public.symlink_to(target)
+                    with self.assertRaisesRegex(
+                        DiagnosisError, "publication_integrity"
+                    ):
+                        validate_workflow_publications(
+                            root, (public,), ()
+                        )
+
+    def test_unreferenced_temporary_backing_object_fails_integrity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            directories, files = self.workflow_publications(root, True)
+            (root / ".vq-unreferenced.tmp-residue").mkdir()
+            with self.assertRaisesRegex(
+                DiagnosisError, "unreferenced backing object"
+            ):
+                validate_workflow_publications(
+                    root, directories, files
+                )
+
+    def test_regular_rename_publications_are_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            directories, files = self.workflow_publications(root, False)
+            self.assertEqual(
+                validate_workflow_publications(
+                    root, directories, files
+                ),
+                (),
+            )
+
+    def test_slurm_uses_reference_aware_publication_integrity_gate(self):
+        script = Path(__file__).parents[1] / (
+            "adroit/diagnose_vq_collapse_cpu.slurm"
+        )
+        content = script.read_text()
+        self.assertIn("validate_workflow_publications(", content)
+        self.assertNotIn(
+            """find "$RUN_ROOT" -maxdepth 1 -name '.vq-*.tmp-*'""",
+            content,
+        )
 
     def test_gradient_artifact_proves_no_optimizer_or_mutation(self):
         artifacts = build_artifacts(self.payloads())

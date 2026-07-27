@@ -218,7 +218,20 @@ test -d "$SMOKE_A"
 test -d "$SMOKE_B"
 test -d "$FULL"
 test -f "$REPORT"
-test -z "$(find "$RUN_ROOT" -maxdepth 1 -name '.vq-*.tmp-*' -print -quit)"
+
+container_python - "$RUN_ROOT" "$SMOKE_A" "$SMOKE_B" "$FULL" "$REPORT" <<'PY'
+import sys
+
+from prototype.flat_baseline.diagnose_vq_collapse import (
+    validate_workflow_publications,
+)
+
+validate_workflow_publications(
+    sys.argv[1],
+    sys.argv[2:5],
+    (sys.argv[5],),
+)
+PY
 
 container_python - "$REPORT" <<'PY'
 import json

@@ -25,6 +25,7 @@ from .evaluate_length_conditioned import (
     _preflight_output,
     _remove_temporary_directory,
     _resolve_publication_directory,
+    _resolve_publication_file,
     checkpoint_sha256,
     corpus_identity,
     publish_json_report,
@@ -901,6 +902,76 @@ def publish_diagnostic_artifacts(
     finally:
         if temporary is not None and temporary.exists():
             _remove_temporary_directory(temporary)
+
+
+def validate_workflow_publications(
+    run_root, directory_outputs, file_outputs
+):
+    root = Path(run_root)
+    try:
+        root_resolved = root.resolve(strict=True)
+    except OSError as exc:
+        raise DiagnosisError(
+            "publication_integrity", "run root does not exist"
+        ) from exc
+    if not root_resolved.is_dir():
+        raise DiagnosisError(
+            "publication_integrity", "run root is not a directory"
+        )
+    referenced = set()
+    expected = (
+        tuple((Path(path), True) for path in directory_outputs)
+        + tuple((Path(path), False) for path in file_outputs)
+    )
+    for public, expect_directory in expected:
+        if public.parent != root:
+            raise DiagnosisError(
+                "publication_integrity",
+                "expected public output is not directly within run root",
+            )
+        if public.is_symlink():
+            try:
+                target_text = os.readlink(str(public))
+            except OSError as exc:
+                raise DiagnosisError(
+                    "publication_integrity",
+                    "public symlink target cannot be read",
+                ) from exc
+            target = Path(target_text)
+            prefix = "." + public.name + ".tmp-"
+            if (
+                target.is_absolute()
+                or len(target.parts) != 1
+                or target_text != target.name
+                or not target.name.startswith(prefix)
+                or len(target.name) == len(prefix)
+            ):
+                raise DiagnosisError(
+                    "publication_integrity",
+                    "public symlink target is not its expected backing object",
+                )
+            referenced.add(root / target.name)
+        resolver = (
+            _resolve_publication_directory
+            if expect_directory
+            else _resolve_publication_file
+        )
+        try:
+            resolver(public)
+        except EvaluationError as exc:
+            raise DiagnosisError(
+                "publication_integrity", exc.detail
+            ) from exc
+    present = set(root.glob(".vq-*.tmp-*"))
+    unreferenced = sorted(
+        path.name for path in present.difference(referenced)
+    )
+    if unreferenced:
+        raise DiagnosisError(
+            "publication_integrity",
+            "unreferenced backing object: " + unreferenced[0],
+        )
+    return tuple(sorted(path.name for path in referenced))
 
 
 def _validate_partition_authority(partition, authoritative_examples):
