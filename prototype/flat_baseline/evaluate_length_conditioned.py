@@ -14,6 +14,7 @@ import json
 import math
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
 import tempfile
@@ -77,6 +78,11 @@ LIMITATION = (
     "the target template: 4→E, 5→R, 7→EE, 8→ER/RE, and 9→RR. Template results "
     "are not autonomous template classification."
 )
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
+_LINUX_RENAMEAT2_SYSCALLS = {
+    "x86_64": 316,
+}
 
 
 class EvaluationError(RuntimeError):
@@ -1717,8 +1723,17 @@ def _atomic_no_replace(source, destination):
 def _linux_rename_noreplace(source, destination):
     library = ctypes.CDLL(None, use_errno=True)
     function = getattr(library, "renameat2", None)
-    if function is None:
-        raise EvaluationError("unsupported_no_replace", "renameat2 is unavailable")
+    if function is not None:
+        result = _call_renameat2_wrapper(function, source, destination)
+    else:
+        result = _call_renameat2_syscall(
+            library, source, destination, platform.machine()
+        )
+    if result != 0:
+        _raise_rename_error(ctypes.get_errno())
+
+
+def _call_renameat2_wrapper(function, source, destination):
     function.argtypes = (
         ctypes.c_int,
         ctypes.c_char_p,
@@ -1727,15 +1742,39 @@ def _linux_rename_noreplace(source, destination):
         ctypes.c_uint,
     )
     function.restype = ctypes.c_int
-    result = function(
-        -100,
-        os.fsencode(str(source)),
-        -100,
-        os.fsencode(str(destination)),
-        1,
+    return function(
+        ctypes.c_int(_AT_FDCWD),
+        ctypes.c_char_p(os.fsencode(os.fspath(source))),
+        ctypes.c_int(_AT_FDCWD),
+        ctypes.c_char_p(os.fsencode(os.fspath(destination))),
+        ctypes.c_uint(_RENAME_NOREPLACE),
     )
-    if result != 0:
-        _raise_rename_error(ctypes.get_errno())
+
+
+def _call_renameat2_syscall(library, source, destination, architecture):
+    syscall_number = _LINUX_RENAMEAT2_SYSCALLS.get(architecture)
+    if syscall_number is None:
+        raise EvaluationError(
+            "unsupported_no_replace",
+            "renameat2 syscall is unknown for architecture {}".format(
+                architecture
+            ),
+        )
+    function = getattr(library, "syscall", None)
+    if function is None:
+        raise EvaluationError(
+            "unsupported_no_replace", "libc syscall entry point is unavailable"
+        )
+    function.argtypes = (ctypes.c_long,)
+    function.restype = ctypes.c_long
+    return function(
+        ctypes.c_long(syscall_number),
+        ctypes.c_int(_AT_FDCWD),
+        ctypes.c_char_p(os.fsencode(os.fspath(source))),
+        ctypes.c_int(_AT_FDCWD),
+        ctypes.c_char_p(os.fsencode(os.fspath(destination))),
+        ctypes.c_uint(_RENAME_NOREPLACE),
+    )
 
 
 def _darwin_rename_noreplace(source, destination):

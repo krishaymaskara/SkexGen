@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import csv
+import ctypes
 from dataclasses import replace
+import errno
 import hashlib
 import io
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -25,6 +28,7 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     _identifier_sha256,
     _json_document,
     _json_lines,
+    _linux_rename_noreplace,
     _semantic_difference,
     _strict_load_model,
     _validate_authoritative_ids,
@@ -55,6 +59,20 @@ from prototype.controlled_data.identity import source_family_id
 from prototype.model_data.loader import load_physical_examples
 from prototype.model_data.tests.fixtures import source, write_physical_corpus
 from prototype.representation.model import GeometryEncoding
+
+
+class FakeCFunction:
+    def __init__(self, result=0, error_number=0):
+        self.result = result
+        self.error_number = error_number
+        self.calls = []
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, *arguments):
+        self.calls.append(arguments)
+        ctypes.set_errno(self.error_number)
+        return self.result
 
 
 class FakeTensor:
@@ -849,6 +867,112 @@ class EvaluationTests(unittest.TestCase):
                 publish_artifacts(renamed, artifacts)
         self.assertFalse(renamed.exists())
         self.assertFalse(tuple(Path(self.temporary.name).glob(".failed-rename.tmp-*")))
+
+    def test_linux_no_replace_uses_exported_libc_wrapper(self):
+        wrapper = FakeCFunction()
+        syscall = FakeCFunction()
+        library = SimpleNamespace(renameat2=wrapper, syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ):
+            _linux_rename_noreplace(Path("source"), Path("destination"))
+        self.assertEqual(len(wrapper.calls), 1)
+        self.assertEqual(syscall.calls, [])
+        arguments = wrapper.calls[0]
+        self.assertEqual(arguments[0].value, -100)
+        self.assertEqual(arguments[1].value, b"source")
+        self.assertEqual(arguments[2].value, -100)
+        self.assertEqual(arguments[3].value, b"destination")
+        self.assertEqual(arguments[4].value, 1)
+
+    def test_linux_no_replace_uses_direct_syscall_without_wrapper(self):
+        syscall = FakeCFunction()
+        library = SimpleNamespace(syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.platform.machine",
+            return_value="x86_64",
+        ):
+            _linux_rename_noreplace(Path("source"), Path("destination"))
+        self.assertEqual(len(syscall.calls), 1)
+        arguments = syscall.calls[0]
+        self.assertEqual(arguments[0].value, 316)
+        self.assertEqual(arguments[1].value, -100)
+        self.assertEqual(arguments[2].value, b"source")
+        self.assertEqual(arguments[3].value, -100)
+        self.assertEqual(arguments[4].value, b"destination")
+        self.assertEqual(arguments[5].value, 1)
+
+    def test_linux_direct_syscall_collision_maps_to_output_collision(self):
+        syscall = FakeCFunction(-1, errno.EEXIST)
+        library = SimpleNamespace(syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.platform.machine",
+            return_value="x86_64",
+        ):
+            with self.assertRaisesRegex(EvaluationError, "output_collision"):
+                _linux_rename_noreplace(
+                    Path("source"), Path("destination")
+                )
+
+    def test_linux_direct_syscall_enosys_is_unsupported(self):
+        syscall = FakeCFunction(-1, errno.ENOSYS)
+        library = SimpleNamespace(syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.platform.machine",
+            return_value="x86_64",
+        ):
+            with self.assertRaisesRegex(
+                EvaluationError, "unsupported_no_replace"
+            ):
+                _linux_rename_noreplace(
+                    Path("source"), Path("destination")
+                )
+
+    def test_linux_direct_syscall_rejects_unknown_architecture(self):
+        syscall = FakeCFunction()
+        library = SimpleNamespace(syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.platform.machine",
+            return_value="unknown-linux-architecture",
+        ):
+            with self.assertRaisesRegex(
+                EvaluationError, "unsupported_no_replace"
+            ):
+                _linux_rename_noreplace(
+                    Path("source"), Path("destination")
+                )
+        self.assertEqual(syscall.calls, [])
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"),
+        "actual Linux no-replace primitive requires Linux",
+    )
+    def test_actual_linux_no_replace_publication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_path = root / "source"
+            destination_path = root / "destination"
+            source_path.mkdir()
+            (source_path / "evidence.txt").write_text("published")
+            _atomic_no_replace(source_path, destination_path)
+            self.assertFalse(source_path.exists())
+            self.assertEqual(
+                (destination_path / "evidence.txt").read_text(),
+                "published",
+            )
 
     def test_destination_created_at_atomic_rename_is_never_replaced(self):
         selected, records, raw = self.records()

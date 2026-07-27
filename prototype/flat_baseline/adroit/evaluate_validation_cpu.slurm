@@ -57,6 +57,52 @@ container_python() {
 container_python -c \
   'import sys,torch; assert sys.version_info[:2] == (3,8); assert torch.__version__.split("+")[0] == "1.11.0"; assert not torch.cuda.is_available()'
 
+container_python - "$RUN_ROOT" "$SLURM_JOB_ID" <<'PY'
+from pathlib import Path
+import platform
+import shutil
+import sys
+
+from prototype.flat_baseline.evaluate_length_conditioned import (
+    EvaluationError,
+    _atomic_no_replace,
+)
+
+root = Path(sys.argv[1])
+preflight = root / (".no-replace-preflight-" + sys.argv[2])
+if preflight.exists():
+    raise RuntimeError("no-replace preflight path already exists")
+preflight.mkdir()
+source = preflight / "source"
+destination = preflight / "destination"
+collision_source = preflight / "collision-source"
+existing = preflight / "existing"
+source.mkdir()
+collision_source.mkdir()
+existing.mkdir()
+(source / "evidence.txt").write_text("published", encoding="utf-8")
+(existing / "survives.txt").write_text("untouched", encoding="utf-8")
+try:
+    _atomic_no_replace(source, destination)
+    if source.exists() or not destination.is_dir():
+        raise RuntimeError("no-replace publication did not move the source")
+    try:
+        _atomic_no_replace(collision_source, existing)
+    except EvaluationError as exc:
+        if exc.code != "output_collision":
+            raise
+    else:
+        raise RuntimeError("no-replace collision unexpectedly succeeded")
+    if not collision_source.is_dir():
+        raise RuntimeError("collision source was modified")
+    if (existing / "survives.txt").read_text(encoding="utf-8") != "untouched":
+        raise RuntimeError("existing destination was modified")
+    print("Adroit architecture: {}".format(platform.machine()))
+    print("Linux no-replace filesystem preflight: passed")
+finally:
+    shutil.rmtree(str(preflight))
+PY
+
 container_python -B -m unittest \
   prototype.flat_baseline.tests.test_evaluate_length_conditioned
 container_python -B -m unittest \
