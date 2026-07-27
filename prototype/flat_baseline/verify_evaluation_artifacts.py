@@ -15,6 +15,7 @@ from prototype.model_data.loader import load_physical_examples
 from .evaluate_length_conditioned import (
     EvaluationError,
     _identifier_sha256,
+    _resolve_publication_directory,
     checkpoint_sha256,
     publish_json_report,
     validate_artifact_directory,
@@ -306,7 +307,7 @@ def _validity_headline(validity):
 
 
 def _artifact_hashes(path):
-    root = Path(path)
+    root = _resolve_publication_directory(path)
     return {
         item.name: hashlib.sha256(item.read_bytes()).hexdigest()
         for item in sorted(root.iterdir(), key=lambda item: item.name)

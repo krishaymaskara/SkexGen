@@ -9,6 +9,7 @@ import errno
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -29,6 +30,8 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     _json_document,
     _json_lines,
     _linux_rename_noreplace,
+    _resolve_publication_directory,
+    _resolve_publication_file,
     _semantic_difference,
     _strict_load_model,
     _validate_authoritative_ids,
@@ -393,6 +396,24 @@ class EvaluationTests(unittest.TestCase):
             "test_partition_evaluated": False,
             "limitation": LIMITATION,
         }
+
+    @staticmethod
+    def unsupported_rename_error(error_number=errno.EINVAL):
+        return EvaluationError(
+            "unsupported_no_replace",
+            "injected unsupported renameat2",
+            error_number=error_number,
+            publication_backend="renameat2_syscall",
+            platform_machine="x86_64",
+        )
+
+    def publish_with_symlink(self, output, artifacts):
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(),
+        ):
+            publish_artifacts(output, artifacts)
 
     @staticmethod
     def failure_rows(artifacts, path="teacher_forced"):
@@ -906,6 +927,24 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(arguments[4].value, b"destination")
         self.assertEqual(arguments[5].value, 1)
 
+    def test_linux_unsupported_wrapper_tries_direct_syscall(self):
+        wrapper = FakeCFunction(-1, errno.ENOTSUP)
+        syscall = FakeCFunction()
+        library = SimpleNamespace(renameat2=wrapper, syscall=syscall)
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.ctypes.CDLL",
+            return_value=library,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.platform.machine",
+            return_value="x86_64",
+        ):
+            result = _linux_rename_noreplace(
+                Path("source"), Path("destination")
+            )
+        self.assertEqual(len(wrapper.calls), 1)
+        self.assertEqual(len(syscall.calls), 1)
+        self.assertEqual(result["publication_backend"], "renameat2")
+
     def test_linux_direct_syscall_collision_maps_to_output_collision(self):
         syscall = FakeCFunction(-1, errno.EEXIST)
         library = SimpleNamespace(syscall=syscall)
@@ -933,10 +972,15 @@ class EvaluationTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 EvaluationError, "unsupported_no_replace"
-            ):
+            ) as caught:
                 _linux_rename_noreplace(
                     Path("source"), Path("destination")
                 )
+        self.assertEqual(caught.exception.error_number, errno.ENOSYS)
+        self.assertIn("errno={}".format(errno.ENOSYS), caught.exception.detail)
+        self.assertIn("errno_name=ENOSYS", caught.exception.detail)
+        self.assertIn("backend=renameat2_syscall", caught.exception.detail)
+        self.assertIn("platform_machine=x86_64", caught.exception.detail)
 
     def test_linux_direct_syscall_rejects_unknown_architecture(self):
         syscall = FakeCFunction()
@@ -973,6 +1017,223 @@ class EvaluationTests(unittest.TestCase):
                 (destination_path / "evidence.txt").read_text(),
                 "published",
             )
+
+    def test_unsupported_renameat2_publishes_complete_sibling_symlink(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        output = Path(self.temporary.name) / "symlink-publication"
+        self.publish_with_symlink(output, artifacts)
+        self.assertTrue(output.is_symlink())
+        target = Path(os.readlink(str(output)))
+        self.assertFalse(target.is_absolute())
+        self.assertEqual(len(target.parts), 1)
+        backing = output.parent / target
+        self.assertTrue(backing.is_dir())
+        self.assertEqual(
+            {path.name for path in backing.iterdir()}, set(artifacts)
+        )
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in output.iterdir()},
+            artifacts,
+        )
+        self.assertEqual(
+            _resolve_publication_directory(output), backing.resolve()
+        )
+        identifiers = tuple(item.physical_family_id for item in selected)
+        report = inspect_publication(
+            output,
+            authoritative_validation_ids=identifiers,
+            authoritative_test_ids=(),
+            reviewed_commit="a" * 40,
+        )
+        self.assertEqual(report["processed_family_count"], len(selected))
+
+    def test_public_symlink_appears_only_after_backing_validation(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        output = Path(self.temporary.name) / "validated-before-publication"
+        real_validate = validate_artifact_directory
+        observations = []
+
+        def validating(directory, **arguments):
+            observations.append((output.exists(), output.is_symlink()))
+            return real_validate(directory, **arguments)
+
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(),
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "validate_artifact_directory",
+            side_effect=validating,
+        ):
+            publish_artifacts(output, artifacts)
+        self.assertEqual(observations, [(False, False)])
+        self.assertTrue(output.is_symlink())
+
+    def test_symlink_race_collisions_preserve_every_destination_type(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        real_symlink = os.symlink
+        for destination_type in ("file", "directory", "symlink"):
+            with self.subTest(destination_type=destination_type):
+                output = (
+                    Path(self.temporary.name)
+                    / ("symlink-race-" + destination_type)
+                )
+
+                def collide(target, link_name, target_is_directory=False):
+                    if destination_type == "file":
+                        output.write_bytes(b"untouched-file")
+                    elif destination_type == "directory":
+                        output.mkdir()
+                        (output / "untouched").write_bytes(b"directory")
+                    else:
+                        real_symlink("untouched-target", str(output))
+                    return real_symlink(
+                        target,
+                        link_name,
+                        target_is_directory=target_is_directory,
+                    )
+
+                with mock.patch.object(sys, "platform", "linux"), mock.patch(
+                    "prototype.flat_baseline.evaluate_length_conditioned."
+                    "_linux_rename_noreplace",
+                    side_effect=self.unsupported_rename_error(),
+                ), mock.patch(
+                    "prototype.flat_baseline.evaluate_length_conditioned."
+                    "os.symlink",
+                    side_effect=collide,
+                ):
+                    with self.assertRaisesRegex(
+                        EvaluationError, "output_collision"
+                    ):
+                        publish_artifacts(output, artifacts)
+                if destination_type == "file":
+                    self.assertEqual(output.read_bytes(), b"untouched-file")
+                elif destination_type == "directory":
+                    self.assertEqual(
+                        (output / "untouched").read_bytes(), b"directory"
+                    )
+                else:
+                    self.assertEqual(
+                        os.readlink(str(output)), "untouched-target"
+                    )
+                self.assertFalse(tuple(
+                    Path(self.temporary.name).glob(
+                        "." + output.name + ".tmp-*"
+                    )
+                ))
+
+    def test_failed_symlink_publication_removes_unpublished_backing(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        output = Path(self.temporary.name) / "symlink-permission-failure"
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(),
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.os.symlink",
+            side_effect=PermissionError(errno.EACCES, "injected"),
+        ):
+            with self.assertRaisesRegex(
+                EvaluationError, "publication_failure"
+            ):
+                publish_artifacts(output, artifacts)
+        self.assertFalse(output.exists())
+        self.assertFalse(output.is_symlink())
+        self.assertFalse(tuple(
+            Path(self.temporary.name).glob(
+                "." + output.name + ".tmp-*"
+            )
+        ))
+
+    def test_unrelated_rename_failure_does_not_use_symlink_fallback(self):
+        source_path = Path(self.temporary.name) / "unrelated-source"
+        destination_path = Path(self.temporary.name) / "unrelated-destination"
+        source_path.mkdir()
+        failure = EvaluationError(
+            "publication_failure",
+            "injected unrelated rename failure",
+        )
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=failure,
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.os.symlink"
+        ) as symlink:
+            with self.assertRaisesRegex(
+                EvaluationError, "publication_failure"
+            ):
+                _atomic_no_replace(source_path, destination_path)
+        symlink.assert_not_called()
+        self.assertTrue(source_path.is_dir())
+        self.assertFalse(destination_path.exists())
+
+    def test_publication_validator_rejects_unsafe_symlink_targets(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        valid_public = Path(self.temporary.name) / "valid-public"
+        self.publish_with_symlink(valid_public, artifacts)
+        backing = _resolve_publication_directory(valid_public)
+        valid_public.unlink()
+        nested = Path(self.temporary.name) / "nested"
+        nested.mkdir()
+        outside_context = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_context.cleanup)
+        outside = Path(outside_context.name)
+        relay = Path(self.temporary.name) / "external-relay"
+        os.symlink(str(outside), str(relay))
+        not_directory = Path(self.temporary.name) / "not-directory"
+        not_directory.write_text("file")
+        cases = {
+            "absolute": str(backing),
+            "parent": "..",
+            "nested": "nested/backing",
+            "dangling": "missing-backing",
+            "external": relay.name,
+            "file": not_directory.name,
+        }
+        identifiers = tuple(item.physical_family_id for item in selected)
+        for name, target in cases.items():
+            with self.subTest(name=name):
+                public = Path(self.temporary.name) / ("invalid-" + name)
+                os.symlink(target, str(public))
+                with self.assertRaisesRegex(
+                    EvaluationError, "invalid_publication_symlink"
+                ):
+                    inspect_publication(
+                        public,
+                        authoritative_validation_ids=identifiers,
+                        authoritative_test_ids=(),
+                        reviewed_commit="a" * 40,
+                    )
+
+    def test_deterministic_replay_reads_through_public_symlinks(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        output_a = Path(self.temporary.name) / "symlink-replay-a"
+        output_b = Path(self.temporary.name) / "symlink-replay-b"
+        self.publish_with_symlink(output_a, artifacts)
+        self.publish_with_symlink(output_b, artifacts)
+        self.assertTrue(output_a.is_symlink())
+        self.assertTrue(output_b.is_symlink())
+        self.assertTrue(compare_publications(output_a, output_b))
 
     def test_destination_created_at_atomic_rename_is_never_replaced(self):
         selected, records, raw = self.records()
@@ -1393,6 +1654,69 @@ class EvaluationTests(unittest.TestCase):
             with self.assertRaisesRegex(EvaluationError, "publication_failure"):
                 publish_json_report(rename_failure, report)
         self.assertFalse(rename_failure.exists())
+
+    def test_machine_report_symlink_publication_and_collision_cleanup(self):
+        report = {"python_version": "actual", "test_partition_evaluated": False}
+        output = Path(self.temporary.name) / "symlink-report.json"
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(errno.ENOTSUP),
+        ):
+            publish_json_report(output, report)
+        self.assertTrue(output.is_symlink())
+        target = Path(os.readlink(str(output)))
+        self.assertEqual(len(target.parts), 1)
+        backing = _resolve_publication_file(output)
+        self.assertEqual(backing.parent, output.parent.resolve())
+        self.assertEqual(json.loads(output.read_text()), report)
+        self.assertTrue(backing.is_file())
+
+        collision = Path(self.temporary.name) / "report-race.json"
+        real_symlink = os.symlink
+
+        def collide(target_name, link_name, target_is_directory=False):
+            collision.write_bytes(b"untouched-report")
+            return real_symlink(
+                target_name,
+                link_name,
+                target_is_directory=target_is_directory,
+            )
+
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(),
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.os.symlink",
+            side_effect=collide,
+        ):
+            with self.assertRaisesRegex(EvaluationError, "output_collision"):
+                publish_json_report(collision, report)
+        self.assertEqual(collision.read_bytes(), b"untouched-report")
+        self.assertFalse(tuple(
+            Path(self.temporary.name).glob(
+                "." + collision.name + ".tmp-*"
+            )
+        ))
+
+        failed = Path(self.temporary.name) / "report-symlink-failure.json"
+        with mock.patch.object(sys, "platform", "linux"), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned."
+            "_linux_rename_noreplace",
+            side_effect=self.unsupported_rename_error(),
+        ), mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned.os.symlink",
+            side_effect=PermissionError(errno.EACCES, "injected"),
+        ):
+            with self.assertRaisesRegex(
+                EvaluationError, "publication_failure"
+            ):
+                publish_json_report(failed, report)
+        self.assertFalse(failed.exists())
+        self.assertFalse(tuple(
+            Path(self.temporary.name).glob("." + failed.name + ".tmp-*")
+        ))
 
     def test_checkpoint_hash_reads_exact_bytes(self):
         path = Path(self.temporary.name) / "checkpoint.pt"

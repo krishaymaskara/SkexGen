@@ -59,6 +59,7 @@ container_python -c \
 
 container_python - "$RUN_ROOT" "$SLURM_JOB_ID" <<'PY'
 from pathlib import Path
+import os
 import platform
 import shutil
 import sys
@@ -66,6 +67,9 @@ import sys
 from prototype.flat_baseline.evaluate_length_conditioned import (
     EvaluationError,
     _atomic_no_replace,
+    _fsync_directory,
+    _remove_unpublished_backing,
+    _resolve_publication_directory,
 )
 
 root = Path(sys.argv[1])
@@ -80,12 +84,31 @@ existing = preflight / "existing"
 source.mkdir()
 collision_source.mkdir()
 existing.mkdir()
-(source / "evidence.txt").write_text("published", encoding="utf-8")
-(existing / "survives.txt").write_text("untouched", encoding="utf-8")
+with (source / "evidence.txt").open("w", encoding="utf-8") as stream:
+    stream.write("published")
+    stream.flush()
+    os.fsync(stream.fileno())
+with (existing / "survives.txt").open("w", encoding="utf-8") as stream:
+    stream.write("untouched")
+    stream.flush()
+    os.fsync(stream.fileno())
+_fsync_directory(source)
+_fsync_directory(existing)
 try:
-    _atomic_no_replace(source, destination)
-    if source.exists() or not destination.is_dir():
-        raise RuntimeError("no-replace publication did not move the source")
+    outcome = _atomic_no_replace(source, destination)
+    resolved = _resolve_publication_directory(destination)
+    if (resolved / "evidence.txt").read_text(encoding="utf-8") != "published":
+        raise RuntimeError("published backing directory is incomplete")
+    if outcome["publication_backend"] == "renameat2":
+        if source.exists() or destination.is_symlink():
+            raise RuntimeError("renameat2 publication has the wrong shape")
+    elif outcome["publication_backend"] == "symlink":
+        if not source.is_dir() or not destination.is_symlink():
+            raise RuntimeError("symlink publication has the wrong shape")
+        if os.readlink(str(destination)) != source.name:
+            raise RuntimeError("publication symlink is not sibling-relative")
+    else:
+        raise RuntimeError("unexpected publication backend")
     try:
         _atomic_no_replace(collision_source, existing)
     except EvaluationError as exc:
@@ -93,15 +116,62 @@ try:
             raise
     else:
         raise RuntimeError("no-replace collision unexpectedly succeeded")
-    if not collision_source.is_dir():
-        raise RuntimeError("collision source was modified")
+    if collision_source.exists():
+        _remove_unpublished_backing(collision_source)
+    if collision_source.exists():
+        raise RuntimeError("failed publication backing was not cleaned")
     if (existing / "survives.txt").read_text(encoding="utf-8") != "untouched":
         raise RuntimeError("existing destination was modified")
-    print("Adroit architecture: {}".format(platform.machine()))
-    print("Linux no-replace filesystem preflight: passed")
+    rename_errno = outcome["renameat2_errno"]
+    rename_name = outcome["renameat2_errno_name"]
+    errno_value = (
+        "unavailable"
+        if rename_errno is None
+        else "{}:{}".format(rename_errno, rename_name)
+    )
+    print("platform_machine={}".format(platform.machine()))
+    print("renameat2_errno={}".format(errno_value))
+    print("renameat2_backend_attempted={}".format(
+        outcome["renameat2_backend"]
+    ))
+    print("publication_backend={}".format(outcome["publication_backend"]))
+    print("publication_preflight=PASS")
 finally:
     shutil.rmtree(str(preflight))
 PY
+
+check_publication_paths() {
+  container_python - "$RUN_ROOT" "$@" <<'PY'
+from pathlib import Path
+import sys
+
+from prototype.flat_baseline.evaluate_length_conditioned import (
+    _resolve_publication_directory,
+    _resolve_publication_file,
+)
+
+root = Path(sys.argv[1]).resolve(strict=True)
+allowed = set()
+prefixes = set()
+for value in sys.argv[2:]:
+    public = Path(value)
+    prefixes.add("." + public.name + ".tmp-")
+    resolved = (
+        _resolve_publication_file(public)
+        if public.suffix == ".json"
+        else _resolve_publication_directory(public)
+    )
+    if public.is_symlink():
+        allowed.add(resolved)
+actual = {
+    path.resolve(strict=True)
+    for path in root.iterdir()
+    if any(path.name.startswith(prefix) for prefix in prefixes)
+}
+if actual != allowed:
+    raise RuntimeError("unexpected publication backing or temporary path")
+PY
+}
 
 container_python -B -m unittest \
   prototype.flat_baseline.tests.test_evaluate_length_conditioned
@@ -156,7 +226,7 @@ container_python -B -m prototype.flat_baseline.verify_evaluation_artifacts \
   --expected-authoritative-family-count 680 \
   --expected-authoritative-validation-count 68 \
   --family-limit 6
-test -z "$(find "$RUN_ROOT" -maxdepth 1 -type d -name '.validation-smoke-*.tmp-*' -print -quit)"
+check_publication_paths "$SMOKE_A"
 
 SMOKE_B_STATUS="$(run_evaluation "$SMOKE_B" 6 3)"
 container_python -B -m prototype.flat_baseline.verify_evaluation_artifacts \
@@ -168,7 +238,7 @@ container_python -B -m prototype.flat_baseline.verify_evaluation_artifacts \
   --expected-authoritative-family-count 680 \
   --expected-authoritative-validation-count 68 \
   --family-limit 6
-test -z "$(find "$RUN_ROOT" -maxdepth 1 -type d -name '.validation-smoke-*.tmp-*' -print -quit)"
+check_publication_paths "$SMOKE_A" "$SMOKE_B"
 
 FULL_STATUS="$(run_evaluation "$FULL" "" 32)"
 container_python -B -m prototype.flat_baseline.verify_evaluation_artifacts \
@@ -186,6 +256,5 @@ container_python -B -m prototype.flat_baseline.verify_evaluation_artifacts \
   --full-exit-code "$FULL_STATUS" \
   --job-id "$SLURM_JOB_ID" \
   --regression-status passed
-test -z "$(find "$RUN_ROOT" -maxdepth 1 -type d -name '.validation-*.tmp-*' -print -quit)"
-test -z "$(find "$RUN_ROOT" -maxdepth 1 -type f -name '.validation-report-*.tmp-*' -print -quit)"
+check_publication_paths "$SMOKE_A" "$SMOKE_B" "$FULL" "$REPORT"
 test -f "$REPORT"

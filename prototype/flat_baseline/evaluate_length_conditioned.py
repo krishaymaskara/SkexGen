@@ -88,9 +88,20 @@ _LINUX_RENAMEAT2_SYSCALLS = {
 class EvaluationError(RuntimeError):
     """An operational evaluation contract failed."""
 
-    def __init__(self, code, detail):
+    def __init__(
+        self,
+        code,
+        detail,
+        *,
+        error_number=None,
+        publication_backend=None,
+        platform_machine=None,
+    ):
         self.code = code
         self.detail = detail
+        self.error_number = error_number
+        self.publication_backend = publication_backend
+        self.platform_machine = platform_machine
         super().__init__("{}: {}".format(code, detail))
 
 
@@ -390,7 +401,7 @@ def validate_artifact_directory(
 ):
     """Validate the complete logical publication, before or after rename."""
 
-    root = Path(directory)
+    root = _resolve_publication_directory(directory)
     metadata = _strict_document(root / "run_metadata.json")
     enabled = metadata.get("raw_predictions_published")
     if not isinstance(enabled, bool):
@@ -400,8 +411,14 @@ def validate_artifact_directory(
     expected = set(REQUIRED_ARTIFACTS)
     if enabled:
         expected.add(RAW_ARTIFACT)
-    actual = {path.name for path in root.iterdir() if path.is_file()}
-    if actual != expected or any(not path.is_file() for path in root.iterdir()):
+    actual = {
+        path.name
+        for path in root.iterdir()
+        if path.is_file() and not path.is_symlink()
+    }
+    if actual != expected or any(
+        not path.is_file() or path.is_symlink() for path in root.iterdir()
+    ):
         raise EvaluationError("artifact_set_mismatch", "published artifact set is wrong")
     for path in sorted(root.iterdir()):
         _validate_file_encoding(path)
@@ -1709,11 +1726,22 @@ def _atomic_no_replace(source, destination):
     """Atomically rename without replacement; never fall back to os.rename."""
 
     if sys.platform.startswith("linux"):
-        _linux_rename_noreplace(source, destination)
-        return
+        try:
+            return _linux_rename_noreplace(source, destination)
+        except EvaluationError as exc:
+            if exc.code != "unsupported_no_replace":
+                raise
+            return _relative_symlink_no_replace(
+                source, destination, exc
+            )
     if sys.platform == "darwin":
         _darwin_rename_noreplace(source, destination)
-        return
+        return {
+            "publication_backend": "renamex_np",
+            "renameat2_errno": None,
+            "renameat2_errno_name": None,
+            "platform_machine": platform.machine(),
+        }
     raise EvaluationError(
         "unsupported_no_replace",
         "no supported atomic no-replace rename primitive",
@@ -1725,12 +1753,22 @@ def _linux_rename_noreplace(source, destination):
     function = getattr(library, "renameat2", None)
     if function is not None:
         result = _call_renameat2_wrapper(function, source, destination)
-    else:
-        result = _call_renameat2_syscall(
-            library, source, destination, platform.machine()
-        )
-    if result != 0:
-        _raise_rename_error(ctypes.get_errno())
+        if result == 0:
+            return _renameat2_outcome("renameat2_libc")
+        error_number = ctypes.get_errno()
+        if not _unsupported_rename_errno(error_number):
+            _raise_rename_error(
+                error_number, "renameat2_libc", platform.machine()
+            )
+    result = _call_renameat2_syscall(
+        library, source, destination, platform.machine()
+    )
+    if result == 0:
+        return _renameat2_outcome("renameat2_syscall")
+    error_number = ctypes.get_errno()
+    _raise_rename_error(
+        error_number, "renameat2_syscall", platform.machine()
+    )
 
 
 def _call_renameat2_wrapper(function, source, destination):
@@ -1754,16 +1792,21 @@ def _call_renameat2_wrapper(function, source, destination):
 def _call_renameat2_syscall(library, source, destination, architecture):
     syscall_number = _LINUX_RENAMEAT2_SYSCALLS.get(architecture)
     if syscall_number is None:
-        raise EvaluationError(
+        raise _publication_error(
             "unsupported_no_replace",
-            "renameat2 syscall is unknown for architecture {}".format(
-                architecture
-            ),
+            "renameat2 syscall is unknown for architecture",
+            None,
+            "renameat2_syscall",
+            architecture,
         )
     function = getattr(library, "syscall", None)
     if function is None:
-        raise EvaluationError(
-            "unsupported_no_replace", "libc syscall entry point is unavailable"
+        raise _publication_error(
+            "unsupported_no_replace",
+            "libc syscall entry point is unavailable",
+            None,
+            "renameat2_syscall",
+            architecture,
         )
     function.argtypes = (ctypes.c_long,)
     function.restype = ctypes.c_long
@@ -1793,18 +1836,176 @@ def _darwin_rename_noreplace(source, destination):
         _raise_rename_error(ctypes.get_errno())
 
 
-def _raise_rename_error(error_number):
+def _unsupported_rename_errno(error_number):
+    return error_number in (errno.ENOSYS, errno.EINVAL, errno.ENOTSUP)
+
+
+def _renameat2_outcome(backend):
+    return {
+        "publication_backend": "renameat2",
+        "renameat2_backend": backend,
+        "renameat2_errno": 0,
+        "renameat2_errno_name": "SUCCESS",
+        "platform_machine": platform.machine(),
+    }
+
+
+def _publication_error(code, detail, error_number, backend, machine):
+    error_name = (
+        "unavailable"
+        if error_number is None
+        else errno.errorcode.get(error_number, "UNKNOWN")
+    )
+    number = "unavailable" if error_number is None else str(error_number)
+    complete = (
+        "{}; errno={}; errno_name={}; backend={}; platform_machine={}"
+    ).format(detail, number, error_name, backend, machine)
+    return EvaluationError(
+        code,
+        complete,
+        error_number=error_number,
+        publication_backend=backend,
+        platform_machine=machine,
+    )
+
+
+def _raise_rename_error(
+    error_number, backend="atomic_no_replace", machine=None
+):
+    machine = platform.machine() if machine is None else machine
     if error_number in (errno.EEXIST, errno.ENOTEMPTY):
-        raise EvaluationError("output_collision", "destination already exists")
-    if error_number in (errno.ENOSYS, errno.EINVAL, errno.ENOTSUP):
-        raise EvaluationError(
+        raise _publication_error(
+            "output_collision",
+            "destination already exists",
+            error_number,
+            backend,
+            machine,
+        )
+    if _unsupported_rename_errno(error_number):
+        raise _publication_error(
             "unsupported_no_replace",
             "atomic no-replace rename is unsupported",
+            error_number,
+            backend,
+            machine,
         )
-    raise EvaluationError(
+    raise _publication_error(
         "publication_failure",
-        "atomic rename failed with errno {}".format(error_number),
+        "atomic no-replace publication failed",
+        error_number,
+        backend,
+        machine,
     )
+
+
+def _relative_symlink_no_replace(source, destination, unsupported_error):
+    source = Path(source)
+    destination = Path(destination)
+    if source.parent != destination.parent or source.name in ("", ".", ".."):
+        raise EvaluationError(
+            "publication_failure",
+            "symlink backing path is not a sibling basename",
+        )
+    try:
+        os.symlink(
+            source.name,
+            str(destination),
+            target_is_directory=source.is_dir(),
+        )
+    except OSError as exc:
+        _remove_unpublished_backing(source)
+        if exc.errno in (errno.EEXIST, errno.ENOTEMPTY):
+            _raise_rename_error(
+                exc.errno, "relative_symlink", platform.machine()
+            )
+        raise _publication_error(
+            "publication_failure",
+            "relative symlink publication failed",
+            exc.errno,
+            "relative_symlink",
+            platform.machine(),
+        )
+    try:
+        _fsync_directory(destination.parent)
+    except OSError as exc:
+        if (
+            destination.is_symlink()
+            and os.readlink(str(destination)) == source.name
+        ):
+            destination.unlink()
+        _remove_unpublished_backing(source)
+        raise _publication_error(
+            "publication_failure",
+            "relative symlink parent fsync failed",
+            exc.errno,
+            "relative_symlink",
+            platform.machine(),
+        )
+    renameat2_errno = unsupported_error.error_number
+    return {
+        "publication_backend": "symlink",
+        "renameat2_backend": unsupported_error.publication_backend,
+        "renameat2_errno": renameat2_errno,
+        "renameat2_errno_name": (
+            None
+            if renameat2_errno is None
+            else errno.errorcode.get(renameat2_errno, "UNKNOWN")
+        ),
+        "platform_machine": platform.machine(),
+    }
+
+
+def _resolve_publication_directory(path):
+    return _resolve_publication_path(path, expect_directory=True)
+
+
+def _resolve_publication_file(path):
+    return _resolve_publication_path(path, expect_directory=False)
+
+
+def _resolve_publication_path(path, *, expect_directory):
+    public = Path(path)
+    if not public.is_symlink():
+        valid = public.is_dir() if expect_directory else public.is_file()
+        if not valid:
+            raise EvaluationError(
+                "invalid_publication_path",
+                "public path has the wrong type",
+            )
+        return public
+    target_text = os.readlink(str(public))
+    target = Path(target_text)
+    if (
+        target.is_absolute()
+        or len(target.parts) != 1
+        or target.name in ("", ".", "..")
+        or target_text != target.name
+    ):
+        raise EvaluationError(
+            "invalid_publication_symlink",
+            "public symlink target is not a sibling basename",
+        )
+    candidate = public.parent / target
+    if candidate.is_symlink():
+        raise EvaluationError(
+            "invalid_publication_symlink",
+            "publication backing path is a symlink",
+        )
+    try:
+        parent = public.parent.resolve(strict=True)
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise EvaluationError(
+            "invalid_publication_symlink",
+            "publication backing path does not exist",
+        ) from exc
+    valid = resolved.is_dir() if expect_directory else resolved.is_file()
+    if resolved.parent != parent or not valid:
+        raise EvaluationError(
+            "invalid_publication_symlink",
+            "publication backing path is invalid or escapes its parent",
+        )
+    return resolved
 
 
 def _fsync_directory(path):
@@ -1821,7 +2022,7 @@ def _fsync_directory(path):
 
 
 def _preflight_output(destination):
-    if destination.exists():
+    if destination.exists() or destination.is_symlink():
         raise EvaluationError("output_collision", "output directory already exists")
     if not destination.parent.is_dir():
         raise EvaluationError("invalid_output_parent", "output parent is not a directory")
@@ -1854,6 +2055,13 @@ def _remove_temporary_directory(path):
         if child.is_file():
             child.unlink()
     path.rmdir()
+
+
+def _remove_unpublished_backing(path):
+    if path.is_dir() and not path.is_symlink():
+        _remove_temporary_directory(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
 
 
 if __name__ == "__main__":
