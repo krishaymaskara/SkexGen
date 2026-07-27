@@ -222,6 +222,247 @@ class TrainingTests(unittest.TestCase):
                 value, first_state[name], rtol=0.0, atol=0.0
             )
 
+    def test_train_kmeans_resume_does_not_rerun_or_change_initialization(self):
+        first_config = replace(
+            self.training_config,
+            vq_init="train-kmeans",
+            output_dir=str(Path(self.temporary.name) / "treatment"),
+        )
+
+        def trained(
+            model,
+            optimizer,
+            examples,
+            model_config,
+            training_config,
+            device,
+            epoch,
+            global_step,
+            torch_module,
+            instrumentation=None,
+        ):
+            del (
+                model,
+                optimizer,
+                examples,
+                model_config,
+                training_config,
+                device,
+                epoch,
+                torch_module,
+                instrumentation,
+            )
+            return _summary(1.0), global_step + 1
+
+        with mock.patch(
+            "prototype.flat_baseline.vq_initialization."
+            "initialize_train_codebook",
+            return_value={
+                "mode": "train-kmeans",
+                "method": "seeded-kmeans++-fixed-lloyd",
+                "seed": first_config.seed,
+                "pseudo_count_policy": (
+                    "cluster-proportions-total-codebook-size"
+                ),
+                "report_sha256": "a" * 64,
+            },
+        ) as initialize, mock.patch(
+            "prototype.flat_baseline.training.train_epoch",
+            side_effect=trained,
+        ), mock.patch(
+            "prototype.flat_baseline.training.evaluate_epoch",
+            return_value=_summary(1.0),
+        ):
+            first = train_run(
+                self.corpus,
+                model_config=self.model_config,
+                training_config=first_config,
+            )
+        initialize.assert_called_once()
+        treatment_checkpoint = torch.load(
+            first.last_checkpoint, map_location="cpu"
+        )
+        self.assertEqual(
+            treatment_checkpoint["training_config"]["vq_init"],
+            "train-kmeans",
+        )
+        self.assertEqual(
+            treatment_checkpoint["training_config"]["seed"],
+            first_config.seed,
+        )
+        self.assertEqual(
+            treatment_checkpoint["data_state"][
+                "initialization_report_sha256"
+            ],
+            "a" * 64,
+        )
+        resumed_config = replace(first_config, epochs=2)
+        with mock.patch(
+            "prototype.flat_baseline.vq_initialization."
+            "initialize_train_codebook"
+        ) as initialize, mock.patch(
+            "prototype.flat_baseline.training.train_epoch",
+            side_effect=trained,
+        ), mock.patch(
+            "prototype.flat_baseline.training.evaluate_epoch",
+            return_value=_summary(1.0),
+        ):
+            train_run(
+                self.corpus,
+                model_config=self.model_config,
+                training_config=resumed_config,
+                resume_checkpoint=first.last_checkpoint,
+            )
+        initialize.assert_not_called()
+        with self.assertRaises(CheckpointError) as captured:
+            validated_checkpoint(
+                first.last_checkpoint,
+                self.model_config,
+                replace(resumed_config, vq_init="normal"),
+                torch,
+            )
+        self.assertEqual(
+            captured.exception.code, "incompatible_training_config"
+        )
+
+    def test_treatment_initialization_precedes_optimizer_creation(self):
+        config = replace(
+            self.training_config,
+            vq_init="train-kmeans",
+            output_dir=str(Path(self.temporary.name) / "ordering"),
+        )
+        events = []
+
+        def initialize(*args, **kwargs):
+            del args, kwargs
+            events.append("initialize")
+            return {
+                "mode": "train-kmeans",
+                "method": "seeded-kmeans++-fixed-lloyd",
+                "seed": config.seed,
+                "pseudo_count_policy": (
+                    "cluster-proportions-total-codebook-size"
+                ),
+                "report_sha256": "b" * 64,
+            }
+
+        real_adamw = torch.optim.AdamW
+
+        def optimizer(*args, **kwargs):
+            events.append("optimizer")
+            return real_adamw(*args, **kwargs)
+
+        with mock.patch(
+            "prototype.flat_baseline.vq_initialization."
+            "initialize_train_codebook",
+            side_effect=initialize,
+        ), mock.patch(
+            "prototype.flat_baseline.training.torch.optim.AdamW",
+            side_effect=optimizer,
+        ), mock.patch(
+            "prototype.flat_baseline.training.train_epoch",
+            return_value=(_summary(1.0), 1),
+        ), mock.patch(
+            "prototype.flat_baseline.training.evaluate_epoch",
+            return_value=_summary(1.0),
+        ):
+            train_run(
+                self.corpus,
+                model_config=self.model_config,
+                training_config=config,
+            )
+        self.assertEqual(events[:2], ["initialize", "optimizer"])
+
+    def test_default_train_run_does_not_invoke_treatment_initializer(self):
+        config = replace(
+            self.training_config,
+            output_dir=str(Path(self.temporary.name) / "normal"),
+        )
+        with mock.patch(
+            "prototype.flat_baseline.vq_initialization."
+            "initialize_train_codebook"
+        ) as initialize, mock.patch(
+            "prototype.flat_baseline.training.train_epoch",
+            return_value=(_summary(1.0), 1),
+        ), mock.patch(
+            "prototype.flat_baseline.training.evaluate_epoch",
+            return_value=_summary(1.0),
+        ):
+            train_run(
+                self.corpus,
+                model_config=self.model_config,
+                training_config=config,
+            )
+        initialize.assert_not_called()
+
+    def test_instrumented_training_is_state_optimizer_and_rng_neutral(self):
+        from prototype.flat_baseline.vq_pilot import PilotInstrumentation
+
+        model_config = replace(self.model_config, dropout=0.2)
+        seed_everything(501)
+        plain_model = FlatMixedVQModel(model_config)
+        seed_everything(501)
+        observed_model = FlatMixedVQModel(model_config)
+        plain_optimizer = torch.optim.AdamW(
+            plain_model.parameters(),
+            lr=self.training_config.learning_rate,
+            weight_decay=self.training_config.weight_decay,
+        )
+        observed_optimizer = torch.optim.AdamW(
+            observed_model.parameters(),
+            lr=self.training_config.learning_rate,
+            weight_decay=self.training_config.weight_decay,
+        )
+        seed_everything(777)
+        plain_summary, plain_step = train_epoch(
+            plain_model,
+            plain_optimizer,
+            self.data.train_examples,
+            model_config,
+            self.training_config,
+            torch.device("cpu"),
+            1,
+            0,
+            torch,
+        )
+        plain_rng = torch.get_rng_state().clone()
+        seed_everything(777)
+        observed_summary, observed_step = train_epoch(
+            observed_model,
+            observed_optimizer,
+            self.data.train_examples,
+            model_config,
+            self.training_config,
+            torch.device("cpu"),
+            1,
+            0,
+            torch,
+            PilotInstrumentation(None, torch),
+        )
+        observed_rng = torch.get_rng_state().clone()
+        self.assertEqual(plain_step, observed_step)
+        self.assertEqual(
+            plain_summary["number_of_examples"],
+            observed_summary["number_of_examples"],
+        )
+        self.assertEqual(
+            plain_summary["metrics"], observed_summary["metrics"]
+        )
+        self.assertEqual(
+            plain_summary["codebook"], observed_summary["codebook"]
+        )
+        self.assertTrue(torch.equal(plain_rng, observed_rng))
+        _assert_nested_tensors_equal(
+            self,
+            plain_model.state_dict(),
+            observed_model.state_dict(),
+        )
+        _assert_nested_tensors_equal(
+            self,
+            plain_optimizer.state_dict(),
+            observed_optimizer.state_dict(),
+        )
+
     def test_train_run_rejects_invalid_partitions_before_model_creation(self):
         invalid = (
             ("test", "validation", "invalid_training_partition"),
@@ -690,6 +931,29 @@ class TrainingTests(unittest.TestCase):
         self.assertEqual(
             captured.exception.code, "incompatible_training_config"
         )
+
+    def test_older_normal_checkpoint_without_vq_init_remains_loadable(self):
+        model, optimizer = self._model_optimizer()
+        payload = checkpoint_payload(
+            model,
+            optimizer,
+            1,
+            0,
+            self.model_config,
+            self.training_config,
+            1.0,
+            torch,
+        )
+        payload["training_config"].pop("vq_init")
+        path = Path(self.temporary.name) / "legacy-normal.pt"
+        save_checkpoint(path, payload, torch)
+        restored = validated_checkpoint(
+            path,
+            self.model_config,
+            self.training_config,
+            torch,
+        )
+        self.assertNotIn("vq_init", restored["training_config"])
 
     def test_checkpoint_progress_requires_nonnegative_actual_integers(self):
         invalid_values = (

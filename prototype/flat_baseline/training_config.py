@@ -18,6 +18,7 @@ LOSS_METRICS = (
     "vq_commitment",
 )
 DEVICE_CHOICES = ("auto", "cpu", "cuda")
+VQ_INIT_CHOICES = ("normal", "train-kmeans")
 
 
 class TrainingConfigurationError(ValueError):
@@ -40,6 +41,7 @@ class TrainingConfig:
     device: str = "auto"
     output_dir: str = "flat_baseline_run"
     checkpoint_selection_metric: str = "total"
+    vq_init: str = "normal"
 
     def validate(self):
         _nonnegative_integer(self.seed, "seed")
@@ -63,6 +65,12 @@ class TrainingConfig:
         if self.checkpoint_selection_metric not in LOSS_METRICS:
             raise TrainingConfigurationError(
                 "checkpoint_selection_metric must name a validation loss"
+            )
+        if self.vq_init not in VQ_INIT_CHOICES:
+            raise TrainingConfigurationError(
+                "vq_init must be one of {}".format(
+                    ", ".join(VQ_INIT_CHOICES)
+                )
             )
 
     def to_dict(self):

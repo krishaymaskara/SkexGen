@@ -133,15 +133,45 @@ def validated_checkpoint(
             "incompatible_training_config",
             "checkpoint optimization configuration differs from the request",
         )
-    if (
-        expected_data_state is not None
-        and checkpoint["data_state"] != expected_data_state
-    ):
-        raise CheckpointError(
-            "incompatible_training_data",
-            "checkpoint physical-family partitions differ from the request",
-        )
+    if expected_data_state is not None:
+        saved_data_state = checkpoint["data_state"]
+        if not _compatible_data_state(
+            saved_data_state, expected_data_state, saved_training
+        ):
+            raise CheckpointError(
+                "incompatible_training_data",
+                "checkpoint physical-family partitions differ from the request",
+            )
     return checkpoint
+
+
+def _compatible_data_state(saved, expected, training_config):
+    if not isinstance(saved, dict) or not isinstance(expected, dict):
+        return False
+    if any(saved.get(name) != value for name, value in expected.items()):
+        return False
+    extra = set(saved) - set(expected)
+    provenance = {
+        "initialization_mode",
+        "initialization_algorithm",
+        "initialization_seed",
+        "initialization_pseudo_count_policy",
+        "initialization_report_sha256",
+    }
+    if not extra:
+        return True
+    if extra != provenance:
+        return False
+    return (
+        saved["initialization_mode"] == training_config.vq_init
+        and saved["initialization_seed"] == training_config.seed
+        and isinstance(saved["initialization_algorithm"], str)
+        and bool(saved["initialization_algorithm"])
+        and isinstance(saved["initialization_pseudo_count_policy"], str)
+        and bool(saved["initialization_pseudo_count_policy"])
+        and isinstance(saved["initialization_report_sha256"], str)
+        and len(saved["initialization_report_sha256"]) == 64
+    )
 
 
 def capture_rng_state(torch_module):

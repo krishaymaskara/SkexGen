@@ -46,6 +46,7 @@ class TrainingConfigurationTests(unittest.TestCase):
             TrainingConfig(device="mps"),
             TrainingConfig(output_dir=""),
             TrainingConfig(checkpoint_selection_metric="test_loss"),
+            TrainingConfig(vq_init="validation-kmeans"),
         )
         for config in invalid:
             with self.subTest(config=config):

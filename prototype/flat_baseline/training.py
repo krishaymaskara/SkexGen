@@ -190,6 +190,7 @@ def train_epoch(
     epoch,
     global_step,
     torch_module=torch,
+    instrumentation=None,
 ):
     """Train one epoch with active EMA updates and finite-gradient checks."""
 
@@ -203,30 +204,49 @@ def train_epoch(
         torch_module,
     )
     accumulator = _MetricAccumulator()
-    for batch in loader:
-        inputs, target = _torch_batch(batch, device, torch_module)
-        optimizer.zero_grad()
-        output = model(target=target, **inputs)
-        losses = flat_mixed_vq_loss(output, target, model_config)
-        _require_finite_tensor(losses.total, "nonfinite_loss", torch_module)
-        losses.total.backward()
-        _require_finite_gradients(model, torch_module)
-        gradient_norm = torch_module.nn.utils.clip_grad_norm_(
-            model.parameters(), training_config.gradient_clip_norm
-        )
-        _require_finite_tensor(
-            gradient_norm, "nonfinite_gradient_norm", torch_module
-        )
-        _require_finite_gradients(
-            model, torch_module, "nonfinite_postclip_gradient"
-        )
-        optimizer.step()
-        _require_finite_model_state(model, torch_module)
-        _require_finite_optimizer_state(optimizer, torch_module)
-        current_count = len(batch.family_ids)
-        accumulator.add(losses, output, current_count)
-        global_step += 1
-    return accumulator.summary(), global_step
+    if instrumentation is not None:
+        instrumentation.begin(model, "train", epoch)
+    try:
+        for batch in loader:
+            inputs, target = _torch_batch(batch, device, torch_module)
+            optimizer.zero_grad()
+            output = model(target=target, **inputs)
+            losses = flat_mixed_vq_loss(output, target, model_config)
+            _require_finite_tensor(losses.total, "nonfinite_loss", torch_module)
+            losses.total.backward()
+            _require_finite_gradients(model, torch_module)
+            gradient_norm = torch_module.nn.utils.clip_grad_norm_(
+                model.parameters(), training_config.gradient_clip_norm
+            )
+            _require_finite_tensor(
+                gradient_norm, "nonfinite_gradient_norm", torch_module
+            )
+            _require_finite_gradients(
+                model, torch_module, "nonfinite_postclip_gradient"
+            )
+            optimizer.step()
+            _require_finite_model_state(model, torch_module)
+            _require_finite_optimizer_state(optimizer, torch_module)
+            current_count = len(batch.family_ids)
+            accumulator.add(losses, output, current_count)
+            if instrumentation is not None:
+                instrumentation.observe_batch(
+                    model, output, losses, global_step
+                )
+            global_step += 1
+    except Exception:
+        if instrumentation is not None:
+            instrumentation.abort()
+        raise
+    diagnostics = (
+        None
+        if instrumentation is None
+        else instrumentation.finish(model)
+    )
+    summary = accumulator.summary()
+    if diagnostics is not None:
+        summary["diagnostics"] = diagnostics
+    return summary, global_step
 
 
 def evaluate_epoch(
@@ -236,6 +256,8 @@ def evaluate_epoch(
     training_config,
     device,
     torch_module=torch,
+    instrumentation=None,
+    epoch=None,
 ):
     """Evaluate deterministically without changing parameters or EMA buffers."""
 
@@ -250,6 +272,9 @@ def evaluate_epoch(
         torch_module,
     )
     accumulator = _MetricAccumulator()
+    if instrumentation is not None:
+        instrumentation.begin(model, "validation", epoch)
+    diagnostics = None
     try:
         with torch_module.no_grad():
             for batch in loader:
@@ -260,10 +285,27 @@ def evaluate_epoch(
                     losses.total, "nonfinite_validation_loss", torch_module
                 )
                 accumulator.add(losses, output, len(batch.family_ids))
+                if instrumentation is not None:
+                    instrumentation.observe_batch(
+                        model, output, losses, None
+                    )
+    except Exception:
+        if instrumentation is not None:
+            instrumentation.abort()
+        raise
+    else:
+        diagnostics = (
+            None
+            if instrumentation is None
+            else instrumentation.finish(model)
+        )
     finally:
         if was_training:
             model.train()
-    return accumulator.summary()
+    summary = accumulator.summary()
+    if diagnostics is not None:
+        summary["diagnostics"] = diagnostics
+    return summary
 
 
 def train_run(
@@ -306,6 +348,20 @@ def train_run(
         seed_everything(training_config.seed, torch_module)
         device = resolve_device(training_config.device, torch_module)
         model = FlatMixedVQModel(model_config).to(device)
+        initialization_report = None
+        if (
+            resume_path is None
+            and training_config.vq_init == "train-kmeans"
+        ):
+            from .vq_initialization import initialize_train_codebook
+
+            initialization_report = initialize_train_codebook(
+                model,
+                data,
+                training_config,
+                device,
+                torch_module,
+            )
         optimizer = torch_module.optim.AdamW(
             model.parameters(),
             lr=training_config.learning_rate,
@@ -319,6 +375,18 @@ def train_run(
         data_state = _data_state(
             data, split_name, train_partition, validation_partition
         )
+        if initialization_report is not None:
+            data_state.update({
+                "initialization_mode": initialization_report["mode"],
+                "initialization_algorithm": initialization_report["method"],
+                "initialization_seed": initialization_report["seed"],
+                "initialization_pseudo_count_policy": initialization_report[
+                    "pseudo_count_policy"
+                ],
+                "initialization_report_sha256": initialization_report[
+                    "report_sha256"
+                ],
+            })
         if resume_path is not None:
             restored = load_checkpoint(
                 resume_path,
@@ -333,6 +401,10 @@ def train_run(
             start_epoch = restored["epoch"] + 1
             global_step = restored["global_step"]
             best_metric = restored["best_validation_metric"]
+            # Preserve initialization provenance added by newer checkpoints;
+            # the expected state above deliberately contains only authority
+            # fields so older version-1 checkpoints remain loadable.
+            data_state = restored["data_state"]
             if best_metric is not None:
                 _preserve_resumed_best(
                     resume_path,
@@ -364,6 +436,11 @@ def train_run(
                 resume_path,
             )
         )
+        if initialization_report is not None:
+            logger.write({
+                "event": "vq_initialization",
+                "report": initialization_report,
+            })
         completed_epoch = start_epoch - 1
         for epoch in range(start_epoch, training_config.epochs + 1):
             training_summary, global_step = train_epoch(
@@ -692,7 +769,7 @@ def _preserve_resumed_best(
 
 
 def _epoch_record(mode, epoch, global_step, summary, optimizer):
-    return {
+    record = {
         "event": "{}_epoch".format(mode),
         "epoch": epoch,
         "global_step": global_step,
@@ -701,6 +778,9 @@ def _epoch_record(mode, epoch, global_step, summary, optimizer):
         "metrics": summary["metrics"],
         "codebook": summary["codebook"],
     }
+    if "diagnostics" in summary:
+        record["diagnostics"] = summary["diagnostics"]
+    return record
 
 
 def _checkpoint_record(kind, epoch, global_step, best_metric, path):

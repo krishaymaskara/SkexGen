@@ -45,6 +45,9 @@ def build_parser():
     parser.add_argument("--dataloader-workers", type=int)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--checkpoint-selection-metric")
+    parser.add_argument(
+        "--vq-init", choices=("normal", "train-kmeans")
+    )
     return parser
 
 
@@ -70,6 +73,7 @@ def main(argv=None):
             "dataloader_workers": args.dataloader_workers,
             "device": args.device,
             "checkpoint_selection_metric": args.checkpoint_selection_metric,
+            "vq_init": args.vq_init,
         }
         training_config = replace(
             training_config,
