@@ -24,7 +24,7 @@ scientific result passed.
 
 This inventory was checked on July 28, 2026 from branch
 `flat-mixed-baseline` at
-`d549ebe4478e166fda8d54f2b173572a1ab52e7a`. The audit used:
+`ea4f1e152195c209042c8f713c62be6d7393b3bb`. The audit used:
 
 - the current repository and its complete local Git history;
 - the supplied cross-chat project conversation record;
@@ -52,6 +52,7 @@ frozen archive described below is now the primary evidence.
 | VQ-collapse diagnosis | `55b2841d17304abfff793de6c2cece13205bce3c` | `3325296` | Frozen archive below | Two diagnostic families; test false | `verified-local` | [Record](b0_vq_collapse_diagnosis.md) |
 | Train-k-means pilot | `856d6a62187f3d7f4b5cc7a9b4c9efc655b74ce1` | `3326278` | Frozen archive below | 544 train / 68 validation; test false | `verified-local` | [Record](b0_train_kmeans_pilot.md) |
 | Full train-k-means retraining | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` | `3326757` | Frozen archive below | 544 train / 68 validation; test false | `verified-local` | [Record](b0_train_kmeans_full_retrain.md) |
+| Repaired-checkpoint Phase B smoke | `ea4f1e152195c209042c8f713c62be6d7393b3bb` | `3327631` | Two local publications listed below | 6 validation / 0 train / 0 test evaluated | `verified-local` | [Record](b0_phase_b_repaired_smoke.md) |
 
 ## Locally verified bundles
 
@@ -169,11 +170,29 @@ Future recovered jobs should retain the same minimum evidence set:
 Checkpoint and corpus archives should remain outside Git. Their experiment
 records should retain stable archival paths and hashes.
 
+## Locally verified repaired Phase B smoke
+
+Job `3327631` published two artifact directories under
+`/Users/krishaymaskara/research/audited-runs/phase-b-smoke/`, suffixed `-a`
+and `-b`. Each contains `conversion_failures.csv`, `examples.jsonl`,
+`metrics.csv`, `raw_predictions.jsonl`, `run_metadata.json`, and
+`summary.json`.
+
+All six direct file comparisons passed. The corresponding SHA-256 values
+matched, and each ordered six-file hash manifest had SHA-256
+`726d457f28549089f7c991c572ed6f90bc1c234a91910f26fe46ae7afcd3c88e`.
+The metadata verifies a clean `ea4f1e1...` source, the selected epoch-44
+checkpoint, six validation records loaded, and zero train/test records
+loaded. The deterministic smoke passed; it did not evaluate the remaining
+62 validation families or establish final validation quality. See the
+[immutable smoke record](b0_phase_b_repaired_smoke.md).
+
 ## Record backlog
 
 Every completed run with a recovered local evidence bundle now has a durable
-experiment record. The next record is event-driven rather than backfill: a new
-validation-only evaluation record must be created when the selected repaired
-epoch-44 checkpoint is evaluated. Historical evidence that remains
+experiment record. The next record is event-driven rather than backfill: a
+new full 68-family validation-only evaluation record must be created when the
+selected repaired epoch-44 checkpoint passes that next gate. The six-family
+deterministic smoke does not replace it. Historical evidence that remains
 `documented-external` should be upgraded to `verified-local` if its primary
 bundle is recovered.

@@ -79,6 +79,9 @@ the immediate next action changes.
 - [Full train-k-means
   retraining](experiments/b0_train_kmeans_full_retrain.md) — 50-epoch
   continuation and selected epoch-44 checkpoint.
+- [Repaired-checkpoint Phase B deterministic
+  smoke](experiments/b0_phase_b_repaired_smoke.md) — six-family
+  validation-only payload and byte-identical repeat-publication evidence.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

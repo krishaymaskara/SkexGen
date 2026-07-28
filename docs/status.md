@@ -103,12 +103,21 @@ summarized in the
 [controlled-CAD foundation](milestones/controlled_cad_foundation.md) and
 [flat-baseline](milestones/flat_baseline.md) milestone pages.
 
+The repaired checkpoint has also passed a deterministic six-family Phase B
+smoke in Slurm job `3327631`. Both complete publications were byte-identical.
+The authoritative loader selected the same six validation IDs before
+inference, loaded six validation records and zero train/test records, and
+reported `test_partition_evaluated: false`. This is an engineering and
+determinism result, not the final validation result; see the
+[immutable smoke record](experiments/b0_phase_b_repaired_smoke.md).
+
 ## What has not been established
 
 - No graph-discrete or graph-hybrid neural model has been implemented.
 - No capacity-matched graph-versus-flat comparison has been run.
-- The repaired epoch-44 B0 checkpoint has not yet completed its final
-  validation-only reconstruction evaluation.
+- The repaired epoch-44 B0 checkpoint has passed a deterministic six-family
+  smoke but has not yet completed its full 68-family validation-only
+  reconstruction evaluation.
 - Executable OpenCascade reconstruction of repaired-model predictions has not
   been established.
 - Latent-code semantics and localized learned edits have not been evaluated.
@@ -118,9 +127,11 @@ summarized in the
 
 ## Immediate scientific gate
 
-The next scientific action is validation-only evaluation of the selected
-epoch-44 checkpoint using the checked-in Phase B evaluator. That evaluation
-should measure teacher-forced and predicted-history reconstruction, the three
+The next scientific action is the full 68-family validation-only evaluation
+of the selected epoch-44 checkpoint using the checked-in Phase B evaluator.
+The deterministic six-family smoke has passed, including byte-identical
+repeat publication and zero test-family access. The full evaluation should
+measure teacher-forced and predicted-history reconstruction, the three
 validity layers, structural and geometric accuracy, operation/pointer/edge
 metrics, and code usage. Test data must remain untouched until the validation
 protocol and checkpoint are accepted.
@@ -132,9 +143,10 @@ begin only after the flat baseline has a credible, shared evaluation path.
 ## Documentation maintenance
 
 There is no remaining record backfill for a completed run whose primary
-bundle has been recovered locally. The next validation-only evaluation of the
-repaired epoch-44 checkpoint must create a new immutable experiment record
-rather than editing the original-checkpoint Phase B result.
+bundle has been recovered locally. The repaired-checkpoint deterministic
+smoke has its own immutable record. The next full 68-family validation-only
+evaluation must create another immutable experiment record rather than
+editing either smoke or the original-checkpoint Phase B result.
 
 Historical evidence marked `documented-external` in the inventory remains
 eligible for integrity upgrade if its primary artifacts are recovered.
