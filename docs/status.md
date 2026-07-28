@@ -10,17 +10,21 @@ future work lives in the research plan and experimental specification.
 | Item | Current value |
 |---|---|
 | Active branch | `flat-mixed-baseline` |
-| Current reviewed repository commit | `1121b02dec0cc214ad269c6fb89f5e4398ff5bb1` |
-| Current Phase B evaluator implementation commit | `42183a47ec8fa70e6109fbea33ecda9e5e84d071` |
-| Repaired-checkpoint training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
+| Current reviewed repository revision | This documentation commit; its hash is intentionally not embedded here |
+| Phase B evaluator implementation commit | `182ff31a121627f7803b29de1859fae9759a1849` |
+| Checkpoint training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
+| Authoritative checkpoint | Epoch 44, global step 748 |
+| Checkpoint SHA-256 | `282988af00a2dc9a53e14ceb270537d35f85d5339dc989634f88af5f77931267` |
 | Status recorded | July 28, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories |
 | Authoritative corpus | 680 physical families: 544 train, 68 validation, 68 test |
 
-The current reviewed repository commit contains the Phase B evaluator
-implementation last changed at `42183a...`. The separate `d549ebe...` commit
-is provenance for the repaired training run and checkpoint; it is not
-described as the current repository HEAD.
+The current reviewed repository revision is the documentation commit that
+contains this page. Its literal hash is not embedded because doing so would
+change the commit and create a self-referential hash problem. The evaluator
+implementation is fixed at `182ff31...`. The separate `d549ebe...` commit is
+provenance for the repaired training run and checkpoint; it is not described
+as the current repository HEAD.
 
 ## Research objective
 
