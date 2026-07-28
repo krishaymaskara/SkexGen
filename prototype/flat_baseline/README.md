@@ -394,6 +394,14 @@ validation, six families, batch size 3, CPU, raw predictions, authoritative
 frozen SHA-256, 32-code model configuration, and train-k-means provenance.
 The file hash is compared before `torch.load`.
 
+The separate `--repaired-full-contract` flag preserves those repaired
+checkpoint, partition-scoped loading, paired-decoding, schema-2, and raw
+publication rules while requiring no family limit, batch size 32, and exactly
+all 68 authoritative validation families. It cannot be combined with the
+smoke contract or test authorization. Its post-publication report contains
+the frozen Phase B metrics, shared latent usage, and machine-readable Gate
+A-D inputs, but explicitly leaves Gate E and final acceptance undetermined.
+
 A validation invocation is:
 
 ```bash
@@ -418,6 +426,18 @@ It retains two collision-safe publications and verifies every declared
 deterministic artifact byte for byte. The earlier
 `evaluate_validation_cpu.slurm` remains the historical collapsed-checkpoint
 workflow and is not the repaired submission target.
+
+After review, the full repaired-validation workflow is:
+
+```text
+prototype/flat_baseline/adroit/evaluate_repaired_validation_cpu.slurm
+```
+
+It uses a new commit-and-job-qualified namespace, processes all 68 validation
+families, runs the complete artifact verifier, and preserves environment,
+scheduler, repository, checkpoint, corpus-manifest, regression, artifact-hash,
+and scheduler-log-path evidence. It performs neither test-family loading nor
+OpenCascade execution.
 
 This phase reconstructs authoritative flat targets and measures symbolic
 predictions. It does not yet synthesize stable CAD identifiers into a full

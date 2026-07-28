@@ -6,13 +6,14 @@ This specification freezes the validation-only evaluation protocol for the
 repaired `B0-FLAT-MIXED-VQ` checkpoint before any repaired-checkpoint
 reconstruction result is examined.
 
-The protocol is **FROZEN; DETERMINISTIC-SMOKE IMPLEMENTATION PRESENT AND
-AWAITING REVIEW**. The acceptance thresholds and decision mapping below are
-predetermined. The implemented smoke changes must be reviewed before the
-deterministic smoke is run. Closing a listed gap without changing the
-scientific rule does not unfreeze the protocol. Any threshold, denominator,
-partition, checkpoint, or decoding change after repaired results are visible
-requires a new decision record and must not be presented as predetermined.
+The protocol is **FROZEN; DETERMINISTIC SMOKE VERIFIED; FULL-VALIDATION
+WORKFLOW PREPARED AND AWAITING REVIEW**. The acceptance thresholds and
+decision mapping below are predetermined. The implemented full-workflow
+changes must be reviewed before the full evaluation is run. Closing a listed
+gap without changing the scientific rule does not unfreeze the protocol. Any
+threshold, denominator, partition, checkpoint, or decoding change after
+repaired results are visible requires a new decision record and must not be
+presented as predetermined.
 
 This is a specification, not evidence that an evaluation ran. A completed run
 must receive a new immutable record under `docs/experiments/`. The existing
@@ -446,6 +447,14 @@ After smoke acceptance, one new Slurm job:
 The job must not update any earlier namespace. A completed result receives a
 new experiment record even when rejected.
 
+The prepared implementation uses
+`prototype/flat_baseline/adroit/evaluate_repaired_validation_cpu.slurm` and
+the evaluator/verifier flag `--repaired-full-contract`. This flag is distinct
+from the repaired-smoke and historical evaluator modes. It requires all 68
+validation families, no family limit, batch size 32, raw predictions, CPU,
+and no test authorization. The workflow has not been submitted and this
+paragraph is not run evidence.
+
 ## 10. OpenCascade follow-up design
 
 Use a separate immutable job. This isolates conversion from inference,
@@ -492,16 +501,18 @@ The job must:
   zero-count codes, known perplexity, shared memory, CSV schema, aggregate
   recomputation, deterministic replay, and collision-safe publication.
 
-### Required before full evaluation
+### Implemented for full evaluation; review still required
 
-- Freeze the reviewed evaluation commit and literal smoke/full namespace
-  scheme.
-- Make raw prediction publication non-optional in the repaired workflow.
-- Ensure the final report is a complete manifest of all smoke/full artifacts,
-  source/corpus/checkpoint identity, partition-load facts, and scheduler
-  evidence.
-- Implement a machine-readable Gate A-D input report without automatically
-  accepting B0 before the separate execution job.
+- The workflow requires a clean reviewed commit equal to the branch and
+  remote-tracking HEAD and uses a new commit-and-job-qualified full namespace.
+- Raw prediction publication is mandatory under the repaired-full contract.
+- The evaluation artifacts and Gate A-D report preserve source, corpus,
+  checkpoint, partition-load, environment, scheduler, regression, hash, and
+  manifest evidence in the new namespace; Slurm stdout/stderr paths are
+  recorded and scheduler-managed.
+- The machine-readable report contains the frozen paired metrics, shared
+  latent usage, representation-coverage counts, and Gate A-D inputs while
+  recording Gate E as not run and final acceptance as undetermined.
 
 ### Required before OpenCascade execution
 

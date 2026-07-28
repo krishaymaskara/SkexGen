@@ -111,6 +111,12 @@ reported `test_partition_evaluated: false`. This is an engineering and
 determinism result, not the final validation result; see the
 [immutable smoke record](experiments/b0_phase_b_repaired_smoke.md).
 
+A dedicated full-validation workflow is now prepared for review. It extends
+the repaired-smoke checkpoint, partition-isolation, paired-decoding, schema-2,
+and artifact-validation contract to exactly all 68 validation families in a
+new namespace. It has not been submitted, and no full repaired-checkpoint
+inference result exists yet.
+
 ## What has not been established
 
 - No graph-discrete or graph-hybrid neural model has been implemented.
@@ -134,7 +140,8 @@ repeat publication and zero test-family access. The full evaluation should
 measure teacher-forced and predicted-history reconstruction, the three
 validity layers, structural and geometric accuracy, operation/pointer/edge
 metrics, and code usage. Test data must remain untouched until the validation
-protocol and checkpoint are accepted.
+protocol and checkpoint are accepted. The prepared full workflow must first
+be reviewed and committed as the reviewed repository HEAD.
 
 OpenCascade execution, code semantics, and localized edit interventions may
 then be added under a frozen protocol. Graph-model implementation should

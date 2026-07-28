@@ -31,6 +31,7 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     REPAIRED_CHECKPOINT_TRAINING_COMMIT,
     REPAIRED_EVALUATION_SCHEMA_VERSION,
     _atomic_no_replace,
+    _configure_repaired_runtime,
     _failure_counters,
     _identifier_sha256,
     _json_document,
@@ -60,10 +61,13 @@ from prototype.flat_baseline.tests.test_conversion import _raw_from_target
 from prototype.flat_baseline.config import FlatBaselineConfig
 from prototype.flat_baseline.training_config import TrainingConfig
 from prototype.flat_baseline.verify_evaluation_artifacts import (
+    _predicted_history_operation_coverage,
+    _workflow_evidence_hashes,
     complete_report,
     compare_publications,
     inspect_publication,
     main as verifier_main,
+    repaired_full_report,
 )
 from prototype.controlled_data.builders import build_history
 from prototype.controlled_data.identity import source_family_id
@@ -517,6 +521,74 @@ class EvaluationTests(unittest.TestCase):
                 ):
                     parse_arguments(values)
 
+    def test_repaired_full_cli_requires_exact_validation_contract(self):
+        parsed = self.arguments(
+            "--batch-size", "32",
+            "--write-raw-predictions",
+            "--repaired-full-contract",
+        )
+        self.assertTrue(parsed.repaired_full_contract)
+        self.assertIsNone(parsed.family_limit)
+        invalid = (
+            ("--family-limit", "68"),
+            ("--batch-size", "31"),
+            ("--device", "cuda"),
+        )
+        for option, value in invalid:
+            with self.subTest(option=option, value=value):
+                arguments = list((
+                    "--corpus-dir", "corpus",
+                    "--checkpoint", "best.pt",
+                    "--split-manifest", "iid",
+                    "--partition", "validation",
+                    "--output-dir", "output",
+                    "--batch-size", "32",
+                    "--device", "cpu",
+                    "--write-raw-predictions",
+                    "--repaired-full-contract",
+                ))
+                if option == "--family-limit":
+                    arguments.extend((option, value))
+                else:
+                    arguments[arguments.index(option) + 1] = value
+                with self.assertRaisesRegex(
+                    EvaluationError, "repaired_full_configuration"
+                ):
+                    parse_arguments(arguments)
+        with self.assertRaisesRegex(
+            EvaluationError, "repaired_contract_conflict"
+        ):
+            self.arguments(
+                "--family-limit", "6",
+                "--batch-size", "3",
+                "--write-raw-predictions",
+                "--repaired-smoke-contract",
+                "--repaired-full-contract",
+            )
+
+    def test_repaired_runtime_sets_frozen_seed_and_one_torch_thread(self):
+        events = []
+
+        class Torch:
+            threads = 4
+
+            @classmethod
+            def manual_seed(cls, seed):
+                events.append(("seed", seed))
+
+            @classmethod
+            def set_num_threads(cls, count):
+                events.append(("threads", count))
+                cls.threads = count
+
+            @classmethod
+            def get_num_threads(cls):
+                return cls.threads
+
+        _configure_repaired_runtime(Torch, 2026)
+        self.assertEqual(events, [("seed", 2026), ("threads", 1)])
+        self.assertEqual(Torch.get_num_threads(), 1)
+
     def test_zero_inclusive_latent_usage_and_known_perplexity(self):
         records = (
             SimpleNamespace(latent_indices=(0, 0)),
@@ -809,6 +881,10 @@ class EvaluationTests(unittest.TestCase):
             "family_limit": 6,
             "batch_size": 3,
             "requested_device": "cpu",
+            "resolved_device": "cpu",
+            "repository_branch": "flat-mixed-baseline",
+            "source_dirty": False,
+            "source_tree_sha256": "d" * 64,
             "payload_access": {
                 "train_family_records_loaded": 0,
                 "validation_family_records_loaded": len(identifiers),
@@ -838,6 +914,70 @@ class EvaluationTests(unittest.TestCase):
                 expected_checkpoint_sha256=REPAIRED_CHECKPOINT_SHA256,
             )
         self.assertFalse(output.exists())
+
+    def test_repaired_publication_rejects_dirty_or_invalid_source(self):
+        selected, records, raw_records = self.records()
+        identifiers = [
+            item.physical_family_id for item in selected
+        ]
+        metadata = self.metadata(selected, raw=True)
+        metadata.update({
+            "repaired_smoke_contract": True,
+            "checkpoint_sha256": REPAIRED_CHECKPOINT_SHA256,
+            "checkpoint_epoch": REPAIRED_CHECKPOINT_EPOCH,
+            "checkpoint_global_step": REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            "checkpoint_training_source_commit": (
+                REPAIRED_CHECKPOINT_TRAINING_COMMIT
+            ),
+            "authoritative_partition_family_counts": {
+                "train": 544,
+                "validation": 68,
+                "test": 68,
+            },
+            "resolved_selected_family_ids_before_inference": identifiers,
+            "family_limit": 6,
+            "batch_size": 3,
+            "requested_device": "cpu",
+            "resolved_device": "cpu",
+            "repository_branch": "flat-mixed-baseline",
+            "source_dirty": False,
+            "source_tree_sha256": "d" * 64,
+            "payload_access": {
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": len(identifiers),
+                "test_family_records_loaded": 0,
+                "loaded_family_ids": identifiers,
+            },
+        })
+        for field, value in (
+            ("source_dirty", True),
+            ("resolved_device", "cuda"),
+            ("source_tree_sha256", "invalid"),
+        ):
+            with self.subTest(field=field):
+                damaged = dict(metadata, **{field: value})
+                artifacts = make_artifacts(
+                    records, raw_records, damaged, selected, True
+                )
+                output = (
+                    Path(self.temporary.name)
+                    / ("bad-repaired-source-" + field)
+                )
+                with self.assertRaisesRegex(
+                    EvaluationError, "repaired_smoke_metadata"
+                ):
+                    publish_artifacts(
+                        output,
+                        artifacts,
+                        expected_ids=identifiers,
+                        expected_partition="validation",
+                        authoritative_validation_ids=identifiers,
+                        authoritative_examples=selected,
+                        expected_checkpoint_sha256=(
+                            REPAIRED_CHECKPOINT_SHA256
+                        ),
+                    )
+                self.assertFalse(output.exists())
 
     def test_verifier_reloads_authority_and_hashes_checkpoint(self):
         _, output, _, selected, checkpoint_bytes = self.run_fixture(
@@ -1550,6 +1690,202 @@ class EvaluationTests(unittest.TestCase):
         self.assertIn("EXPECTED_CHECKPOINT_SHA256=", script)
         self.assertIn("failure_stage=%s failure_line=%s exit_code=%s", script)
         self.assertIn("phase-b-repaired-smoke-${REVIEWED_COMMIT}", script)
+
+    def test_repaired_full_slurm_workflow_is_validation_only_and_staged(self):
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "adroit"
+            / "evaluate_repaired_validation_cpu.slurm"
+        ).read_text()
+        stages = (
+            "repository_preflight",
+            "environment_preflight",
+            "checkpoint_preflight",
+            "partition_preflight",
+            "regressions",
+            "execution_preflight",
+            "full_evaluation",
+            "post_evaluation_evidence",
+            "artifact_validation",
+            "artifact_manifest",
+            "complete",
+        )
+        offsets = [script.index("stage " + stage) for stage in stages]
+        self.assertEqual(offsets, sorted(offsets))
+        self.assertIn("--repaired-full-contract", script)
+        self.assertNotIn("--allow-test-evaluation", script)
+        self.assertNotIn("--family-limit", script)
+        self.assertNotIn("load_physical_examples", script)
+        self.assertNotIn("OpenCascade", script)
+        self.assertIn("--batch-size 32", script)
+        self.assertIn("selected_family_count\": len(selected)", script)
+        self.assertIn("test_family_records_loaded\": 0", script)
+        self.assertIn("EXPECTED_CHECKPOINT_SHA256=", script)
+        self.assertIn("gate-a-to-d-inputs.json", script)
+        self.assertIn("sha256-manifest.txt", script)
+        self.assertIn("--workflow-evidence-dir \"$EVIDENCE\"", script)
+        self.assertGreaterEqual(
+            script.count(
+                'git status --porcelain=v1 --untracked-files=all'
+            ),
+            2,
+        )
+        self.assertIn("snapshot=post_evaluation", script)
+        self.assertIn("torch.manual_seed(2026)", script)
+        self.assertIn("torch.set_num_threads(1)", script)
+
+    def test_repaired_full_report_preserves_inputs_without_gate_e_decision(self):
+        validity = {
+            "controlled_domain_valid_count": 20,
+        }
+        usage = {
+            "active_code_count": 4,
+            "codebook_perplexity": 2.5,
+        }
+        full = {
+            "output_directory": "/new/full",
+            "artifact_sha256": {"summary.json": "a" * 64},
+            "processed_family_count": 68,
+            "selected_validation_ids": [
+                "sf_{:064x}".format(index) for index in range(68)
+            ],
+            "selected_validation_ids_sha256": "b" * 64,
+            "teacher_forced_metrics": {"validity": validity},
+            "predicted_history_metrics": {"validity": validity},
+            "teacher_forced_validity": validity,
+            "predicted_history_validity": validity,
+            "metric_gaps": {},
+            "latent_usage": usage,
+            "gate_a_artifact_inputs": {
+                "test_partition_evaluated": False,
+            },
+            "predicted_history_operation_coverage": {
+                "extrude_qualifying_family_count": 3,
+                "revolve_qualifying_family_count": 4,
+                "overlap_qualifying_family_count": 1,
+                "unique_qualifying_family_count": 6,
+            },
+        }
+        report = repaired_full_report(
+            full,
+            full_exit_code=0,
+            job_id="123",
+            repository_commit="c" * 40,
+            regression_status="passed",
+            workflow_evidence_sha256={"environment.json": "d" * 64},
+        )
+        self.assertEqual(report["processed_family_count"], 68)
+        self.assertEqual(
+            report["gate_c_inputs"][
+                "minimum_predicted_history_survival_count"
+            ],
+            10,
+        )
+        self.assertFalse(report["opencascade"]["gate_e_evaluated"])
+        self.assertEqual(
+            report["final_acceptance"]["status"], "not_determined"
+        )
+        self.assertEqual(
+            report["workflow_evidence_sha256"]["environment.json"],
+            "d" * 64,
+        )
+
+    def test_repaired_full_workflow_evidence_is_validated_and_hashed(self):
+        root = Path(self.temporary.name) / "workflow-evidence"
+        root.mkdir()
+        identifiers = tuple(
+            "sf_{:064x}".format(index) for index in range(68)
+        )
+        files = {
+            "checkpoint.sha256": (
+                REPAIRED_CHECKPOINT_SHA256 + "  /checkpoint/best.pt\n"
+            ),
+            "container.sha256": "a" * 64 + "  /container.sif\n",
+            "corpus-manifests.sha256": (
+                "b" * 64 + "  /corpus/corpus_manifest.json\n"
+                + "c" * 64 + "  /corpus/manifests/iid.json\n"
+            ),
+            "environment.json": json.dumps({
+                "cuda_available": False,
+                "cuda_visible_devices": "",
+                "mkl_num_threads": "1",
+                "omp_num_threads": "1",
+                "platform": "fixture",
+                "python_version": "3.8.13",
+                "pytorch_version": "1.11.0",
+                "pythonhashseed": "0",
+                "evaluation_seed": 2026,
+                "torch_num_threads": 1,
+            }, sort_keys=True, separators=(",", ":")) + "\n",
+            "partition.json": json.dumps({
+                "partition": "validation",
+                "authoritative_partition_family_counts": {
+                    "train": 544,
+                    "validation": 68,
+                    "test": 68,
+                },
+                "selected_family_ids": identifiers,
+                "selected_family_ids_sha256": (
+                    _identifier_sha256(identifiers)
+                ),
+                "selected_family_count": 68,
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": 0,
+                "test_family_records_loaded": 0,
+                "test_partition_evaluated": False,
+            }, sort_keys=True, separators=(",", ":")) + "\n",
+            "regressions.txt": "status=passed\n",
+            "repository.txt": (
+                "flat-mixed-baseline\n" + "d" * 40 + "\n" + "d" * 40 + "\n"
+            ),
+            "scheduler.txt": (
+                "snapshot=post_evaluation\n"
+                "full_evaluation_exit_code=0\n"
+                "JobState=RUNNING RunTime=00:10:00 NodeList=node1\n"
+            ),
+        }
+        for name, content in files.items():
+            (root / name).write_text(content)
+        hashes = _workflow_evidence_hashes(
+            root, expected_ids=identifiers
+        )
+        self.assertEqual(set(hashes), set(files))
+        (root / "environment.json").write_text(
+            files["environment.json"].replace("3.8.13", "3.9.0")
+        )
+        with self.assertRaisesRegex(
+            ValueError, "workflow environment evidence differs"
+        ):
+            _workflow_evidence_hashes(root, expected_ids=identifiers)
+
+    def test_repaired_full_operation_coverage_uses_qualifying_family_sets(self):
+        def item(family_id, operations, valid=True, exact=True):
+            return {
+                "family_id": family_id,
+                "target_operation_sequence": operations,
+                "predicted_history": {
+                    "metrics": {
+                        "controlled_domain": {"valid": valid},
+                        "operations": {
+                            "exact_operation_type_sequence": exact,
+                        },
+                    },
+                },
+            }
+
+        coverage = _predicted_history_operation_coverage((
+            item("extrude", ["extrude"]),
+            item("revolve", ["revolve"]),
+            item("mixed", ["extrude", "revolve"]),
+            item("invalid", ["extrude"], valid=False),
+            item("inexact", ["revolve"], exact=False),
+        ))
+        self.assertEqual(coverage, {
+            "extrude_qualifying_family_count": 2,
+            "revolve_qualifying_family_count": 2,
+            "overlap_qualifying_family_count": 1,
+            "unique_qualifying_family_count": 3,
+        })
 
     def test_unsupported_no_replace_never_publishes(self):
         selected, records, raw = self.records()

@@ -56,6 +56,8 @@ REPAIRED_PARTITION_COUNTS = {
 }
 REPAIRED_SMOKE_FAMILY_COUNT = 6
 REPAIRED_SMOKE_BATCH_SIZE = 3
+REPAIRED_FULL_FAMILY_COUNT = 68
+REPAIRED_FULL_BATCH_SIZE = 32
 REPAIRED_CODEBOOK_SIZE = 32
 REQUIRED_ARTIFACTS = (
     "conversion_failures.csv",
@@ -190,6 +192,7 @@ def build_parser():
     parser.add_argument("--allow-test-evaluation", action="store_true")
     parser.add_argument("--write-raw-predictions", action="store_true")
     parser.add_argument("--repaired-smoke-contract", action="store_true")
+    parser.add_argument("--repaired-full-contract", action="store_true")
     return parser
 
 
@@ -200,8 +203,18 @@ def parse_arguments(argv=None):
             "test_evaluation_forbidden",
             "--allow-test-evaluation is required for the test partition",
         )
+    if (
+        arguments.repaired_smoke_contract
+        and arguments.repaired_full_contract
+    ):
+        raise EvaluationError(
+            "repaired_contract_conflict",
+            "choose exactly one repaired evaluation contract",
+        )
     if arguments.repaired_smoke_contract:
         _validate_repaired_smoke_arguments(arguments)
+    if arguments.repaired_full_contract:
+        _validate_repaired_full_arguments(arguments)
     return arguments
 
 
@@ -219,6 +232,46 @@ def _validate_repaired_smoke_arguments(arguments):
             "repaired_smoke_configuration",
             "repaired smoke requires validation, six families, batch size 3, "
             "CPU, raw predictions, and no test authorization",
+        )
+
+
+def _validate_repaired_full_arguments(arguments):
+    required = (
+        arguments.partition == "validation",
+        arguments.family_limit is None,
+        arguments.batch_size == REPAIRED_FULL_BATCH_SIZE,
+        arguments.device == "cpu",
+        arguments.write_raw_predictions,
+        not arguments.allow_test_evaluation,
+    )
+    if not all(required):
+        raise EvaluationError(
+            "repaired_full_configuration",
+            "repaired full evaluation requires validation, all families, "
+            "batch size 32, CPU, raw predictions, and no test authorization",
+        )
+
+
+def _repaired_contract(arguments):
+    return bool(
+        getattr(arguments, "repaired_smoke_contract", False)
+        or getattr(arguments, "repaired_full_contract", False)
+    )
+
+
+def _configure_repaired_runtime(torch_module, seed):
+    try:
+        torch_module.manual_seed(seed)
+        torch_module.set_num_threads(1)
+        thread_count = torch_module.get_num_threads()
+    except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+        raise EvaluationError(
+            "repaired_runtime_configuration", type(exc).__name__
+        ) from exc
+    if thread_count != 1:
+        raise EvaluationError(
+            "repaired_runtime_configuration",
+            "Torch thread count differs from one",
         )
 
 
@@ -732,7 +785,17 @@ def _validate_metadata_and_examples(
             "checkpoint_digest_mismatch",
             "published checkpoint digest differs from reviewed checkpoint",
         )
+    repaired_mode = None
     if metadata.get("repaired_smoke_contract") is True:
+        repaired_mode = "smoke"
+    if metadata.get("repaired_full_contract") is True:
+        if repaired_mode is not None:
+            raise EvaluationError(
+                "repaired_contract_conflict",
+                "publication declares multiple repaired contracts",
+            )
+        repaired_mode = "full"
+    if repaired_mode is not None:
         access = metadata.get("payload_access")
         resolved = tuple(
             metadata.get(
@@ -759,15 +822,39 @@ def _validate_metadata_and_examples(
             or resolved != identifiers
             or access != required_access
             or metadata.get("requested_device") != "cpu"
-            or metadata.get("batch_size") != REPAIRED_SMOKE_BATCH_SIZE
-            or metadata.get("family_limit") != REPAIRED_SMOKE_FAMILY_COUNT
+            or metadata.get("resolved_device") != "cpu"
+            or metadata.get("source_dirty") is not False
+            or not _lower_sha256(metadata.get("source_tree_sha256"))
             or "checkpoint_path" in metadata
             or "output_dir"
             in metadata.get("training_configuration", {})
         ):
             raise EvaluationError(
+                "repaired_{}_metadata".format(repaired_mode),
+                "frozen repaired {} metadata differs".format(repaired_mode),
+            )
+        if repaired_mode == "smoke" and (
+            metadata.get("batch_size") != REPAIRED_SMOKE_BATCH_SIZE
+            or metadata.get("family_limit") != REPAIRED_SMOKE_FAMILY_COUNT
+            or len(identifiers) != REPAIRED_SMOKE_FAMILY_COUNT
+        ):
+            raise EvaluationError(
                 "repaired_smoke_metadata",
                 "frozen repaired smoke metadata differs",
+            )
+        if repaired_mode == "full" and (
+            metadata.get("batch_size") != REPAIRED_FULL_BATCH_SIZE
+            or metadata.get("family_limit") is not None
+            or len(identifiers) != REPAIRED_FULL_FAMILY_COUNT
+            or metadata.get("repository_branch") != "flat-mixed-baseline"
+            or metadata.get("evaluation_seed") != 2026
+            or metadata.get("torch_num_threads") != 1
+            or identifiers
+            != tuple(metadata.get("authoritative_validation_family_ids", ()))
+        ):
+            raise EvaluationError(
+                "repaired_full_metadata",
+                "frozen repaired full metadata differs",
             )
     return identifiers
 
@@ -1529,7 +1616,8 @@ def run(
     identity = corpus_identity(arguments.corpus_dir, arguments.split_manifest)
     partition_counts = None
     train_ids = None
-    if arguments.repaired_smoke_contract:
+    repaired_contract = _repaired_contract(arguments)
+    if repaired_contract:
         authority = partition_family_ids(
             arguments.corpus_dir, arguments.split_manifest
         )
@@ -1569,7 +1657,7 @@ def run(
         )
     expected_digest = (
         REPAIRED_CHECKPOINT_SHA256
-        if arguments.repaired_smoke_contract
+        if repaired_contract
         else None
     )
     digest, checkpoint, model_config, training_config = (
@@ -1580,30 +1668,34 @@ def run(
             arguments.split_manifest,
             expected_sha256=expected_digest,
             expected_checkpoint_kind=(
-                "best" if arguments.repaired_smoke_contract else None
+                "best" if repaired_contract else None
             ),
             expected_epoch=(
                 REPAIRED_CHECKPOINT_EPOCH
-                if arguments.repaired_smoke_contract
+                if repaired_contract
                 else None
             ),
             expected_global_step=(
                 REPAIRED_CHECKPOINT_GLOBAL_STEP
-                if arguments.repaired_smoke_contract
+                if repaired_contract
                 else None
             ),
             authoritative_train_ids=(
-                train_ids if arguments.repaired_smoke_contract else None
+                train_ids if repaired_contract else None
             ),
-            require_train_kmeans=arguments.repaired_smoke_contract,
+            require_train_kmeans=repaired_contract,
             expected_codebook_size=(
                 REPAIRED_CODEBOOK_SIZE
-                if arguments.repaired_smoke_contract
+                if repaired_contract
                 else None
             ),
         )
     )
-    if arguments.repaired_smoke_contract:
+    if repaired_contract:
+        _configure_repaired_runtime(
+            torch_module, training_config.seed
+        )
+    if repaired_contract:
         selected = load_partition_physical_examples(
             arguments.corpus_dir,
             arguments.split_manifest,
@@ -1715,7 +1807,7 @@ def _run_metadata(
     metadata = {
         "evaluation_schema_version": (
             REPAIRED_EVALUATION_SCHEMA_VERSION
-            if arguments.repaired_smoke_contract
+            if _repaired_contract(arguments)
             else EVALUATION_SCHEMA_VERSION
         ),
         "representation_schema_version": REPRESENTATION_SCHEMA_VERSION,
@@ -1760,7 +1852,7 @@ def _run_metadata(
         "test_partition_evaluated": test_partition_evaluated,
         "limitation": LIMITATION,
     }
-    if arguments.repaired_smoke_contract:
+    if _repaired_contract(arguments):
         metadata.pop("checkpoint_path")
         metadata["training_configuration"].pop("output_dir")
         metadata.update({
@@ -1770,7 +1862,6 @@ def _run_metadata(
             "resolved_selected_family_ids_before_inference": list(
                 selected_ids
             ),
-            "repaired_smoke_contract": True,
             "repaired_evaluation_contract": True,
             "authoritative_partition_family_counts": (
                 authoritative_partition_counts
@@ -1789,6 +1880,12 @@ def _run_metadata(
                 "loaded_family_ids": list(selected_ids),
             },
         })
+        if arguments.repaired_smoke_contract:
+            metadata["repaired_smoke_contract"] = True
+        if getattr(arguments, "repaired_full_contract", False):
+            metadata["repaired_full_contract"] = True
+            metadata["evaluation_seed"] = training_config.seed
+            metadata["torch_num_threads"] = 1
     return metadata
 
 
