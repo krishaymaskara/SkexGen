@@ -10,10 +10,15 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from prototype.model_data.errors import ModelDataError
-from prototype.model_data.loader import load_physical_examples
+from prototype.model_data.loader import (
+    load_partition_physical_examples,
+    load_physical_examples,
+    partition_family_ids,
+)
 from prototype.model_data.serialization import canonical_record_json
 from prototype.model_data.tests.fixtures import source, write_physical_corpus
 from prototype.model_data.vocab import ALL_VOCABULARIES
@@ -21,6 +26,131 @@ from prototype.representation.serialization import history_from_json, history_to
 
 
 class PhysicalLoadingTests(unittest.TestCase):
+    def test_partition_authority_does_not_open_history_payloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            physical = tuple(source("E") for _ in range(3))
+            # Vary parameters so each source has a distinct family identity.
+            physical = tuple(
+                source("E", parameters=(1.0 + 0.125 * index,))
+                for index in range(3)
+            )
+            write_physical_corpus(temporary, physical)
+            opened = []
+            original = Path.read_text
+
+            def observed(path, *args, **kwargs):
+                if "samples" in path.parts:
+                    opened.append(path.name)
+                return original(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", observed):
+                authority = partition_family_ids(temporary)
+        self.assertEqual(len(authority["train"]), 3)
+        self.assertEqual(opened, [])
+
+    def test_scoped_loading_opens_only_selected_validation_payloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            physical = tuple(
+                source("E", parameters=(1.0 + 0.125 * index,))
+                for index in range(9)
+            )
+            families, samples = write_physical_corpus(
+                temporary, physical
+            )
+            family_ids = tuple(sorted(
+                item["source_family_id"] for item in families
+            ))
+            split_path = Path(temporary) / "manifests" / "iid.json"
+            split = json.loads(split_path.read_text())
+            assignments = {
+                family_id: (
+                    "train" if index == 0
+                    else "test" if index == 8
+                    else "validation"
+                )
+                for index, family_id in enumerate(family_ids)
+            }
+            for collection in ("families", "samples"):
+                for item in split[collection]:
+                    item["partition"] = assignments[item["source_family_id"]]
+            split_path.write_text(
+                json.dumps(split, sort_keys=True, separators=(",", ":"))
+                + "\n"
+            )
+            selected = tuple(sorted(
+                family_id
+                for family_id, partition in assignments.items()
+                if partition == "validation"
+            ))[:6]
+            opened = []
+            original = Path.read_text
+
+            def observed(path, *args, **kwargs):
+                if "samples" in path.parts:
+                    opened.append(path)
+                return original(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", observed):
+                examples = load_partition_physical_examples(
+                    temporary, "iid", "validation", selected
+                )
+        self.assertEqual(
+            tuple(item.physical_family_id for item in examples), selected
+        )
+        self.assertEqual(len(opened), 12)
+        self.assertEqual(
+            {path.relative_to(Path(temporary)).as_posix() for path in opened},
+            {
+                item["relative_json_path"]
+                for item in samples
+                if item["source_family_id"] in set(selected)
+            },
+        )
+
+    def test_wrong_partition_id_is_rejected_before_payload_access(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            physical = (
+                source("E", parameters=(1.0,)),
+                source("E", parameters=(2.0,)),
+            )
+            families, unused_samples = write_physical_corpus(
+                temporary, physical
+            )
+            family_ids = tuple(sorted(
+                item["source_family_id"] for item in families
+            ))
+            split_path = Path(temporary) / "manifests" / "iid.json"
+            split = json.loads(split_path.read_text())
+            for collection in ("families", "samples"):
+                for item in split[collection]:
+                    item["partition"] = (
+                        "validation"
+                        if item["source_family_id"] == family_ids[0]
+                        else "test"
+                    )
+            split_path.write_text(
+                json.dumps(split, sort_keys=True, separators=(",", ":"))
+                + "\n"
+            )
+            opened = []
+            original = Path.read_text
+
+            def observed(path, *args, **kwargs):
+                if "samples" in path.parts:
+                    opened.append(path)
+                return original(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", observed):
+                with self.assertRaises(ModelDataError) as caught:
+                    load_partition_physical_examples(
+                        temporary,
+                        "iid",
+                        "validation",
+                        (family_ids[1],),
+                    )
+        self.assertEqual(caught.exception.code, "family_partition_mismatch")
+        self.assertEqual(opened, [])
+
     def test_variants_collapse_to_one_physical_example(self):
         with tempfile.TemporaryDirectory() as temporary:
             _, samples = write_physical_corpus(temporary, (source("E"), source("RR")))

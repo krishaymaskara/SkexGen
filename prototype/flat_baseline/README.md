@@ -353,6 +353,19 @@ The evaluator reports:
 - edge micro precision, recall, and F1;
 - per-template and other deterministic strata.
 
+Historical evaluator invocations retain evaluation schema version 1, the
+original CSV and artifact schemas, corpus-wide loading and validation, and
+optional raw prediction publication. They do not require latent-usage
+publication or any repaired-checkpoint metadata.
+
+Repaired evaluation schema version 2 publishes one shared latent-usage record
+derived from the reconstructed memory used by both decoding paths. It
+contains the complete zero-inclusive codebook histogram, active-code count,
+utilization, perplexity, dead-code count, and dead-code rate. Latent
+assignments are counted once rather than once per decoder path. The headline
+CSV includes exact ten-field and exact typed-edge-set rates and one
+`shared_latent` row for active-code count, perplexity, and utilization.
+
 It publishes canonical:
 
 ```text
@@ -368,6 +381,19 @@ collision-safe no-replace contract and an artifact verifier. Test evaluation
 requires an explicit `--allow-test-evaluation` flag and is recorded in run
 metadata; validation workflows do not enable it.
 
+Schema 2 and its expanded CSV fields are enabled only by the repaired
+evaluation contract. The repaired deterministic-smoke contract uses
+manifest-only partition
+authority followed by partition-scoped payload loading. It resolves the
+lexicographically first six validation IDs before inference, opens only
+their twelve continuous/quantized payloads, records zero train/test family
+payload access, and rejects an ID assigned to another partition before
+payload access. The `--repaired-smoke-contract` flag additionally requires
+validation, six families, batch size 3, CPU, raw predictions, authoritative
+544/68/68 counts, the repaired epoch-44/global-step-748 checkpoint, its
+frozen SHA-256, 32-code model configuration, and train-k-means provenance.
+The file hash is compared before `torch.load`.
+
 A validation invocation is:
 
 ```bash
@@ -381,6 +407,17 @@ python3 -m prototype.flat_baseline.evaluate_length_conditioned \
   --device cpu \
   --write-raw-predictions
 ```
+
+The separate Adroit repaired-smoke workflow is:
+
+```text
+prototype/flat_baseline/adroit/evaluate_repaired_smoke_cpu.slurm
+```
+
+It retains two collision-safe publications and verifies every declared
+deterministic artifact byte for byte. The earlier
+`evaluate_validation_cpu.slurm` remains the historical collapsed-checkpoint
+workflow and is not the repaired submission target.
 
 This phase reconstructs authoritative flat targets and measures symbolic
 predictions. It does not yet synthesize stable CAD identifiers into a full

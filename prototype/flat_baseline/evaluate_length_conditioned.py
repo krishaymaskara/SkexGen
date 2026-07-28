@@ -23,7 +23,11 @@ from types import SimpleNamespace
 from prototype.controlled_data.config import REPRESENTATION_SCHEMA_VERSION
 from prototype.model_data.adapters import adapt_flat_mixed
 from prototype.model_data.batching import collate_flat
-from prototype.model_data.loader import load_physical_examples
+from prototype.model_data.loader import (
+    load_physical_examples,
+    load_partition_physical_examples,
+    partition_family_ids,
+)
 
 from .checkpointing import _validate_payload
 from .config import FlatBaselineConfig
@@ -34,7 +38,25 @@ from .training_config import TrainingConfig
 
 
 EVALUATION_SCHEMA_VERSION = 1
+REPAIRED_EVALUATION_SCHEMA_VERSION = 2
 PATH_NAMES = ("teacher_forced", "predicted_history")
+REPAIRED_CHECKPOINT_SHA256 = (
+    "282988af00a2dc9a53e14ceb270537d35"
+    "f85d5339dc989634f88af5f77931267"
+)
+REPAIRED_CHECKPOINT_EPOCH = 44
+REPAIRED_CHECKPOINT_GLOBAL_STEP = 748
+REPAIRED_CHECKPOINT_TRAINING_COMMIT = (
+    "d549ebe4478e166fda8d54f2b173572a1ab52e7a"
+)
+REPAIRED_PARTITION_COUNTS = {
+    "train": 544,
+    "validation": 68,
+    "test": 68,
+}
+REPAIRED_SMOKE_FAMILY_COUNT = 6
+REPAIRED_SMOKE_BATCH_SIZE = 3
+REPAIRED_CODEBOOK_SIZE = 32
 REQUIRED_ARTIFACTS = (
     "conversion_failures.csv",
     "examples.jsonl",
@@ -43,7 +65,7 @@ REQUIRED_ARTIFACTS = (
     "summary.json",
 )
 RAW_ARTIFACT = "raw_predictions.jsonl"
-METRICS_COLUMNS = (
+LEGACY_METRICS_COLUMNS = (
     "path",
     "stratum_kind",
     "stratum_value",
@@ -62,6 +84,31 @@ METRICS_COLUMNS = (
     "edge_micro_precision",
     "edge_micro_recall",
     "edge_micro_f1",
+)
+METRICS_COLUMNS = (
+    "path",
+    "stratum_kind",
+    "stratum_value",
+    "attempted_example_count",
+    "raw_completion_rate",
+    "raw_integrity_valid_rate",
+    "reconstruction_target_valid_rate",
+    "controlled_domain_valid_rate",
+    "node_type_token_accuracy",
+    "exact_node_type_sequence_rate",
+    "exact_complete_ten_field_match_rate",
+    "finite_geometry_mae",
+    "finite_geometry_rmse",
+    "complete_finite_geometry_rate",
+    "exact_operation_type_sequence_rate",
+    "pointer_overall_accuracy",
+    "edge_micro_precision",
+    "edge_micro_recall",
+    "edge_micro_f1",
+    "exact_typed_edge_set_match_rate",
+    "active_code_count",
+    "codebook_perplexity",
+    "codebook_utilization",
 )
 FAILURE_COLUMNS = (
     "family_id",
@@ -142,6 +189,7 @@ def build_parser():
     parser.add_argument("--family-limit", type=_positive_integer)
     parser.add_argument("--allow-test-evaluation", action="store_true")
     parser.add_argument("--write-raw-predictions", action="store_true")
+    parser.add_argument("--repaired-smoke-contract", action="store_true")
     return parser
 
 
@@ -152,7 +200,26 @@ def parse_arguments(argv=None):
             "test_evaluation_forbidden",
             "--allow-test-evaluation is required for the test partition",
         )
+    if arguments.repaired_smoke_contract:
+        _validate_repaired_smoke_arguments(arguments)
     return arguments
+
+
+def _validate_repaired_smoke_arguments(arguments):
+    required = (
+        arguments.partition == "validation",
+        arguments.family_limit == REPAIRED_SMOKE_FAMILY_COUNT,
+        arguments.batch_size == REPAIRED_SMOKE_BATCH_SIZE,
+        arguments.device == "cpu",
+        arguments.write_raw_predictions,
+        not arguments.allow_test_evaluation,
+    )
+    if not all(required):
+        raise EvaluationError(
+            "repaired_smoke_configuration",
+            "repaired smoke requires validation, six families, batch size 3, "
+            "CPU, raw predictions, and no test authorization",
+        )
 
 
 def select_examples(examples, partition, family_limit=None):
@@ -291,6 +358,11 @@ def _conversion_matches_metrics(conversion, metric):
 
 
 def make_artifacts(records, raw_records, metadata, examples, write_raw):
+    repaired = metadata.get("repaired_evaluation_contract") is True
+    schema_version = (
+        REPAIRED_EVALUATION_SCHEMA_VERSION
+        if repaired else EVALUATION_SCHEMA_VERSION
+    )
     metadata_by_family = {
         item.physical_family_id: item for item in examples
     }
@@ -304,7 +376,7 @@ def make_artifacts(records, raw_records, metadata, examples, write_raw):
         name: _aggregate_json(value) for name, value in aggregates.items()
     }
     summary = {
-        "evaluation_schema_version": EVALUATION_SCHEMA_VERSION,
+        "evaluation_schema_version": schema_version,
         "attempted_example_count": len(records),
         "teacher_forced": aggregate_json["teacher_forced"],
         "predicted_history": aggregate_json["predicted_history"],
@@ -313,11 +385,17 @@ def make_artifacts(records, raw_records, metadata, examples, write_raw):
             aggregate_json["teacher_forced"],
         ),
     }
+    usage = None
+    if repaired:
+        usage = latent_usage(
+            records, metadata["model_configuration"]["codebook_size"]
+        )
+        summary["latent_usage"] = usage
     artifacts = {
         "run_metadata.json": _json_document(metadata),
         "examples.jsonl": _json_lines(_example_json(item) for item in records),
         "summary.json": _json_document(summary),
-        "metrics.csv": _metrics_csv(aggregates),
+        "metrics.csv": _metrics_csv(aggregates, usage, repaired=repaired),
         "conversion_failures.csv": _failures_csv(records),
     }
     if write_raw:
@@ -325,6 +403,50 @@ def make_artifacts(records, raw_records, metadata, examples, write_raw):
             _raw_json_safe(item) for item in raw_records
         )
     return artifacts
+
+
+def latent_usage(records, codebook_size):
+    if (
+        isinstance(codebook_size, bool)
+        or not isinstance(codebook_size, int)
+        or codebook_size <= 0
+    ):
+        raise EvaluationError("invalid_codebook_size", str(codebook_size))
+    counts = [0] * codebook_size
+    for record in records:
+        for index in record.latent_indices:
+            if (
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or index < 0
+                or index >= codebook_size
+            ):
+                raise EvaluationError(
+                    "latent_index_out_of_range",
+                    "{} is outside [0, {})".format(index, codebook_size),
+                )
+            counts[index] += 1
+    total = sum(counts)
+    active = sum(value > 0 for value in counts)
+    entropy = 0.0
+    if total:
+        for count in counts:
+            if count:
+                probability = count / total
+                entropy -= probability * math.log(probability)
+    perplexity = math.exp(entropy) if total else 0.0
+    return {
+        "assignment_source": "shared_reconstructed_latent_memory",
+        "shared_by_decoding_paths": True,
+        "codebook_size": codebook_size,
+        "total_assignment_count": total,
+        "active_code_count": active,
+        "codebook_utilization": active / codebook_size,
+        "codebook_perplexity": perplexity,
+        "dead_code_count": codebook_size - active,
+        "dead_code_rate": (codebook_size - active) / codebook_size,
+        "per_code_assignment_counts": counts,
+    }
 
 
 def publish_artifacts(
@@ -423,9 +545,13 @@ def validate_artifact_directory(
     for path in sorted(root.iterdir()):
         _validate_file_encoding(path)
     summary = _strict_document(root / "summary.json")
+    repaired = metadata.get("repaired_evaluation_contract") is True
     examples = _strict_lines(root / "examples.jsonl")
     raw = _strict_lines(root / RAW_ARTIFACT) if enabled else ()
-    metric_rows = _strict_csv(root / "metrics.csv", METRICS_COLUMNS)
+    metric_rows = _strict_csv(
+        root / "metrics.csv",
+        METRICS_COLUMNS if repaired else LEGACY_METRICS_COLUMNS,
+    )
     failure_rows = _strict_csv(
         root / "conversion_failures.csv", FAILURE_COLUMNS
     )
@@ -448,7 +574,7 @@ def validate_artifact_directory(
         summary,
         authoritative_examples,
     )
-    _validate_metric_rows(summary, metric_rows)
+    _validate_metric_rows(summary, metric_rows, repaired=repaired)
     _reconcile_failure_rows(examples, failure_rows)
     _reconcile_summary(examples, summary)
     return {
@@ -540,11 +666,16 @@ def _validate_metadata_and_examples(
     reviewed_commit,
     expected_checkpoint_sha256,
 ):
-    if metadata.get("evaluation_schema_version") != EVALUATION_SCHEMA_VERSION:
+    repaired = metadata.get("repaired_evaluation_contract") is True
+    schema_version = (
+        REPAIRED_EVALUATION_SCHEMA_VERSION
+        if repaired else EVALUATION_SCHEMA_VERSION
+    )
+    if metadata.get("evaluation_schema_version") != schema_version:
         raise EvaluationError("invalid_evaluation_schema", "metadata")
     if metadata.get("representation_schema_version") != REPRESENTATION_SCHEMA_VERSION:
         raise EvaluationError("invalid_representation_schema", "metadata")
-    if summary.get("evaluation_schema_version") != EVALUATION_SCHEMA_VERSION:
+    if summary.get("evaluation_schema_version") != schema_version:
         raise EvaluationError("invalid_evaluation_schema", "summary")
     partition = metadata.get("partition")
     if expected_partition is not None and partition != expected_partition:
@@ -568,7 +699,15 @@ def _validate_metadata_and_examples(
         raise EvaluationError("raw_family_mismatch", "raw records differ")
     if raw and any(any(path not in item for path in PATH_NAMES) for item in raw):
         raise EvaluationError("missing_raw_path", "raw paired path is absent")
-    _validate_record_schemas(examples, raw, summary)
+    _validate_record_schemas(examples, raw, summary, repaired=repaired)
+    if repaired and (
+        summary["latent_usage"]["codebook_size"]
+        != metadata.get("model_configuration", {}).get("codebook_size")
+    ):
+        raise EvaluationError(
+            "latent_codebook_mismatch",
+            "summary and model configuration differ",
+        )
     _validate_authoritative_ids(
         metadata, identifiers, authoritative_validation_ids
     )
@@ -593,10 +732,47 @@ def _validate_metadata_and_examples(
             "checkpoint_digest_mismatch",
             "published checkpoint digest differs from reviewed checkpoint",
         )
+    if metadata.get("repaired_smoke_contract") is True:
+        access = metadata.get("payload_access")
+        resolved = tuple(
+            metadata.get(
+                "resolved_selected_family_ids_before_inference", ()
+            )
+        )
+        required_access = {
+            "train_family_records_loaded": 0,
+            "validation_family_records_loaded": len(identifiers),
+            "test_family_records_loaded": 0,
+            "loaded_family_ids": list(identifiers),
+        }
+        if (
+            not raw
+            or digest != REPAIRED_CHECKPOINT_SHA256
+            or metadata.get("checkpoint_epoch") != REPAIRED_CHECKPOINT_EPOCH
+            or metadata.get("checkpoint_global_step")
+            != REPAIRED_CHECKPOINT_GLOBAL_STEP
+            or metadata.get("checkpoint_training_source_commit")
+            != REPAIRED_CHECKPOINT_TRAINING_COMMIT
+            or metadata.get("authoritative_partition_family_counts")
+            != REPAIRED_PARTITION_COUNTS
+            or resolved != declared
+            or resolved != identifiers
+            or access != required_access
+            or metadata.get("requested_device") != "cpu"
+            or metadata.get("batch_size") != REPAIRED_SMOKE_BATCH_SIZE
+            or metadata.get("family_limit") != REPAIRED_SMOKE_FAMILY_COUNT
+            or "checkpoint_path" in metadata
+            or "output_dir"
+            in metadata.get("training_configuration", {})
+        ):
+            raise EvaluationError(
+                "repaired_smoke_metadata",
+                "frozen repaired smoke metadata differs",
+            )
     return identifiers
 
 
-def _validate_record_schemas(examples, raw, summary):
+def _validate_record_schemas(examples, raw, summary, *, repaired):
     example_fields = {
         "family_id",
         "partition",
@@ -615,19 +791,65 @@ def _validate_record_schemas(examples, raw, summary):
         for path in PATH_NAMES
     ):
         raise EvaluationError("invalid_example_schema", "path fields differ")
-    if set(summary) != {
+    summary_fields = {
         "evaluation_schema_version",
         "attempted_example_count",
         *PATH_NAMES,
         "predicted_minus_teacher_forced",
-    }:
+    }
+    if repaired:
+        summary_fields.add("latent_usage")
+    if set(summary) != summary_fields:
         raise EvaluationError("invalid_summary_schema", "summary fields differ")
+    if repaired:
+        _validate_latent_usage(summary["latent_usage"], examples)
     raw_record_fields = {"family_id", *PATH_NAMES}
     if any(set(item) != raw_record_fields for item in raw):
         raise EvaluationError("invalid_raw_schema", "raw record fields differ")
     for item in raw:
         for path in PATH_NAMES:
             _validate_raw_prediction_schema(item[path])
+
+
+def _validate_latent_usage(usage, examples):
+    fields = {
+        "assignment_source",
+        "shared_by_decoding_paths",
+        "codebook_size",
+        "total_assignment_count",
+        "active_code_count",
+        "codebook_utilization",
+        "codebook_perplexity",
+        "dead_code_count",
+        "dead_code_rate",
+        "per_code_assignment_counts",
+    }
+    if not isinstance(usage, dict) or set(usage) != fields:
+        raise EvaluationError("invalid_latent_usage", "fields differ")
+    codebook_size = usage.get("codebook_size")
+    counts = usage.get("per_code_assignment_counts")
+    if (
+        usage.get("assignment_source")
+        != "shared_reconstructed_latent_memory"
+        or usage.get("shared_by_decoding_paths") is not True
+        or isinstance(codebook_size, bool)
+        or not isinstance(codebook_size, int)
+        or codebook_size <= 0
+        or not isinstance(counts, list)
+        or len(counts) != codebook_size
+    ):
+        raise EvaluationError("invalid_latent_usage", "contract differs")
+    expected = latent_usage(
+        tuple(SimpleNamespace(
+            latent_indices=tuple(item.get("latent_indices", ()))
+        ) for item in examples),
+        codebook_size,
+    )
+    if usage != expected:
+        raise EvaluationError(
+            "latent_usage_mismatch",
+            "summary does not match per-example assignments",
+        )
 
 
 def _validate_raw_prediction_schema(value):
@@ -893,7 +1115,7 @@ def _raw_from_json(value):
     return value
 
 
-def _validate_metric_rows(summary, rows):
+def _validate_metric_rows(summary, rows, *, repaired):
     expected = []
     aggregate_by_key = {}
     for path in PATH_NAMES:
@@ -916,6 +1138,9 @@ def _validate_metric_rows(summary, rows):
                 key = (path, kind, value)
                 expected.append(key)
                 aggregate_by_key[key] = values[value]
+    shared_key = ("shared_latent", "overall", "")
+    if repaired:
+        expected.append(shared_key)
     actual = tuple(
         (row["path"], row["stratum_kind"], row["stratum_value"])
         for row in rows
@@ -924,8 +1149,27 @@ def _validate_metric_rows(summary, rows):
         raise EvaluationError("metrics_row_mismatch", "metric rows/ordering differ")
     for row in rows:
         key = (row["path"], row["stratum_kind"], row["stratum_value"])
+        if repaired and key == shared_key:
+            expected_row = {
+                column: ""
+                for column in METRICS_COLUMNS[3:]
+            }
+            usage = summary["latent_usage"]
+            expected_row.update({
+                "active_code_count": usage["active_code_count"],
+                "codebook_perplexity": usage["codebook_perplexity"],
+                "codebook_utilization": usage["codebook_utilization"],
+            })
+            for column in METRICS_COLUMNS[3:]:
+                if row[column] != _csv_scalar(expected_row[column]):
+                    raise EvaluationError(
+                        "metrics_value_mismatch",
+                        ".".join(key + (column,)),
+                    )
+            continue
         expected_row = _metric_json_row(aggregate_by_key[key])
-        for column in METRICS_COLUMNS[3:]:
+        columns = METRICS_COLUMNS if repaired else LEGACY_METRICS_COLUMNS
+        for column in columns[3:]:
             if row[column] != _csv_scalar(expected_row[column]):
                 raise EvaluationError("metrics_value_mismatch", ".".join(key + (column,)))
 
@@ -940,6 +1184,9 @@ def _metric_json_row(metric):
         "controlled_domain_valid_rate": validity["controlled_domain_valid_rate"],
         "node_type_token_accuracy": metric["nodes"]["node_type_token_accuracy"],
         "exact_node_type_sequence_rate": metric["nodes"]["exact_node_type_sequence_rate"],
+        "exact_complete_ten_field_match_rate": metric["nodes"][
+            "exact_complete_ten_field_match_rate"
+        ],
         "finite_geometry_mae": metric["geometry"]["finite_applicable_geometry_mae"],
         "finite_geometry_rmse": metric["geometry"]["finite_applicable_geometry_rmse"],
         "complete_finite_geometry_rate": metric["geometry"]["complete_finite_example_rate"],
@@ -948,6 +1195,12 @@ def _metric_json_row(metric):
         "edge_micro_precision": metric["edges"]["micro_precision"],
         "edge_micro_recall": metric["edges"]["micro_recall"],
         "edge_micro_f1": metric["edges"]["micro_f1"],
+        "exact_typed_edge_set_match_rate": metric["edges"][
+            "exact_typed_edge_set_match_rate"
+        ],
+        "active_code_count": "",
+        "codebook_perplexity": "",
+        "codebook_utilization": "",
     }
 
 
@@ -1172,9 +1425,38 @@ def corpus_identity(corpus_dir, split_manifest):
 
 
 def load_and_validate_checkpoint(
-    path, torch_module, authoritative_validation_ids, split
+    path,
+    torch_module,
+    authoritative_validation_ids,
+    split,
+    *,
+    expected_sha256=None,
+    expected_checkpoint_kind=None,
+    expected_epoch=None,
+    expected_global_step=None,
+    authoritative_train_ids=None,
+    require_train_kmeans=False,
+    expected_codebook_size=None,
 ):
-    digest = checkpoint_sha256(path)
+    try:
+        digest = checkpoint_sha256(path)
+    except OSError as exc:
+        if expected_sha256 is None:
+            raise
+        raise EvaluationError(
+            "checkpoint_unavailable", type(exc).__name__
+        ) from exc
+    if expected_sha256 is not None:
+        if not _lower_sha256(expected_sha256):
+            raise EvaluationError(
+                "invalid_expected_checkpoint_digest",
+                "expected SHA-256 is malformed",
+            )
+        if digest != expected_sha256:
+            raise EvaluationError(
+                "checkpoint_digest_mismatch",
+                "checkpoint differs from the frozen SHA-256",
+            )
     try:
         checkpoint = torch_module.load(str(path), map_location="cpu")
         _validate_payload(checkpoint)
@@ -1184,8 +1466,47 @@ def load_and_validate_checkpoint(
         training_config.validate()
     except (OSError, TypeError, ValueError, RuntimeError) as exc:
         raise EvaluationError("invalid_checkpoint", type(exc).__name__) from exc
+    if (
+        expected_checkpoint_kind is not None
+        and checkpoint["checkpoint_kind"] != expected_checkpoint_kind
+    ):
+        raise EvaluationError(
+            "checkpoint_kind_mismatch",
+            str(checkpoint["checkpoint_kind"]),
+        )
+    if (
+        expected_epoch is not None
+        and checkpoint["epoch"] != expected_epoch
+    ):
+        raise EvaluationError("checkpoint_epoch_mismatch", str(checkpoint["epoch"]))
+    if (
+        expected_global_step is not None
+        and checkpoint["global_step"] != expected_global_step
+    ):
+        raise EvaluationError(
+            "checkpoint_global_step_mismatch",
+            str(checkpoint["global_step"]),
+        )
+    if (
+        expected_codebook_size is not None
+        and model_config.codebook_size != expected_codebook_size
+    ):
+        raise EvaluationError(
+            "checkpoint_model_config_mismatch",
+            "codebook size differs from the frozen model",
+        )
+    if require_train_kmeans and training_config.vq_init != "train-kmeans":
+        raise EvaluationError(
+            "checkpoint_initialization_mismatch",
+            "training configuration is not train-kmeans",
+        )
     _validate_checkpoint_data_state(
-        checkpoint["data_state"], authoritative_validation_ids, split
+        checkpoint["data_state"],
+        authoritative_validation_ids,
+        split,
+        authoritative_train_ids=authoritative_train_ids,
+        require_train_kmeans=require_train_kmeans,
+        training_seed=training_config.seed,
     )
     return digest, checkpoint, model_config, training_config
 
@@ -1206,32 +1527,93 @@ def run(
         except ImportError as exc:
             raise EvaluationError("pytorch_unavailable", "PyTorch is required") from exc
     identity = corpus_identity(arguments.corpus_dir, arguments.split_manifest)
-    examples_all = tuple(load_physical_examples(
-        arguments.corpus_dir, arguments.split_manifest
-    ))
-    validation_ids = _partition_ids(examples_all, "validation")
-    test_ids = _partition_ids(examples_all, "test")
+    partition_counts = None
+    train_ids = None
+    if arguments.repaired_smoke_contract:
+        authority = partition_family_ids(
+            arguments.corpus_dir, arguments.split_manifest
+        )
+        train_ids = authority["train"]
+        validation_ids = authority["validation"]
+        test_ids = authority["test"]
+        partition_counts = {
+            name: len(authority[name])
+            for name in ("train", "validation", "test")
+        }
+        if partition_counts != REPAIRED_PARTITION_COUNTS:
+            raise EvaluationError(
+                "authoritative_partition_count_mismatch",
+                repr(partition_counts),
+            )
+        authoritative_ids = authority[arguments.partition]
+        selected_ids = (
+            authoritative_ids
+            if arguments.family_limit is None
+            else authoritative_ids[:arguments.family_limit]
+        )
+        if not selected_ids:
+            raise EvaluationError(
+                "empty_selection", "no authoritative families selected"
+            )
+    else:
+        examples_all = tuple(load_physical_examples(
+            arguments.corpus_dir, arguments.split_manifest
+        ))
+        validation_ids = _partition_ids(examples_all, "validation")
+        test_ids = _partition_ids(examples_all, "test")
+        selected = select_examples(
+            examples_all, arguments.partition, arguments.family_limit
+        )
+        selected_ids = tuple(
+            item.physical_family_id for item in selected
+        )
+    expected_digest = (
+        REPAIRED_CHECKPOINT_SHA256
+        if arguments.repaired_smoke_contract
+        else None
+    )
     digest, checkpoint, model_config, training_config = (
         load_and_validate_checkpoint(
             arguments.checkpoint,
             torch_module,
             validation_ids,
             arguments.split_manifest,
+            expected_sha256=expected_digest,
+            expected_checkpoint_kind=(
+                "best" if arguments.repaired_smoke_contract else None
+            ),
+            expected_epoch=(
+                REPAIRED_CHECKPOINT_EPOCH
+                if arguments.repaired_smoke_contract
+                else None
+            ),
+            expected_global_step=(
+                REPAIRED_CHECKPOINT_GLOBAL_STEP
+                if arguments.repaired_smoke_contract
+                else None
+            ),
+            authoritative_train_ids=(
+                train_ids if arguments.repaired_smoke_contract else None
+            ),
+            require_train_kmeans=arguments.repaired_smoke_contract,
+            expected_codebook_size=(
+                REPAIRED_CODEBOOK_SIZE
+                if arguments.repaired_smoke_contract
+                else None
+            ),
         )
     )
-    selected = select_examples(
-        examples_all, arguments.partition, arguments.family_limit
-    )
-    if arguments.partition == "validation":
-        expected_selected = (
-            validation_ids
-            if arguments.family_limit is None
-            else validation_ids[:arguments.family_limit]
+    if arguments.repaired_smoke_contract:
+        selected = load_partition_physical_examples(
+            arguments.corpus_dir,
+            arguments.split_manifest,
+            arguments.partition,
+            selected_ids,
         )
-        if tuple(item.physical_family_id for item in selected) != expected_selected:
+        if tuple(item.physical_family_id for item in selected) != selected_ids:
             raise EvaluationError(
                 "selected_validation_mismatch",
-                "selection is not the authoritative validation prefix",
+                "loaded examples differ from resolved configuration",
             )
     device = _resolve_device(arguments.device, torch_module)
     if paired_decoder is None:
@@ -1270,6 +1652,7 @@ def run(
         device,
         validation_ids,
         test_ids,
+        partition_counts,
         source_state_provider,
     )
     metadata.update(identity)
@@ -1315,6 +1698,7 @@ def _run_metadata(
     device,
     authoritative_validation_ids,
     authoritative_test_ids,
+    authoritative_partition_counts,
     source_state_provider,
 ):
     repository = Path(__file__).resolve().parents[2]
@@ -1328,8 +1712,12 @@ def _run_metadata(
         arguments.partition == "test"
         or bool(set(selected_ids) & set(authoritative_test_ids))
     )
-    return {
-        "evaluation_schema_version": EVALUATION_SCHEMA_VERSION,
+    metadata = {
+        "evaluation_schema_version": (
+            REPAIRED_EVALUATION_SCHEMA_VERSION
+            if arguments.repaired_smoke_contract
+            else EVALUATION_SCHEMA_VERSION
+        ),
         "representation_schema_version": REPRESENTATION_SCHEMA_VERSION,
         "repository_branch": _git_value(repository, "branch", "--show-current"),
         "repository_commit": state["git_commit"],
@@ -1372,10 +1760,46 @@ def _run_metadata(
         "test_partition_evaluated": test_partition_evaluated,
         "limitation": LIMITATION,
     }
+    if arguments.repaired_smoke_contract:
+        metadata.pop("checkpoint_path")
+        metadata["training_configuration"].pop("output_dir")
+        metadata.update({
+            "checkpoint_training_source_commit": (
+                REPAIRED_CHECKPOINT_TRAINING_COMMIT
+            ),
+            "resolved_selected_family_ids_before_inference": list(
+                selected_ids
+            ),
+            "repaired_smoke_contract": True,
+            "repaired_evaluation_contract": True,
+            "authoritative_partition_family_counts": (
+                authoritative_partition_counts
+            ),
+            "payload_access": {
+                "train_family_records_loaded": (
+                    len(selected) if arguments.partition == "train" else 0
+                ),
+                "validation_family_records_loaded": (
+                    len(selected)
+                    if arguments.partition == "validation" else 0
+                ),
+                "test_family_records_loaded": (
+                    len(selected) if arguments.partition == "test" else 0
+                ),
+                "loaded_family_ids": list(selected_ids),
+            },
+        })
+    return metadata
 
 
 def _validate_checkpoint_data_state(
-    data_state, authoritative_validation_ids, split
+    data_state,
+    authoritative_validation_ids,
+    split,
+    *,
+    authoritative_train_ids=None,
+    require_train_kmeans=False,
+    training_seed=None,
 ):
     if not isinstance(data_state, dict):
         raise EvaluationError("invalid_checkpoint_data_state", "data_state is not a map")
@@ -1389,6 +1813,32 @@ def _validate_checkpoint_data_state(
         or tuple(checkpoint_ids) != tuple(authoritative_validation_ids)
     ):
         raise EvaluationError("checkpoint_family_mismatch", "validation")
+    if authoritative_train_ids is not None:
+        checkpoint_train = data_state.get("train_family_ids")
+        if (
+            not isinstance(checkpoint_train, list)
+            or tuple(checkpoint_train) != tuple(authoritative_train_ids)
+        ):
+            raise EvaluationError("checkpoint_family_mismatch", "train")
+    if require_train_kmeans:
+        provenance = (
+            data_state.get("initialization_mode") == "train-kmeans"
+            and data_state.get("initialization_seed") == training_seed
+            and isinstance(data_state.get("initialization_algorithm"), str)
+            and bool(data_state["initialization_algorithm"])
+            and isinstance(
+                data_state.get("initialization_pseudo_count_policy"), str
+            )
+            and bool(data_state["initialization_pseudo_count_policy"])
+            and _lower_sha256(
+                data_state.get("initialization_report_sha256")
+            )
+        )
+        if not provenance:
+            raise EvaluationError(
+                "checkpoint_initialization_provenance",
+                "train-kmeans provenance is missing or malformed",
+            )
 
 
 def _aggregate_json(value):
@@ -1426,9 +1876,10 @@ def _example_json(record):
     return _json_safe(value)
 
 
-def _metrics_csv(aggregates):
+def _metrics_csv(aggregates, usage=None, *, repaired=False):
     stream = io.StringIO(newline="")
-    writer = csv.DictWriter(stream, fieldnames=METRICS_COLUMNS, lineterminator="\n")
+    columns = METRICS_COLUMNS if repaired else LEGACY_METRICS_COLUMNS
+    writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
     writer.writeheader()
     for path in PATH_NAMES:
         aggregate = aggregates[path]
@@ -1444,7 +1895,39 @@ def _metrics_csv(aggregates):
         )
         for kind, _, rows in groups:
             for value, metric in sorted(rows, key=lambda item: item[0]):
-                writer.writerow(_metric_row(path, kind, value, metric))
+                row = _metric_row(path, kind, value, metric)
+                if not repaired:
+                    row = {
+                        key: item for key, item in row.items()
+                        if key in LEGACY_METRICS_COLUMNS
+                    }
+                writer.writerow(row)
+    if repaired:
+        writer.writerow({
+            "path": "shared_latent",
+            "stratum_kind": "overall",
+            "stratum_value": "",
+            "attempted_example_count": "",
+            "raw_completion_rate": "",
+            "raw_integrity_valid_rate": "",
+            "reconstruction_target_valid_rate": "",
+            "controlled_domain_valid_rate": "",
+            "node_type_token_accuracy": "",
+            "exact_node_type_sequence_rate": "",
+            "exact_complete_ten_field_match_rate": "",
+            "finite_geometry_mae": "",
+            "finite_geometry_rmse": "",
+            "complete_finite_geometry_rate": "",
+            "exact_operation_type_sequence_rate": "",
+            "pointer_overall_accuracy": "",
+            "edge_micro_precision": "",
+            "edge_micro_recall": "",
+            "edge_micro_f1": "",
+            "exact_typed_edge_set_match_rate": "",
+            "active_code_count": usage["active_code_count"],
+            "codebook_perplexity": usage["codebook_perplexity"],
+            "codebook_utilization": usage["codebook_utilization"],
+        })
     return stream.getvalue().encode("utf-8")
 
 
@@ -1460,6 +1943,9 @@ def _metric_row(path, kind, value, metric):
         "controlled_domain_valid_rate": metric.validity.controlled_domain_valid_rate,
         "node_type_token_accuracy": metric.nodes.node_type_token_accuracy,
         "exact_node_type_sequence_rate": metric.nodes.exact_node_type_sequence_rate,
+        "exact_complete_ten_field_match_rate": (
+            metric.nodes.exact_complete_ten_field_match_rate
+        ),
         "finite_geometry_mae": metric.geometry.finite_applicable_geometry_mae,
         "finite_geometry_rmse": metric.geometry.finite_applicable_geometry_rmse,
         "complete_finite_geometry_rate": metric.geometry.complete_finite_example_rate,
@@ -1468,6 +1954,12 @@ def _metric_row(path, kind, value, metric):
         "edge_micro_precision": metric.edges.micro_precision,
         "edge_micro_recall": metric.edges.micro_recall,
         "edge_micro_f1": metric.edges.micro_f1,
+        "exact_typed_edge_set_match_rate": (
+            metric.edges.exact_typed_edge_set_match_rate
+        ),
+        "active_code_count": "",
+        "codebook_perplexity": "",
+        "codebook_utilization": "",
     }
 
 

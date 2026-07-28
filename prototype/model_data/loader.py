@@ -102,7 +102,86 @@ _SUPPORTED_MANIFEST_FILES = {
 }
 
 
+def partition_family_ids(corpus_dir, split_name="iid"):
+    """Return authoritative family IDs by partition without opening payloads."""
+
+    state = _load_manifest_state(
+        corpus_dir, split_name, validate_manifest_closure=True
+    )
+    result = {}
+    for partition in sorted(_PARTITIONS):
+        result[partition] = tuple(sorted(
+            family_id
+            for family_id, assigned in state["assignments"].items()
+            if assigned == partition
+        ))
+    return result
+
+
+def load_partition_physical_examples(
+    corpus_dir,
+    split_name,
+    partition,
+    family_ids=None,
+):
+    """Load only explicitly authorized families from one partition."""
+
+    if partition not in _PARTITIONS:
+        raise ModelDataError(
+            "invalid_partition", "unsupported partition {!r}".format(partition)
+        )
+    state = _load_manifest_state(
+        corpus_dir, split_name, validate_manifest_closure=True
+    )
+    authoritative = tuple(sorted(
+        family_id
+        for family_id, assigned in state["assignments"].items()
+        if assigned == partition
+    ))
+    if family_ids is None:
+        selected = authoritative
+    else:
+        try:
+            selected = tuple(family_ids)
+        except TypeError as exc:
+            raise ModelDataError(
+                "invalid_family_selection", "family IDs must be iterable"
+            ) from exc
+        if (
+            any(not isinstance(item, str) or not item for item in selected)
+            or len(selected) != len(set(selected))
+            or selected != tuple(sorted(selected))
+        ):
+            raise ModelDataError(
+                "invalid_family_selection",
+                "family IDs must be nonempty, unique, and sorted",
+            )
+        authoritative_set = set(authoritative)
+        if any(item not in authoritative_set for item in selected):
+            raise ModelDataError(
+                "family_partition_mismatch",
+                "a requested family is not assigned to {!r}".format(partition),
+            )
+    if not selected:
+        raise ModelDataError(
+            "empty_partition_selection",
+            "no families were selected from {!r}".format(partition),
+        )
+    return _build_physical_examples(state, selected)
+
+
 def load_physical_examples(corpus_dir, split_name="iid"):
+    state = _load_manifest_state(corpus_dir, split_name)
+    examples = _build_physical_examples(
+        state, tuple(sorted(state["grouped"]))
+    )
+    _verify_corpus_closure(state["root"], state["seen_paths"])
+    return examples
+
+
+def _load_manifest_state(
+    corpus_dir, split_name, *, validate_manifest_closure=False
+):
     root = Path(corpus_dir)
     _validate_split_name(split_name)
     corpus = _load_json(root / "corpus_manifest.json")
@@ -140,9 +219,33 @@ def load_physical_examples(corpus_dir, split_name="iid"):
             "split_corpus_mismatch",
             "split and corpus physical-family sets differ",
         )
+    if validate_manifest_closure:
+        for family_id, variants in grouped.items():
+            if len(variants) != 2:
+                raise ModelDataError(
+                    "variant_count",
+                    "exactly two representation variants are required",
+                    family_id,
+                )
+        for relative in seen_paths:
+            _safe_path(root, relative)
+        _verify_corpus_closure(root, seen_paths)
+    return {
+        "root": root,
+        "split_name": split_name,
+        "grouped": grouped,
+        "assignments": assignments,
+        "seen_paths": seen_paths,
+    }
 
+
+def _build_physical_examples(state, selected_family_ids):
+    root = state["root"]
+    grouped = state["grouped"]
+    assignments = state["assignments"]
+    split_name = state["split_name"]
     examples = []
-    for family_id in sorted(grouped):
+    for family_id in selected_family_ids:
         variants = grouped[family_id]
         if len(variants) != 2:
             raise ModelDataError(
@@ -236,7 +339,6 @@ def load_physical_examples(corpus_dir, split_name="iid"):
                 history_to_json(history),
             )
         )
-    _verify_corpus_closure(root, seen_paths)
     return tuple(examples)
 
 

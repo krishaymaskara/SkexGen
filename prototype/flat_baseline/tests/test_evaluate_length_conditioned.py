@@ -21,9 +21,15 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     EVALUATION_SCHEMA_VERSION,
     EvaluationError,
     FAILURE_COLUMNS,
+    LEGACY_METRICS_COLUMNS,
     LIMITATION,
     METRICS_COLUMNS,
     RAW_ARTIFACT,
+    REPAIRED_CHECKPOINT_EPOCH,
+    REPAIRED_CHECKPOINT_GLOBAL_STEP,
+    REPAIRED_CHECKPOINT_SHA256,
+    REPAIRED_CHECKPOINT_TRAINING_COMMIT,
+    REPAIRED_EVALUATION_SCHEMA_VERSION,
     _atomic_no_replace,
     _failure_counters,
     _identifier_sha256,
@@ -32,6 +38,7 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     _linux_rename_noreplace,
     _resolve_publication_directory,
     _resolve_publication_file,
+    _run_metadata,
     _semantic_difference,
     _strict_load_model,
     _validate_authoritative_ids,
@@ -40,6 +47,7 @@ from prototype.flat_baseline.evaluate_length_conditioned import (
     corpus_identity,
     evaluate_records,
     load_and_validate_checkpoint,
+    latent_usage,
     make_artifacts,
     parse_arguments,
     publish_artifacts,
@@ -370,10 +378,13 @@ class EvaluationTests(unittest.TestCase):
         )
         return status, output, events, selected, checkpoint_bytes
 
-    def metadata(self, selected, raw=False):
+    def metadata(self, selected, raw=False, repaired=True):
         identifiers = [item.physical_family_id for item in selected]
-        return {
-            "evaluation_schema_version": EVALUATION_SCHEMA_VERSION,
+        metadata = {
+            "evaluation_schema_version": (
+                REPAIRED_EVALUATION_SCHEMA_VERSION
+                if repaired else EVALUATION_SCHEMA_VERSION
+            ),
             "representation_schema_version": 1,
             "partition": "validation",
             "repository_commit": "a" * 40,
@@ -396,6 +407,9 @@ class EvaluationTests(unittest.TestCase):
             "test_partition_evaluated": False,
             "limitation": LIMITATION,
         }
+        if repaired:
+            metadata["repaired_evaluation_contract"] = True
+        return metadata
 
     @staticmethod
     def unsupported_rename_error(error_number=errno.EINVAL):
@@ -468,6 +482,85 @@ class EvaluationTests(unittest.TestCase):
             parse_arguments(values)
         values.append("--allow-test-evaluation")
         self.assertEqual(parse_arguments(values).partition, "test")
+
+    def test_repaired_smoke_cli_freezes_execution_configuration(self):
+        parsed = self.arguments(
+            "--family-limit", "6",
+            "--batch-size", "3",
+            "--write-raw-predictions",
+            "--repaired-smoke-contract",
+        )
+        self.assertTrue(parsed.repaired_smoke_contract)
+        invalid = (
+            ("--family-limit", "5"),
+            ("--batch-size", "2"),
+            ("--device", "cuda"),
+        )
+        for replacement in invalid:
+            with self.subTest(replacement=replacement):
+                values = list((
+                    "--corpus-dir", "corpus",
+                    "--checkpoint", "best.pt",
+                    "--split-manifest", "iid",
+                    "--partition", "validation",
+                    "--output-dir", "output",
+                    "--family-limit", "6",
+                    "--batch-size", "3",
+                    "--device", "cpu",
+                    "--write-raw-predictions",
+                    "--repaired-smoke-contract",
+                ))
+                name, value = replacement
+                values[values.index(name) + 1] = value
+                with self.assertRaisesRegex(
+                    EvaluationError, "repaired_smoke_configuration"
+                ):
+                    parse_arguments(values)
+
+    def test_zero_inclusive_latent_usage_and_known_perplexity(self):
+        records = (
+            SimpleNamespace(latent_indices=(0, 0)),
+            SimpleNamespace(latent_indices=(1, 1)),
+        )
+        usage = latent_usage(records, 32)
+        self.assertEqual(len(usage["per_code_assignment_counts"]), 32)
+        self.assertEqual(
+            usage["per_code_assignment_counts"][:3], [2, 2, 0]
+        )
+        self.assertEqual(usage["per_code_assignment_counts"][2:], [0] * 30)
+        self.assertEqual(usage["active_code_count"], 2)
+        self.assertEqual(usage["codebook_utilization"], 2 / 32)
+        self.assertAlmostEqual(usage["codebook_perplexity"], 2.0)
+        self.assertTrue(usage["shared_by_decoding_paths"])
+
+    def test_latent_usage_has_one_shared_headline_csv_row(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected, True), selected, True
+        )
+        summary = json.loads(artifacts["summary.json"])
+        self.assertEqual(
+            summary["evaluation_schema_version"],
+            REPAIRED_EVALUATION_SCHEMA_VERSION,
+        )
+        rows = tuple(csv.DictReader(io.StringIO(
+            artifacts["metrics.csv"].decode()
+        )))
+        shared = tuple(row for row in rows if row["path"] == "shared_latent")
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(
+            int(shared[0]["active_code_count"]),
+            summary["latent_usage"]["active_code_count"],
+        )
+        self.assertEqual(
+            float(shared[0]["codebook_perplexity"]),
+            summary["latent_usage"]["codebook_perplexity"],
+        )
+        self.assertEqual(
+            len(summary["latent_usage"]["per_code_assignment_counts"]), 16
+        )
+        self.assertNotIn("latent_usage", summary["teacher_forced"])
+        self.assertNotIn("latent_usage", summary["predicted_history"])
 
     def test_selection_is_authoritative_ordered_limited_and_nonempty(self):
         values = tuple(reversed(self.selected()))
@@ -549,7 +642,7 @@ class EvaluationTests(unittest.TestCase):
 
         def decode(items):
             return SimpleNamespace(
-                latent_indices=((999,),),
+                latent_indices=((15,),),
                 teacher_forced=(raw,),
                 predicted_history=(raw,),
             )
@@ -583,6 +676,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertTrue(output.is_dir())
         metadata = json.loads((output / "run_metadata.json").read_text())
+        summary = json.loads((output / "summary.json").read_text())
         examples = tuple(
             json.loads(line)
             for line in (output / "examples.jsonl").read_text().splitlines()
@@ -590,6 +684,19 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(
             metadata["selected_family_ids"],
             [item.physical_family_id for item in selected],
+        )
+        self.assertEqual(metadata["evaluation_schema_version"], 1)
+        self.assertEqual(summary["evaluation_schema_version"], 1)
+        self.assertNotIn("latent_usage", summary)
+        self.assertNotIn("repaired_evaluation_contract", metadata)
+        self.assertNotIn("repaired_smoke_contract", metadata)
+        self.assertNotIn(
+            "resolved_selected_family_ids_before_inference", metadata
+        )
+        self.assertNotIn("payload_access", metadata)
+        self.assertEqual(
+            (output / "metrics.csv").read_text().splitlines()[0].split(","),
+            list(LEGACY_METRICS_COLUMNS),
         )
         self.assertEqual(len(examples), len(selected))
         self.assertFalse(metadata["test_partition_evaluated"])
@@ -603,6 +710,134 @@ class EvaluationTests(unittest.TestCase):
             sum(len(item[1]) for item in events if item[0] == "paired_decode"),
             len(selected),
         )
+
+    def test_repaired_metadata_is_output_namespace_independent(self):
+        selected, records, raw_records = self.records()
+        base = {
+            "corpus_dir": "corpus",
+            "checkpoint": "/shared/repaired/best.pt",
+            "split_manifest": "iid",
+            "partition": "validation",
+            "batch_size": 3,
+            "device": "cpu",
+            "family_limit": 6,
+            "allow_test_evaluation": False,
+            "write_raw_predictions": True,
+            "repaired_smoke_contract": True,
+        }
+        checkpoint = {
+            "checkpoint_kind": "best",
+            "epoch": REPAIRED_CHECKPOINT_EPOCH,
+            "global_step": REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            "data_state": {"validation_family_ids": [
+                item.physical_family_id for item in selected
+            ]},
+        }
+        source = lambda repository: {
+            "git_commit": "c" * 40,
+            "git_dirty": False,
+            "source_tree_sha256": "d" * 64,
+        }
+        identifiers = tuple(
+            item.physical_family_id for item in selected
+        )
+        artifacts = []
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned._git_value",
+            return_value="flat-mixed-baseline",
+        ):
+            for label in ("phase-b-smoke-a", "phase-b-smoke-b"):
+                arguments = SimpleNamespace(
+                    **dict(base, output_dir="/tmp/" + label)
+                )
+                metadata = _run_metadata(
+                    arguments,
+                    selected,
+                    "b" * 64,
+                    checkpoint,
+                    FlatBaselineConfig(),
+                    TrainingConfig(
+                        output_dir="/tmp/training-" + label
+                    ),
+                    "cpu",
+                    identifiers,
+                    (),
+                    {"train": 544, "validation": 68, "test": 68},
+                    source,
+                )
+                artifacts.append(make_artifacts(
+                    records, raw_records, metadata, selected, True
+                ))
+                self.assertNotIn(
+                    "output_dir", metadata["training_configuration"]
+                )
+        self.assertEqual(artifacts[0], artifacts[1])
+        hashes = [
+            {
+                name: hashlib.sha256(content).hexdigest()
+                for name, content in bundle.items()
+            }
+            for bundle in artifacts
+        ]
+        self.assertEqual(hashes[0], hashes[1])
+        for bundle in artifacts:
+            combined = b"".join(bundle.values())
+            self.assertNotIn(b"phase-b-smoke-a", combined)
+            self.assertNotIn(b"phase-b-smoke-b", combined)
+            self.assertNotIn(b"/tmp/", combined)
+
+    def test_repaired_resolved_selection_is_reconciled_everywhere(self):
+        selected, records, raw_records = self.records()
+        metadata = self.metadata(selected, raw=True)
+        identifiers = [
+            item.physical_family_id for item in selected
+        ]
+        metadata.update({
+            "repaired_smoke_contract": True,
+            "checkpoint_sha256": REPAIRED_CHECKPOINT_SHA256,
+            "checkpoint_epoch": REPAIRED_CHECKPOINT_EPOCH,
+            "checkpoint_global_step": REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            "checkpoint_training_source_commit": (
+                REPAIRED_CHECKPOINT_TRAINING_COMMIT
+            ),
+            "authoritative_partition_family_counts": {
+                "train": 544,
+                "validation": 68,
+                "test": 68,
+            },
+            "resolved_selected_family_ids_before_inference": identifiers,
+            "family_limit": 6,
+            "batch_size": 3,
+            "requested_device": "cpu",
+            "payload_access": {
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": len(identifiers),
+                "test_family_records_loaded": 0,
+                "loaded_family_ids": identifiers,
+            },
+        })
+        artifacts = make_artifacts(
+            records, raw_records, metadata, selected, True
+        )
+        damaged_metadata = json.loads(artifacts["run_metadata.json"])
+        damaged_metadata[
+            "resolved_selected_family_ids_before_inference"
+        ] = list(reversed(identifiers))
+        artifacts["run_metadata.json"] = _json_document(damaged_metadata)
+        output = Path(self.temporary.name) / "bad-resolved-selection"
+        with self.assertRaisesRegex(
+            EvaluationError, "repaired_smoke_metadata"
+        ):
+            publish_artifacts(
+                output,
+                artifacts,
+                expected_ids=identifiers,
+                expected_partition="validation",
+                authoritative_validation_ids=identifiers,
+                authoritative_examples=selected,
+                expected_checkpoint_sha256=REPAIRED_CHECKPOINT_SHA256,
+            )
+        self.assertFalse(output.exists())
 
     def test_verifier_reloads_authority_and_hashes_checkpoint(self):
         _, output, _, selected, checkpoint_bytes = self.run_fixture(
@@ -848,6 +1083,20 @@ class EvaluationTests(unittest.TestCase):
             artifacts["metrics.csv"].decode().splitlines()[0].split(","),
             list(METRICS_COLUMNS),
         )
+        self.assertTrue({
+            "controlled_domain_valid_rate",
+            "exact_node_type_sequence_rate",
+            "exact_complete_ten_field_match_rate",
+            "finite_geometry_mae",
+            "finite_geometry_rmse",
+            "exact_operation_type_sequence_rate",
+            "pointer_overall_accuracy",
+            "edge_micro_f1",
+            "exact_typed_edge_set_match_rate",
+            "active_code_count",
+            "codebook_perplexity",
+            "codebook_utilization",
+        }.issubset(METRICS_COLUMNS))
         self.assertEqual(
             artifacts["conversion_failures.csv"].decode().splitlines()[0].split(","),
             list(FAILURE_COLUMNS),
@@ -1260,6 +1509,47 @@ class EvaluationTests(unittest.TestCase):
         self.assertFalse(tuple(
             Path(self.temporary.name).glob(".rename-race.tmp-*")
         ))
+
+    def test_historical_output_directory_does_not_block_new_publication(self):
+        selected, records, raw = self.records()
+        artifacts = make_artifacts(
+            records, raw, self.metadata(selected), selected, False
+        )
+        historical = Path(self.temporary.name) / "validation-3324856"
+        historical.mkdir()
+        (historical / "preserved.txt").write_text("historical")
+        current = Path(self.temporary.name) / "phase-b-repaired-smoke-current"
+        publish_artifacts(current, artifacts)
+        self.assertTrue(current.exists())
+        self.assertEqual(
+            (historical / "preserved.txt").read_text(), "historical"
+        )
+
+    def test_repaired_smoke_slurm_workflow_is_separate_and_staged(self):
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "adroit"
+            / "evaluate_repaired_smoke_cpu.slurm"
+        ).read_text()
+        stages = (
+            "repository_preflight",
+            "environment_preflight",
+            "checkpoint_preflight",
+            "partition_preflight",
+            "regressions",
+            "smoke_a",
+            "smoke_b",
+            "smoke_replay",
+            "artifact_validation",
+            "complete",
+        )
+        offsets = [script.index("stage " + stage) for stage in stages]
+        self.assertEqual(offsets, sorted(offsets))
+        self.assertIn("--repaired-smoke-contract", script)
+        self.assertIn("train-kmeans-full-d549ebe", script)
+        self.assertIn("EXPECTED_CHECKPOINT_SHA256=", script)
+        self.assertIn("failure_stage=%s failure_line=%s exit_code=%s", script)
+        self.assertIn("phase-b-repaired-smoke-${REVIEWED_COMMIT}", script)
 
     def test_unsupported_no_replace_never_publishes(self):
         selected, records, raw = self.records()
@@ -1836,6 +2126,151 @@ class EvaluationTests(unittest.TestCase):
                 torch_module,
                 tuple(item.physical_family_id for item in selected),
                 "iid",
+            )
+
+    def test_checkpoint_hash_precedes_and_can_prevent_deserialization(self):
+        selected = self.selected()
+        path = Path(self.temporary.name) / "hash-before-load.pt"
+        path.write_bytes(b"actual-checkpoint-bytes")
+        events = []
+
+        class Torch:
+            @staticmethod
+            def load(loaded_path, map_location):
+                events.append(("load", loaded_path, map_location))
+                raise AssertionError("deserialization must not occur")
+
+        with self.assertRaisesRegex(
+            EvaluationError, "checkpoint_digest_mismatch"
+        ):
+            load_and_validate_checkpoint(
+                path,
+                Torch(),
+                tuple(item.physical_family_id for item in selected),
+                "iid",
+                expected_sha256="0" * 64,
+            )
+        self.assertEqual(events, [])
+
+    def test_missing_checkpoint_prevents_deserialization(self):
+        selected = self.selected()
+        events = []
+        torch_module = SimpleNamespace(
+            load=lambda *args, **kwargs: events.append((args, kwargs))
+        )
+        with self.assertRaisesRegex(
+            EvaluationError, "checkpoint_unavailable"
+        ):
+            load_and_validate_checkpoint(
+                Path(self.temporary.name) / "absent.pt",
+                torch_module,
+                tuple(item.physical_family_id for item in selected),
+                "iid",
+                expected_sha256="0" * 64,
+            )
+        self.assertEqual(events, [])
+
+    def test_repaired_checkpoint_epoch_step_and_kmeans_provenance(self):
+        selected = self.selected()
+        path = Path(self.temporary.name) / "repaired-contract.pt"
+        path.write_bytes(b"repaired-contract-fixture")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        validation_ids = [
+            item.physical_family_id for item in selected
+        ]
+        train_ids = ("train-a", "train-b")
+        model = FlatBaselineConfig(codebook_size=32)
+        training = TrainingConfig(seed=2026, vq_init="train-kmeans")
+        payload = {
+            "checkpoint_version": 1,
+            "checkpoint_kind": "best",
+            "model_state": {"weight": "opaque"},
+            "optimizer_state": {},
+            "epoch": REPAIRED_CHECKPOINT_EPOCH,
+            "global_step": REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            "model_config": model.to_dict(),
+            "training_config": training.to_dict(),
+            "best_validation_metric": 1.0,
+            "rng_state": {},
+            "data_state": {
+                "split_manifest": "iid",
+                "train_partition": "train",
+                "validation_partition": "validation",
+                "train_family_ids": list(train_ids),
+                "validation_family_ids": validation_ids,
+                "initialization_mode": "train-kmeans",
+                "initialization_algorithm": "seeded-kmeans++",
+                "initialization_seed": 2026,
+                "initialization_pseudo_count_policy": "matched",
+                "initialization_report_sha256": "a" * 64,
+            },
+        }
+        torch_module = SimpleNamespace(
+            load=lambda loaded_path, map_location: payload
+        )
+        loaded = load_and_validate_checkpoint(
+            path,
+            torch_module,
+            tuple(validation_ids),
+            "iid",
+            expected_sha256=digest,
+            expected_checkpoint_kind="best",
+            expected_epoch=REPAIRED_CHECKPOINT_EPOCH,
+            expected_global_step=REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            authoritative_train_ids=train_ids,
+            require_train_kmeans=True,
+            expected_codebook_size=32,
+        )
+        self.assertIs(loaded[1], payload)
+
+        for field, value, expected_error in (
+            ("checkpoint_kind", "last", "checkpoint_kind_mismatch"),
+            ("epoch", 43, "checkpoint_epoch_mismatch"),
+            ("global_step", 747, "checkpoint_global_step_mismatch"),
+        ):
+            with self.subTest(field=field):
+                damaged = dict(payload)
+                damaged[field] = value
+                torch_module.load = (
+                    lambda loaded_path, map_location, item=damaged: item
+                )
+                with self.assertRaisesRegex(EvaluationError, expected_error):
+                    load_and_validate_checkpoint(
+                        path,
+                        torch_module,
+                        tuple(validation_ids),
+                        "iid",
+                        expected_sha256=digest,
+                        expected_checkpoint_kind="best",
+                        expected_epoch=REPAIRED_CHECKPOINT_EPOCH,
+                        expected_global_step=(
+                            REPAIRED_CHECKPOINT_GLOBAL_STEP
+                        ),
+                        authoritative_train_ids=train_ids,
+                        require_train_kmeans=True,
+                        expected_codebook_size=32,
+                    )
+
+        damaged = dict(payload)
+        damaged["data_state"] = dict(
+            payload["data_state"], initialization_mode="normal"
+        )
+        torch_module.load = lambda loaded_path, map_location: damaged
+        with self.assertRaisesRegex(
+            EvaluationError, "checkpoint_initialization_provenance"
+        ):
+            load_and_validate_checkpoint(
+                path,
+                torch_module,
+                tuple(validation_ids),
+                "iid",
+                expected_sha256=digest,
+                expected_checkpoint_kind="best",
+                expected_epoch=REPAIRED_CHECKPOINT_EPOCH,
+                expected_global_step=REPAIRED_CHECKPOINT_GLOBAL_STEP,
+                authoritative_train_ids=train_ids,
+                require_train_kmeans=True,
+                expected_codebook_size=32,
             )
 
 

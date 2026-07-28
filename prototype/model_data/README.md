@@ -14,6 +14,15 @@ descriptor from `prototype.controlled_data.identity`. A disagreement is an
 error. The two encodings then collapse to one immutable `PhysicalExample`;
 they are never two training examples.
 
+`partition_family_ids(corpus_dir, split_name)` validates manifest authority
+and returns sorted family IDs by partition without opening any history
+payload. `load_partition_physical_examples(...)` then accepts one partition
+and an optional sorted, unique family-ID selection. It rejects an ID assigned
+to another partition before payload access and deserializes only the two
+variants for each selected family. This scoped path supports evaluation
+workflows that must prove zero train/test payload access; the original
+all-family loader remains available for training and corpus-wide validation.
+
 Collapse is permitted only after checking canonical JSON, schema validation,
 decoded physical bytes, authoritative source/sample IDs, declared encoding,
 and agreement of all physical manifest metadata. There must be exactly two

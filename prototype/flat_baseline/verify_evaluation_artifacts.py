@@ -10,10 +10,17 @@ from pathlib import Path
 import platform
 import sys
 
-from prototype.model_data.loader import load_physical_examples
+from prototype.model_data.loader import (
+    load_physical_examples,
+    load_partition_physical_examples,
+    partition_family_ids,
+)
 
 from .evaluate_length_conditioned import (
     EvaluationError,
+    REPAIRED_CHECKPOINT_SHA256,
+    REPAIRED_PARTITION_COUNTS,
+    REPAIRED_SMOKE_FAMILY_COUNT,
     _identifier_sha256,
     _resolve_publication_directory,
     checkpoint_sha256,
@@ -22,7 +29,10 @@ from .evaluate_length_conditioned import (
 )
 
 
-def authoritative_corpus(corpus_dir, split_manifest="iid"):
+def authoritative_corpus(
+    corpus_dir,
+    split_manifest="iid",
+):
     examples = tuple(load_physical_examples(corpus_dir, split_manifest))
     validation = tuple(sorted(
         item.physical_family_id
@@ -34,9 +44,32 @@ def authoritative_corpus(corpus_dir, split_manifest="iid"):
         for item in examples
         if item.partition == "test"
     ))
-    if len(validation) != len(set(validation)) or len(test) != len(set(test)):
-        raise ValueError("authoritative partition contains duplicate family IDs")
+    if (
+        len(validation) != len(set(validation))
+        or len(test) != len(set(test))
+    ):
+        raise ValueError(
+            "authoritative partition contains duplicate family IDs"
+        )
     return examples, validation, test
+
+
+def repaired_authoritative_corpus(
+    corpus_dir, split_manifest="iid", family_limit=None
+):
+    authority = partition_family_ids(corpus_dir, split_manifest)
+    validation = authority["validation"]
+    test = authority["test"]
+    selected = (
+        validation if family_limit is None else validation[:family_limit]
+    )
+    examples = load_partition_physical_examples(
+        corpus_dir,
+        split_manifest,
+        "validation",
+        selected,
+    )
+    return examples, validation, test, authority
 
 
 def authoritative_partition_ids(corpus_dir, split_manifest="iid"):
@@ -80,12 +113,24 @@ def inspect_publication(
     metadata = validated["metadata"]
     summary = validated["summary"]
     examples = validated["examples"]
-    histogram = Counter(
-        value for item in examples for value in item["latent_indices"]
-    )
-    codebook_size = metadata["model_configuration"]["codebook_size"]
-    active_count = len(histogram)
-    return {
+    if metadata.get("repaired_evaluation_contract") is True:
+        usage = summary["latent_usage"]
+        counts = usage["per_code_assignment_counts"]
+        histogram = {
+            index: count for index, count in enumerate(counts)
+        }
+        active_count = usage["active_code_count"]
+        utilization = usage["codebook_utilization"]
+        perplexity = usage["codebook_perplexity"]
+    else:
+        histogram = Counter(
+            value for item in examples for value in item["latent_indices"]
+        )
+        codebook_size = metadata["model_configuration"]["codebook_size"]
+        active_count = len(histogram)
+        utilization = active_count / codebook_size
+        perplexity = None
+    result = {
         "output_directory": str(Path(path)),
         "processed_family_count": len(expected),
         "selected_validation_ids": list(expected),
@@ -103,11 +148,13 @@ def inspect_publication(
             str(key): histogram[key] for key in sorted(histogram)
         },
         "active_observed_code_count": active_count,
-        "observed_codebook_utilization_fraction": (
-            active_count / codebook_size
-        ),
+        "observed_codebook_utilization_fraction": utilization,
         "test_partition_evaluated": metadata["test_partition_evaluated"],
     }
+    if perplexity is not None:
+        result["observed_codebook_perplexity"] = perplexity
+        result["latent_usage"] = usage
+    return result
 
 
 def compare_publications(left, right):
@@ -132,7 +179,7 @@ def complete_report(
     if any(code not in (0, 2) for code in (*smoke_exit_codes, full_exit_code)):
         raise ValueError("evaluation exit code is not a completed result")
     compare_publications(smoke_a["output_directory"], smoke_b["output_directory"])
-    return {
+    report = {
         "job_id": str(job_id),
         "repository_commit": repository_commit,
         "python_version": platform.python_version(),
@@ -163,18 +210,45 @@ def complete_report(
             full["selected_validation_ids_sha256"]
         ),
     }
+    if "latent_usage" in full:
+        report["observed_codebook_perplexity"] = full[
+            "observed_codebook_perplexity"
+        ]
+        report["latent_usage"] = full["latent_usage"]
+    return report
 
 
 def main(argv=None):
     parser = _parser()
     arguments = parser.parse_args(argv)
     try:
-        examples, validation_ids, test_ids = authoritative_corpus(
-            arguments.corpus_dir, arguments.split_manifest
+        if arguments.repaired_smoke_contract:
+            examples, validation_ids, test_ids, authority = (
+                repaired_authoritative_corpus(
+                    arguments.corpus_dir,
+                    arguments.split_manifest,
+                    arguments.family_limit,
+                )
+            )
+        else:
+            examples, validation_ids, test_ids = authoritative_corpus(
+                arguments.corpus_dir, arguments.split_manifest
+            )
+            authority = None
+        partition_counts = (
+            {
+                name: len(authority[name])
+                for name in ("train", "validation", "test")
+            }
+            if authority is not None else None
         )
         if (
             arguments.expected_authoritative_family_count is not None
-            and len(examples) != arguments.expected_authoritative_family_count
+            and (
+                sum(partition_counts.values())
+                if partition_counts is not None else len(examples)
+            )
+            != arguments.expected_authoritative_family_count
         ):
             raise ValueError("authoritative physical-family count differs")
         if (
@@ -183,6 +257,17 @@ def main(argv=None):
             != arguments.expected_authoritative_validation_count
         ):
             raise ValueError("authoritative validation count differs")
+        if arguments.repaired_smoke_contract and (
+            partition_counts != REPAIRED_PARTITION_COUNTS
+            or arguments.family_limit != REPAIRED_SMOKE_FAMILY_COUNT
+        ):
+            raise ValueError("repaired smoke partition authority differs")
+        checkpoint_digest = checkpoint_sha256(arguments.checkpoint)
+        if (
+            arguments.repaired_smoke_contract
+            and checkpoint_digest != REPAIRED_CHECKPOINT_SHA256
+        ):
+            raise ValueError("repaired checkpoint SHA-256 differs")
         primary = inspect_publication(
             arguments.output,
             authoritative_validation_ids=validation_ids,
@@ -190,9 +275,7 @@ def main(argv=None):
             reviewed_commit=arguments.reviewed_commit,
             family_limit=arguments.family_limit,
             authoritative_examples=examples,
-            expected_checkpoint_sha256=checkpoint_sha256(
-                arguments.checkpoint
-            ),
+            expected_checkpoint_sha256=checkpoint_digest,
         )
         if arguments.compare_output:
             inspect_publication(
@@ -202,9 +285,7 @@ def main(argv=None):
                 reviewed_commit=arguments.reviewed_commit,
                 family_limit=arguments.family_limit,
                 authoritative_examples=examples,
-                expected_checkpoint_sha256=checkpoint_sha256(
-                    arguments.checkpoint
-                ),
+                expected_checkpoint_sha256=checkpoint_digest,
             )
             compare_publications(arguments.output, arguments.compare_output)
             primary["byte_identical_replay"] = True
@@ -292,6 +373,7 @@ def _parser():
     parser.add_argument("--full-exit-code", type=int)
     parser.add_argument("--job-id")
     parser.add_argument("--regression-status")
+    parser.add_argument("--repaired-smoke-contract", action="store_true")
     return parser
 
 

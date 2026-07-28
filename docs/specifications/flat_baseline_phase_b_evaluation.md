@@ -6,13 +6,13 @@ This specification freezes the validation-only evaluation protocol for the
 repaired `B0-FLAT-MIXED-VQ` checkpoint before any repaired-checkpoint
 reconstruction result is examined.
 
-The protocol is **FROZEN PENDING IMPLEMENTATION**. The acceptance thresholds
-and decision mapping below are predetermined. The implementation gaps in this
-document must be closed and reviewed before the deterministic smoke is run.
-Closing a listed gap without changing the scientific rule does not unfreeze
-the protocol. Any threshold, denominator, partition, checkpoint, or decoding
-change after repaired results are visible requires a new decision record and
-must not be presented as predetermined.
+The protocol is **FROZEN; DETERMINISTIC-SMOKE IMPLEMENTATION PRESENT AND
+AWAITING REVIEW**. The acceptance thresholds and decision mapping below are
+predetermined. The implemented smoke changes must be reviewed before the
+deterministic smoke is run. Closing a listed gap without changing the
+scientific rule does not unfreeze the protocol. Any threshold, denominator,
+partition, checkpoint, or decoding change after repaired results are visible
+requires a new decision record and must not be presented as predetermined.
 
 This is a specification, not evidence that an evaluation ran. A completed run
 must receive a new immutable record under `docs/experiments/`. The existing
@@ -57,29 +57,30 @@ provenance and both must be recorded:
 | Audit working commit | `1121b02dec0cc214ad269c6fb89f5e4398ff5bb1` |
 | Current evaluator implementation commit | `42183a47ec8fa70e6109fbea33ecda9e5e84d071` |
 
-The following conflicts must remain visible:
+The following provenance distinctions and remaining gaps must remain visible:
 
 - The current reviewed repository commit is `1121b02...`, the Phase B
   evaluator implementation was last changed at `42183a...`, and the repaired
   checkpoint was trained from `d549ebe...`. These are distinct provenance
   facts; the training source is not the current repository HEAD.
-- `prototype/flat_baseline/adroit/evaluate_validation_cpu.slurm` currently
-  points to the original collapsed run's `best.pt`, not the repaired
-  epoch-44 checkpoint.
-- The evaluator and artifact verifier currently call the all-partition
-  physical-example loader and only then select validation. No test model
-  execution occurs, but test-family records are loaded. This violates the
-  stricter frozen requirement of no test-family loading.
-- The evaluator computes the supplied checkpoint's SHA-256 and the verifier
-  reconciles artifacts to that supplied file. Neither entry point requires
-  the predetermined repaired SHA-256 literal, so an incorrect but internally
-  self-consistent checkpoint can pass the current workflow.
+- `prototype/flat_baseline/adroit/evaluate_validation_cpu.slurm` remains the
+  historical collapsed-checkpoint workflow. The separate repaired smoke
+  workflow is `evaluate_repaired_smoke_cpu.slurm`.
+- The repaired smoke contract now uses manifest-only partition authority and
+  partition-scoped loading. It resolves six validation IDs before inference,
+  opens only those payloads, and records zero train/test family payload
+  access.
+- The repaired smoke contract now compares the predetermined checkpoint
+  SHA-256 before deserialization and then validates epoch, global step, model
+  configuration, train-k-means provenance, and corpus partitions.
 - The evaluator produces symbolic reconstruction targets, not stable-ID
   `CADHistory` objects. The existing OpenCascade runner accepts canonical
   controlled-corpus histories, not Phase B reconstruction records.
-- `metrics.csv` is a headline subset. Exact ten-field match and exact
-  typed-edge-set match are present in `summary.json` and per-example records,
-  but not in the CSV.
+- Repaired evaluation schema version 2 includes exact ten-field and exact
+  typed-edge-set rates in `metrics.csv`, plus one shared latent-usage row.
+  Historical non-repaired evaluation remains schema version 1 with its
+  original artifact schemas, corpus-wide loader behavior, and no mandatory
+  latent-usage or repaired-checkpoint fields.
 
 No conflict above is silently resolved by this specification.
 
@@ -150,17 +151,17 @@ misrepresent two identical observations as independent measurements.
 | Controlled-domain validity | `IMPLEMENTED_AND_TESTED` | Restricted grammar, category, geometry, operation, edge, and cross-record checks. |
 | Node-type token accuracy | `IMPLEMENTED_AND_TESTED` | Sufficient statistics and aggregate accuracy are stored. |
 | Exact node-type sequence accuracy | `IMPLEMENTED_AND_TESTED` | Per-example exact flag and aggregate rate are stored. |
-| Exact complete ten-field match | `IMPLEMENTED_AND_TESTED` | Stored in examples and summary; omitted from `metrics.csv`. |
+| Exact complete ten-field match | `IMPLEMENTED_AND_TESTED` | Stored in examples, summary, and headline CSV. |
 | Geometry MAE | `IMPLEMENTED_AND_TESTED` | Finite applicable physical-channel error; nonfinite and unavailable counts remain visible. |
 | Geometry RMSE | `IMPLEMENTED_AND_TESTED` | Uses aggregated squared-error sufficient statistics. |
 | Operation-type sequence accuracy | `IMPLEMENTED_AND_TESTED` | Exact target-versus-predicted operation-type sequence rate. |
 | Pointer accuracy | `IMPLEMENTED_AND_TESTED` | Overall and conditional forms exist; the frozen headline uses overall accuracy. |
 | Edge micro-F1 | `IMPLEMENTED_AND_TESTED` | Micro precision, recall, and F1 use stored TP/FP/FN counts. |
-| Exact typed-edge-set accuracy | `IMPLEMENTED_AND_TESTED` | Stored in examples and summary; omitted from `metrics.csv`. |
+| Exact typed-edge-set accuracy | `IMPLEMENTED_AND_TESTED` | Stored in examples, summary, and headline CSV. |
 | Active-code count | `IMPLEMENTED_AND_TESTED` | The post-publication verifier derives it from stored latent indices. |
-| Codebook perplexity | `MISSING` | Training computes perplexity, but Phase B evaluation artifacts do not compute validation assignment perplexity. |
+| Codebook perplexity | `IMPLEMENTED_AND_TESTED` | Computed once from the shared empirical validation assignment distribution. |
 | Code utilization | `IMPLEMENTED_AND_TESTED` | The verifier reports observed active count divided by configured codebook size. |
-| Per-code assignment counts | `PARTIALLY_IMPLEMENTED` | The verifier reports a nonzero latent histogram; zero-count codebook entries are omitted and the histogram is not in the core summary. |
+| Per-code assignment counts | `IMPLEMENTED_AND_TESTED` | The core summary and verifier publish all configured entries, including zeros. |
 | Failure categories by target template | `IMPLEMENTED_AND_TESTED` | Each template stratum contains primary and any-failure counts. |
 | Failure categories by primitive/profile family | `IMPLEMENTED_AND_TESTED` | Circle, rectangle-line, and capsule-line/arc target strata contain failure counts. |
 | Per-example failure-analysis records | `IMPLEMENTED_AND_TESTED` | Family metadata, latent indices, both paths, validity, failures, and sufficient statistics are stored. They are not executable CAD histories. |
@@ -474,20 +475,22 @@ The job must:
 
 ## 11. Smallest implementation patch plan
 
-### Required before smoke
+### Implemented before smoke; review still required
 
-- Add partition-scoped validation loading to the evaluator and verifier so
-  test-family payloads are never opened; record zero test records loaded.
-- Add a required expected-checkpoint-SHA-256 argument and compare the literal
-  hash before checkpoint deserialization.
-- Point a new repaired-evaluation Slurm workflow at the job `3326757`
-  epoch-44 checkpoint; do not overwrite the historical workflow or outputs.
-- Publish empirical perplexity and a full length-32 assignment-count vector,
-  total assignments, utilization, and dead-code rate in the core summary and
-  final report.
-- Add exact ten-field and exact typed-edge-set rates to the headline CSV.
-- Add focused tests for every change, including wrong checkpoint, attempted
-  test payload access, zero-count codes, and aggregate recomputation.
+- Partition-scoped validation loading in the evaluator and verifier avoids
+  train/test payloads and records zero test-family records loaded.
+- The repaired contract compares the frozen literal SHA-256 before checkpoint
+  deserialization and validates the remaining checkpoint contract afterward.
+- A separate repaired-evaluation Slurm workflow targets the job `3326757`
+  epoch-44 checkpoint without overwriting the historical workflow or outputs.
+- The core summary and verifier publish empirical perplexity, a full
+  length-32 assignment-count vector, total assignments, utilization, and
+  dead-code metrics.
+- The headline CSV includes exact ten-field and exact typed-edge-set rates
+  and one shared latent-usage row.
+- Focused tests cover wrong/missing checkpoints, scoped payload access,
+  zero-count codes, known perplexity, shared memory, CSV schema, aggregate
+  recomputation, deterministic replay, and collision-safe publication.
 
 ### Required before full evaluation
 
