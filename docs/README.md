@@ -1,32 +1,100 @@
 # Documentation Index
 
-Repository documentation is organized by authority and purpose. Research
-plans and specifications define intended experiments; prototype READMEs
-define implemented contracts and limitations; `docs/experiments` records
-completed runs and evidence; and `notes` contains progress reports and
-detailed analysis. Git history is the chronological change log.
+This repository separates present project state, scientific evidence,
+implemented contracts, intended research, and historical reasoning. The
+separation prevents a plan from being mistaken for completed work and
+prevents a checked-in capability from being mistaken for a successful
+scientific result.
+
+Git history is the code change log. It is not a substitute for experiment
+provenance or a current project-status record.
+
+- [Project documentation structure and workflow](documentation_structure.md)
+
+## Documentation authority
+
+When documents disagree, use this order:
+
+1. [Current project status](status.md) — what is accepted, incomplete, and
+   next now.
+2. `docs/experiments` — evidence from completed runs, including provenance,
+   results, decisions, and limitations.
+3. `prototype/*/README.md` — current checked-in package and API contracts.
+4. `docs/specifications` — frozen or proposed evaluation design, according
+   to each specification's labels.
+5. The research plan — motivation, hypotheses, scope, and roadmap.
+6. `docs/reference` — explicitly historical inherited-system material.
+
+Current repository code overrides stale implementation details in prose, but
+code alone does not establish that an external experiment ran or succeeded.
+
+## Current state
+
+- [Current project status](status.md)
+
+Update this page whenever a milestone is accepted, a scientific gate changes,
+the authoritative checkpoint or corpus changes, test data is first used, or
+the immediate next action changes.
 
 ## Normative research documents
 
 - [Research plan](research_plan.md) — project thesis, hypotheses, scope,
   milestones, and claims to avoid.
-- [Experimental specification](../notes/experimental_spec.md) — detailed
-  structured extrude-and-revolve CAD experiment and evaluation contract.
+- [Specifications](specifications/README.md)
+- [Experimental specification](specifications/experimental_spec.md) —
+  detailed structured extrude-and-revolve CAD experiment and evaluation
+  contract.
 
 ## Experiment evidence
 
+- [Experiment evidence inventory](experiments/README.md) — availability,
+  integrity, job/source mapping, and retrieval gaps for all known runs.
+- [Counterfactual OpenCascade
+  audit](experiments/counterfactual_opencascade_audit.md) — 272 endpoint
+  executions, 136 edit-pair results, and continuous/quantized agreement.
+- [Real-PyTorch model-data
+  validation](experiments/model_data_pytorch_validation.md) — the shared
+  interface under Python 3.8 and PyTorch 1.11 on Adroit.
 - [B0 training-infrastructure
   validation](experiments/b0_training_infrastructure_validation.md) — CPU
   validation and CUDA engineering smoke evidence.
 - [B0 680-family pilot
   corpus](experiments/b0_pilot_corpus_680.md) — generation configuration,
   split counts, integrity hash, and limitations.
+- [Original B0 training and
+  collapse](experiments/b0_original_training_collapse.md) — operationally
+  successful training that collapsed to one code.
+- [Phase A contract
+  validation](experiments/b0_phase_a_contract_validation.md) — state-dict and
+  checkpoint compatibility evidence.
+- [Phase B validation
+  evaluation](experiments/b0_phase_b_validation_evaluation.md) — paired
+  teacher-forced/predicted-history results for the original checkpoint.
+- [VQ-collapse
+  diagnosis](experiments/b0_vq_collapse_diagnosis.md) — root-cause evidence
+  and the bounded repair gate.
+- [Train-k-means
+  pilot](experiments/b0_train_kmeans_pilot.md) — train-only initialization
+  treatment and five-epoch decision.
+- [Full train-k-means
+  retraining](experiments/b0_train_kmeans_full_retrain.md) — 50-epoch
+  continuation and selected epoch-44 checkpoint.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
 - [Pretrained SkexGen smoke
-  test](../notes/adroit_pretrained_smoke_test.md) — reduced pretrained
+  test](experiments/pretrained_skexgen_smoke_test.md) — reduced pretrained
   inference and OBJ-export validation on Adroit.
+
+Experiment records should use the
+[experiment-record template](templates/experiment-record.md). A run is not
+durably documented until the record distinguishes its question,
+predetermined gate, inputs and partitions, configuration, environment,
+verified results, interpretation, unsupported claims, and artifact integrity.
+
+The experiment inventory records any remaining evidence-recovery gaps. All
+completed runs with locally recovered evidence bundles currently have
+individual records.
 
 ## Prototype and package contracts
 
@@ -41,22 +109,38 @@ These READMEs describe what the checked-in implementations support, how to use
 them, and which cases remain outside their current scope. They are not
 substitutes for completed-run evidence.
 
-## Weekly progress and design notes
+## Decisions and milestones
 
-- [Week 3 progress report](../notes/week3.md)
-- [Experimental specification](../notes/experimental_spec.md)
+- [Architecture and research decisions](decisions/README.md)
+- [Milestone summaries](milestones/README.md)
+- [Controlled CAD foundation](milestones/controlled_cad_foundation.md)
+- [Flat mixed/VQ baseline](milestones/flat_baseline.md)
+- [Decision-record template](templates/decision-record.md)
 
-The weekly report is intentionally concise and links to durable evidence.
-Detailed design reasoning remains in the experimental specification and
-package contracts rather than being duplicated in progress notes.
+Decision records explain choices with lasting effects on schemas, model
+comparisons, data authority, or interpretation. Milestone pages summarize a
+stage and link to its supporting experiment records; they should not duplicate
+raw metrics or logs.
 
-## Historical repository and environment analysis
+## Reports
 
-- [SkexGen repository map](../notes/repository_map.md)
-- [Adroit pretrained smoke test](../notes/adroit_pretrained_smoke_test.md)
+- [Project reports](reports/README.md)
+- [Mentor progress report — July 28,
+  2026](reports/mentor_progress_report_2026-07-28.md)
 
-These records explain the inherited SkexGen codebase and the environment used
-to establish baseline operability.
+Reports are dated audience-facing snapshots derived from the authoritative
+status and evidence records. They are not maintained as alternate status
+pages.
+
+## Inherited-system reference
+
+- [Reference index](reference/README.md)
+- [Inherited SkexGen repository map](reference/inherited_skexgen_repository.md)
+- [Original upstream README](reference/upstream_skexgen_readme.md)
+
+Reference material explains the inherited SkexGen codebase but does not
+describe current project status. Dated execution evidence belongs in
+`docs/experiments`; duplicated weekly progress notes are not maintained.
 
 ## Artifact policy
 
@@ -65,3 +149,31 @@ CAD solids, caches, containers, `__pycache__` directories, and `.pyc` files
 are not normally committed. Experiment records retain compact provenance,
 verified aggregate results, integrity values when available, and external
 artifact locations when they are stable and known.
+
+An external scratch path is not durable by itself. Important evidence should
+also have a content hash and, where practical, a frozen archive outside
+ephemeral scratch storage. Missing or unrecoverable provenance must be stated
+explicitly rather than reconstructed from memory.
+
+## Completion rule
+
+A scientific or infrastructure milestone is complete only when:
+
+1. its implementation and configuration are identifiable;
+2. required validation has run in the authoritative environment;
+3. artifacts and partition use have been checked;
+4. a durable experiment record states the result and limitations;
+5. the current status and relevant package contract are updated.
+
+Historical failed runs remain part of the evidence chain when they motivated
+a diagnosis or intervention. They should be documented rather than rewritten
+as successful runs.
+
+All project Markdown belongs in `docs/`, the repository-root README, or a
+package-level `prototype/*/README.md`. The former `notes/` documentation
+layout is retired.
+
+Run `python3 tools/check_documentation.py` before committing documentation
+changes. The checker validates local Markdown links, evidence-index coverage,
+milestone-index coverage, verified-local record coverage, and the required
+sections of structured experiment records.

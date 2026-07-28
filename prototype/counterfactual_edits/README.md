@@ -86,6 +86,16 @@ python3 -m prototype.counterfactual_edits.kernel_integration \
 The implementation avoids runtime Python 3.9/3.10 constructs and is intended
 to run under the existing Python 3.8.13 Adroit container.
 
+## Validation evidence
+
+The [counterfactual OpenCascade audit
+record](../../docs/experiments/counterfactual_opencascade_audit.md) documents
+the preserved jobs and archive. Under PythonOCC 7.5.1, all 272 encoded
+endpoint histories executed successfully, all 136 edit samples succeeded,
+and continuous and quantized executions agreed for all 136 physical
+endpoints. This establishes bounded benchmark executability, not learned
+model edit performance.
+
 ## Known implementation limits
 
 Generation currently enumerates the full candidate space once for selection

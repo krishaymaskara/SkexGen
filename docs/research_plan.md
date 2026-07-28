@@ -12,6 +12,13 @@
 
 *Revised July 16, 2026*
 
+## Document role
+
+This is the durable research rationale and original staged roadmap. It is not
+the current progress tracker. Completed milestones, the authoritative
+checkpoint, and the immediate next action are maintained only in
+[the current project status](status.md).
+
 ## 1. Revised Project Thesis
 
 **Central research question:** How should CAD feature structure and geometry be represented to support systematic generalization and localized counterfactual editing across extrude-and-revolve feature histories?
@@ -93,18 +100,27 @@ Represent each model as a graph $G = (V, E)$. Nodes encode typed CAD entities or
 | Graph element | Examples |
 |---|---|
 | Node types | `SKETCH`, `PROFILE`, `AXIS`, `EXTRUDE`, `REVOLVE` |
-| Dependency edges | `USES_PROFILE`, `USES_AXIS`, `PRECEDES`, `CREATED_BY`, `PLACED_ON` |
+| Dependency edges | `USES_PROFILE`, `USES_AXIS`, `DEPENDS_ON`, `DEFINED_IN`, `PLACED_ON` |
 | Structural node attributes | Feature type, Boolean mode, primitive type, loop membership |
 | Geometric node attributes | Coordinates, dimensions, distance, angle, position, orientation |
 
 ```text
-Sketch_1 --USES_PROFILE--> Extrude_1
-Sketch_2 --USES_PROFILE--> Revolve_1
-Axis_1   --USES_AXIS----> Revolve_1
-Extrude_1 --PRECEDES----> Revolve_1
+Sketch_1  --PLACED_ON----> Reference_Plane_1
+Profile_1 --DEFINED_IN---> Sketch_1
+Extrude_1 --USES_PROFILE-> Profile_1
+Sketch_2  --PLACED_ON----> Reference_Plane_1
+Profile_2 --DEFINED_IN---> Sketch_2
+Axis_2    --DEFINED_IN---> Sketch_2
+Revolve_1 --USES_PROFILE-> Profile_2
+Revolve_1 --USES_AXIS----> Axis_2
+Revolve_1 --DEPENDS_ON---> Extrude_1
 ```
 
 Chronological order can still be retained as a typed edge or positional feature, but it should not be the only representation of dependency.
+The implemented controlled schema records chronology in an authoritative
+`operation_sequence` and uses backward `DEPENDS_ON` edges for body-state
+dependencies. See
+[ADR-0001](decisions/ADR-0001-controlled-cad-schema-v1.md).
 
 ### 6.2 Structural versus geometric information
 
@@ -227,7 +243,11 @@ Create in-range and out-of-range tests for extrusion distances, revolve angles, 
 
 The proposed models do not need to dominate ordinary reconstruction. A convincing result would show comparable reconstruction and validity but substantially better systematic generalization or localized editing. The discrete-continuous comparison should reveal a consistent tradeoff: for example, discrete geometry may improve categorical recombination while continuous geometry improves precision and extrapolation.
 
-## 11. Detailed Eight-Week Execution Plan
+## 11. Original Eight-Week Execution Plan
+
+This schedule preserves the intended dependency order and acceptance logic.
+Calendar-relative wording below is historical planning context; it must not be
+used to infer current progress.
 
 ### Week 1 - Baseline, literature, and representation specification
 
@@ -377,15 +397,10 @@ A strong summer result can naturally expand into a larger paper if the benchmark
 - What minimum baseline set would the professor consider sufficient for a workshop paper?
 - Is feature-local geometry preferred over one global geometry latent for the first implementation?
 
-## 17. Working Checklist
+## 17. Scientific Claim Checklist
 
-### Before model development
-
-- [ ] Baseline code and execution environment work.
-- [ ] Graph node, edge, and attribute schema are documented.
-- [ ] Ground-truth histories can round-trip through the representation.
-- [ ] Counterfactual pairs and systematic splits are frozen.
-- [ ] Capacity-matching rules are defined before training.
+This checklist records prerequisites for future claims, not implementation
+progress. Current completion state belongs in `docs/status.md`.
 
 ### Before claiming systematic generalization
 
@@ -401,6 +416,8 @@ A strong summer result can naturally expand into a larger paper if the benchmark
 - [ ] Hand-selected visual examples are supplemented with aggregate results.
 - [ ] Invalid and non-local edits are included in the failure analysis.
 
-## 18. Immediate Next Action
+## 18. Current execution pointer
 
-Week 1 should begin with two parallel tracks: reproduce and map the SkexGen baseline, and write the graph-and-benchmark specification before implementing any new model. The first mentor review should focus on the graph schema, the structural-versus-geometric attribute table, the three-model comparison, and the proposed counterfactual splits.
+Do not derive the immediate next action from this original roadmap. Use
+[the current project status](status.md), which is updated whenever the
+scientific gate or authoritative checkpoint changes.

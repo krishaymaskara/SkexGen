@@ -139,9 +139,19 @@ contiguous ordinary `torch.Tensor` objects. All categorical IDs, edge/node
 indices, offsets, graph IDs, and operation indices use `torch.long`; geometry
 uses `torch.float32`; masks use `torch.bool`. The implementation uses
 `torch.tensor(..., dtype=...).contiguous()`, which is compatible with PyTorch
-1.11. No PyTorch Geometric or newer tensor API is used. Local tests inject a
-tensor-compatible adapter; execution with real PyTorch 1.11 remains an Adroit
-integration check.
+1.11. No PyTorch Geometric or newer tensor API is used. Local tests can inject
+a tensor-compatible adapter when PyTorch is unavailable.
+
+Real tensor construction was validated on Adroit in CPU-only Slurm job
+`3322011` under Python 3.8.13 and PyTorch 1.11.0. The run executed 193 tests,
+performed deterministic individual and batched tensor conversion, checked
+dtypes, shapes, contiguity, graph offsets, empty-edge behavior, reconstruction
+targets, compilation, and reported `193/193` passing. The validated
+model-data source was commit `91d733d`; the exact staged validation scripts
+used by the job were subsequently committed as `038e497`. The dirty-tree
+provenance, results, limitations, and frozen archive checksum are preserved in
+the [real-PyTorch validation
+record](../../docs/experiments/model_data_pytorch_validation.md).
 
 ## Counterfactual evaluation
 

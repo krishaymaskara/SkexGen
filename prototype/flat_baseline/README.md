@@ -1,11 +1,13 @@
 # B0-FLAT-MIXED-VQ baseline core
 
-`prototype.flat_baseline` is the first neural-model plumbing milestone for the
+`prototype.flat_baseline` is the first neural-model milestone for the
 structured extrude-and-revolve experiments. It implements one flat,
 mixed discrete/continuous encoder, one mixed EMA vector-quantization
-bottleneck, a teacher-forced decoder, reconstruction losses, and a
-teacher-forced training CLI. It contains no graph encoder, factored stream,
-hybrid latent, code prior, or counterfactual training logic.
+bottleneck, teacher-forced training, length-conditioned autoregressive
+decoding, paired validation evaluation, VQ-collapse diagnosis, and
+deterministic train-only k-means codebook initialization and retraining. It
+contains no graph encoder, factored stream, hybrid latent, code prior,
+counterfactual training, or learned edit mechanism.
 
 The implementation consumes `FlatBatch.to_torch()` and the accompanying
 `ReconstructionBatch.to_torch()` directly. It does not define another data or
@@ -269,7 +271,9 @@ compatible preserved `best.pt` predates the metric history available in the
 new directory. Such unavailable earlier epoch metrics remain `null` with a
 structured limitation reason.
 
-This milestone remains teacher-forced reconstruction plumbing. It does not
+The training-infrastructure milestone described above remains
+teacher-forced reconstruction plumbing. Later sections describe
+autoregressive evaluation and VQ diagnostics, but the package still does not
 implement CAD-kernel execution of predictions, counterfactual training, a
 learned code prior, distributed training, or final research-scale
 hyperparameters.
@@ -300,12 +304,187 @@ controlled representation, or claim representation validity or OpenCascade
 executability. No unconditional latent prior exists; latent indices must
 come from an encoded example or an explicitly supplied sequence.
 
-After Phase A is committed, Adroit validation must compare the ordered
-state-dict keys, shapes, and dtypes from a model instantiated at base commit
-`ba611fb` with those from the Phase A commit. The contracts must be identical.
+Phase A was added without changing the trained state contract. Adroit
+validation compared ordered state-dict keys, shapes, and dtypes against base
+commit `ba611fb`, then strictly loaded the existing epoch-50 checkpoint.
+
+## Phase B paired validation evaluation
+
+`evaluate_length_conditioned.py` evaluates two decoder paths from identical
+reconstructed VQ memory:
+
+```text
+encode once
+→ select VQ indices once
+→ reconstruct memory once
+├── teacher-forced decoding
+└── predicted-history decoding
+```
+
+This isolates ground-truth versus generated prefix history from
+straight-through numerical differences or a second encoder/VQ pass. Both
+paths remain conditioned on the authoritative target node count. The
+evaluator records that limitation because node count partially reveals the
+operation template.
+
+Raw predictions pass through prerequisite-gated conversion with three
+separate validity layers:
+
+1. `raw_integrity_valid` — raw decoder output is complete, typed, finite, and
+   internally well formed;
+2. `reconstruction_target_valid` — output can form the structural flat target
+   independently of controlled-domain semantics;
+3. `controlled_domain_valid` — output obeys the restricted version 1 CAD
+   grammar and cross-record constraints.
+
+Each example has one deterministic primary failure and only independently
+meaningful secondary failures. Downstream checks are suppressed when their
+prerequisites fail, preventing one malformed node from creating a cascade of
+uninterpretable errors. Nonfinite predictions remain in attempted-example
+denominators and are reported separately from finite-subset geometry error.
+
+The evaluator reports:
+
+- raw completion and all three validity rates;
+- node-type token and exact-sequence accuracy;
+- finite-subset geometry MAE and RMSE;
+- exact operation-type sequence rate;
+- operation-pointer accuracy;
+- edge micro precision, recall, and F1;
+- per-template and other deterministic strata.
+
+It publishes canonical:
+
+```text
+conversion_failures.csv
+examples.jsonl
+metrics.csv
+run_metadata.json
+summary.json
+```
+
+Optional `raw_predictions.jsonl` output is explicit. Publication uses a
+collision-safe no-replace contract and an artifact verifier. Test evaluation
+requires an explicit `--allow-test-evaluation` flag and is recorded in run
+metadata; validation workflows do not enable it.
+
+A validation invocation is:
+
+```bash
+python3 -m prototype.flat_baseline.evaluate_length_conditioned \
+  --corpus-dir /path/to/controlled-corpus \
+  --checkpoint /path/to/best.pt \
+  --split-manifest iid \
+  --partition validation \
+  --output-dir /path/to/new-evaluation \
+  --batch-size 16 \
+  --device cpu \
+  --write-raw-predictions
+```
+
+This phase reconstructs authoritative flat targets and measures symbolic
+predictions. It does not yet synthesize stable CAD identifiers into a full
+`CADHistory` or execute predicted programs in OpenCascade.
+
+## VQ-collapse diagnosis
+
+`diagnose_vq_collapse.py` is a deterministic train/validation-only diagnostic,
+not a trainer. It reconciles authoritative partitions and inspects:
+
+- prequant vector diversity and assignment regions;
+- numerical codebook diversity and EMA state;
+- empirical code usage;
+- gradient flow to the encoder and pre-VQ projection;
+- decoder sensitivity to latent changes;
+- masking and loss balance;
+- available checkpoint history and collapse timing.
+
+Its root-cause vocabulary distinguishes encoder-output collapse,
+nearest-code assignment collapse, codebook-embedding collapse, decoder latent
+insensitivity, loss/mask imbalance, gradient-flow failure, training-time
+collapse, and unresolved combinations. Required artifacts are published
+atomically with SHA-256 integrity metadata. Verification can compare two
+bounded smoke outputs for byte-identical replay and validate a full diagnostic
+report without touching the test partition.
+
+The command family is:
+
+```bash
+python3 -m prototype.flat_baseline.diagnose_vq_collapse run \
+  --corpus-dir /path/to/controlled-corpus \
+  --training-run-dir /path/to/training-run \
+  --output-dir /path/to/new-diagnosis \
+  --reviewed-commit <full-commit>
+
+python3 -m prototype.flat_baseline.diagnose_vq_collapse verify \
+  --output /path/to/diagnosis \
+  --corpus-dir /path/to/controlled-corpus \
+  --training-run-dir /path/to/training-run \
+  --reviewed-commit <full-commit>
+```
+
+## Train-only k-means initialization
+
+`TrainingConfig.vq_init` accepts `normal` and `train-kmeans`; normal
+initialization remains the default. The k-means treatment:
+
+1. constructs the ordinarily seeded untrained model;
+2. collects each learned latent-query prequant vector from authoritative
+   training families only under `eval()` and `no_grad()`;
+3. runs seeded k-means++ and eight fixed Lloyd iterations;
+4. initializes all embedding vectors;
+5. initializes EMA counts with positive cluster-proportional pseudo-counts
+   whose total equals the codebook size;
+6. initializes EMA sums consistently from pseudo-counts and centers;
+7. creates the optimizer only after initialization.
+
+Matching total pseudo-count mass to normal initialization avoids changing EMA
+inertia as a hidden second intervention. Initialization reports include
+partition counts, vector and center diagnostics, EMA equations, hashes, and
+explicit zero validation/test use.
+
+## Bounded pilot and full retraining
+
+`vq_pilot.py` implements a fixed five-epoch treatment pilot with early
+step-level and epoch-global code-usage diagnostics. The pilot fails if epoch
+2 training has fewer than two active codes or perplexity below 2.0. It returns
+`PASS_FOR_FULL_RETRAIN` only when epoch-5 train and validation each have at
+least two active codes and perplexity at least 2.0, all required values are
+finite, provenance is valid, and no test examples were used.
+
+`vq_full_retrain.py` promotes an accepted pilot by exact epoch-boundary resume.
+It restores model, VQ/EMA, optimizer, RNG, epoch, global-step, best-metric, and
+initialization provenance; it does not rerun k-means. The authoritative epoch
+budget is reconciled against the original baseline checkpoint and log.
+
+During full retraining, either fewer than two active training codes or
+perplexity below 2.0 is a threshold violation. Two consecutive completed
+training violations stop the run. `PASS_FOR_EVALUATION` requires:
+
+- completion of the authoritative epoch budget;
+- a provenance-valid selected best checkpoint;
+- finite selected-checkpoint values;
+- selected validation usage of at least two active codes and perplexity at
+  least 2.0;
+- confirmation that the test partition was not evaluated.
+
+`PASS_FOR_EVALUATION` is deliberately not final model acceptance. It says the
+training and minimum assignment-usage gates passed; reconstruction,
+executability, semantics, localized edits, and comparative scientific value
+must be established separately. Current verified project state and
+limitations are tracked in
+[the project status](../../docs/status.md).
 
 ## Related evidence
 
 The [B0 training-infrastructure validation
 record](../../docs/experiments/b0_training_infrastructure_validation.md)
 documents the completed CPU validation and CUDA engineering smoke test.
+Subsequent verified records cover:
+
+- [the original one-code collapse](../../docs/experiments/b0_original_training_collapse.md);
+- [Phase A compatibility](../../docs/experiments/b0_phase_a_contract_validation.md);
+- [Phase B paired validation](../../docs/experiments/b0_phase_b_validation_evaluation.md);
+- [the VQ-collapse diagnosis](../../docs/experiments/b0_vq_collapse_diagnosis.md);
+- [the train-k-means pilot](../../docs/experiments/b0_train_kmeans_pilot.md);
+- [the full train-k-means retraining](../../docs/experiments/b0_train_kmeans_full_retrain.md).
