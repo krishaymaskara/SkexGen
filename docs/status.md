@@ -10,14 +10,17 @@ future work lives in the research plan and experimental specification.
 | Item | Current value |
 |---|---|
 | Active branch | `flat-mixed-baseline` |
-| Accepted repository HEAD | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
-| HEAD description | `Add full train-kmeans VQ retraining` |
+| Current reviewed repository commit | `1121b02dec0cc214ad269c6fb89f5e4398ff5bb1` |
+| Current Phase B evaluator implementation commit | `42183a47ec8fa70e6109fbea33ecda9e5e84d071` |
+| Repaired-checkpoint training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
 | Status recorded | July 28, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories |
 | Authoritative corpus | 680 physical families: 544 train, 68 validation, 68 test |
 
-The repository was clean and synchronized with
-`origin/flat-mixed-baseline` when this status page was created.
+The current reviewed repository commit contains the Phase B evaluator
+implementation last changed at `42183a...`. The separate `d549ebe...` commit
+is provenance for the repaired training run and checkpoint; it is not
+described as the current repository HEAD.
 
 ## Research objective
 
@@ -72,9 +75,11 @@ verified full run is:
 | Item | Verified value |
 |---|---|
 | Slurm job | `3326757` |
+| Training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
 | Training decision | `PASS_FOR_EVALUATION` |
 | Completed epoch | 50 |
 | Selected checkpoint | `best.pt`, epoch 44, global step 748 |
+| Selected checkpoint SHA-256 | `282988af00a2dc9a53e14ceb270537d35f85d5339dc989634f88af5f77931267` |
 | Selected validation active codes | 5 |
 | Selected validation perplexity | 3.1204 |
 | Test partition evaluated | `false` |
