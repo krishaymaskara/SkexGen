@@ -808,30 +808,58 @@ def _validate_metadata_and_examples(
             "test_family_records_loaded": 0,
             "loaded_family_ids": list(identifiers),
         }
-        if (
-            not raw
-            or digest != REPAIRED_CHECKPOINT_SHA256
-            or metadata.get("checkpoint_epoch") != REPAIRED_CHECKPOINT_EPOCH
-            or metadata.get("checkpoint_global_step")
-            != REPAIRED_CHECKPOINT_GLOBAL_STEP
-            or metadata.get("checkpoint_training_source_commit")
-            != REPAIRED_CHECKPOINT_TRAINING_COMMIT
-            or metadata.get("authoritative_partition_family_counts")
-            != REPAIRED_PARTITION_COUNTS
-            or resolved != declared
-            or resolved != identifiers
-            or access != required_access
-            or metadata.get("requested_device") != "cpu"
-            or metadata.get("resolved_device") != "cpu"
-            or metadata.get("source_dirty") is not False
-            or not _lower_sha256(metadata.get("source_tree_sha256"))
-            or "checkpoint_path" in metadata
-            or "output_dir"
-            in metadata.get("training_configuration", {})
-        ):
+        differences = _metadata_differences((
+            ("raw_predictions_published", True, bool(raw)),
+            ("checkpoint_sha256", REPAIRED_CHECKPOINT_SHA256, digest),
+            (
+                "checkpoint_epoch",
+                REPAIRED_CHECKPOINT_EPOCH,
+                metadata.get("checkpoint_epoch"),
+            ),
+            (
+                "checkpoint_global_step",
+                REPAIRED_CHECKPOINT_GLOBAL_STEP,
+                metadata.get("checkpoint_global_step"),
+            ),
+            (
+                "checkpoint_training_source_commit",
+                REPAIRED_CHECKPOINT_TRAINING_COMMIT,
+                metadata.get("checkpoint_training_source_commit"),
+            ),
+            (
+                "authoritative_partition_family_counts",
+                REPAIRED_PARTITION_COUNTS,
+                metadata.get("authoritative_partition_family_counts"),
+            ),
+            ("resolved_selected_family_ids", declared, resolved),
+            ("evaluated_family_ids", identifiers, resolved),
+            ("payload_access", required_access, access),
+            ("requested_device", "cpu", metadata.get("requested_device")),
+            ("resolved_device", "cpu", metadata.get("resolved_device")),
+            ("source_dirty", False, metadata.get("source_dirty")),
+            (
+                "checkpoint_path_present",
+                False,
+                "checkpoint_path" in metadata,
+            ),
+            (
+                "training_output_dir_present",
+                False,
+                "output_dir" in metadata.get("training_configuration", {}),
+            ),
+        ))
+        if not _lower_sha256(metadata.get("source_tree_sha256")):
+            differences.append(
+                "source_tree_sha256 expected=lowercase-sha256 actual={}".format(
+                    _diagnostic_value(metadata.get("source_tree_sha256"))
+                )
+            )
+        if differences:
             raise EvaluationError(
                 "repaired_{}_metadata".format(repaired_mode),
-                "frozen repaired {} metadata differs".format(repaired_mode),
+                "frozen repaired {} metadata differs: {}".format(
+                    repaired_mode, "; ".join(differences)
+                ),
             )
         if repaired_mode == "smoke" and (
             metadata.get("batch_size") != REPAIRED_SMOKE_BATCH_SIZE
@@ -842,21 +870,64 @@ def _validate_metadata_and_examples(
                 "repaired_smoke_metadata",
                 "frozen repaired smoke metadata differs",
             )
-        if repaired_mode == "full" and (
-            metadata.get("batch_size") != REPAIRED_FULL_BATCH_SIZE
-            or metadata.get("family_limit") is not None
-            or len(identifiers) != REPAIRED_FULL_FAMILY_COUNT
-            or metadata.get("repository_branch") != "flat-mixed-baseline"
-            or metadata.get("evaluation_seed") != 2026
-            or metadata.get("torch_num_threads") != 1
-            or identifiers
-            != tuple(metadata.get("authoritative_validation_family_ids", ()))
-        ):
-            raise EvaluationError(
-                "repaired_full_metadata",
-                "frozen repaired full metadata differs",
-            )
+        if repaired_mode == "full":
+            differences = _metadata_differences((
+                (
+                    "batch_size",
+                    REPAIRED_FULL_BATCH_SIZE,
+                    metadata.get("batch_size"),
+                ),
+                ("family_limit", None, metadata.get("family_limit")),
+                (
+                    "selected_family_count",
+                    REPAIRED_FULL_FAMILY_COUNT,
+                    len(identifiers),
+                ),
+                (
+                    "repository_branch",
+                    "flat-mixed-baseline",
+                    metadata.get("repository_branch"),
+                ),
+                ("evaluation_seed", 2026, metadata.get("evaluation_seed")),
+                ("torch_num_threads", 1, metadata.get("torch_num_threads")),
+                (
+                    "authoritative_validation_family_ids",
+                    identifiers,
+                    tuple(metadata.get(
+                        "authoritative_validation_family_ids", ()
+                    )),
+                ),
+            ))
+            if differences:
+                raise EvaluationError(
+                    "repaired_full_metadata",
+                    "frozen repaired full metadata differs: {}".format(
+                        "; ".join(differences)
+                    ),
+                )
     return identifiers
+
+
+def _metadata_differences(checks):
+    return [
+        "{} expected={} actual={}".format(
+            name, _diagnostic_value(expected), _diagnostic_value(actual)
+        )
+        for name, expected, actual in checks
+        if actual != expected
+    ]
+
+
+def _diagnostic_value(value):
+    if (
+        isinstance(value, (list, tuple))
+        and len(value) > 8
+        and all(isinstance(item, str) for item in value)
+    ):
+        return "family-ids(count={},sha256={})".format(
+            len(value), _identifier_sha256(value)
+        )
+    return repr(value)
 
 
 def _validate_record_schemas(examples, raw, summary, *, repaired):
@@ -1800,6 +1871,14 @@ def _run_metadata(
         else source_state_provider(repository)
     )
     selected_ids = tuple(item.physical_family_id for item in selected)
+    repository_branch = _git_value(repository, "branch", "--show-current")
+    if (
+        repository_branch is None
+        and getattr(arguments, "repaired_full_contract", False)
+    ):
+        repository_branch = _git_value(
+            repository, "symbolic-ref", "--short", "HEAD"
+        )
     test_partition_evaluated = (
         arguments.partition == "test"
         or bool(set(selected_ids) & set(authoritative_test_ids))
@@ -1811,7 +1890,7 @@ def _run_metadata(
             else EVALUATION_SCHEMA_VERSION
         ),
         "representation_schema_version": REPRESENTATION_SCHEMA_VERSION,
-        "repository_branch": _git_value(repository, "branch", "--show-current"),
+        "repository_branch": repository_branch,
         "repository_commit": state["git_commit"],
         "source_tree_sha256": state["source_tree_sha256"],
         "source_dirty": state["git_dirty"],

@@ -452,7 +452,8 @@ The prepared implementation uses
 the evaluator/verifier flag `--repaired-full-contract`. This flag is distinct
 from the repaired-smoke and historical evaluator modes. It requires all 68
 validation families, no family limit, batch size 32, raw predictions, CPU,
-and no test authorization. The workflow has not been submitted and this
+and no test authorization. Slurm job `3327735` exercised the workflow but
+failed closed during prepublication metadata validation, so this
 paragraph is not run evidence.
 
 ## 10. OpenCascade follow-up design

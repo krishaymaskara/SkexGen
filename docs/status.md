@@ -111,11 +111,13 @@ reported `test_partition_evaluated: false`. This is an engineering and
 determinism result, not the final validation result; see the
 [immutable smoke record](experiments/b0_phase_b_repaired_smoke.md).
 
-A dedicated full-validation workflow is now prepared for review. It extends
-the repaired-smoke checkpoint, partition-isolation, paired-decoding, schema-2,
-and artifact-validation contract to exactly all 68 validation families in a
-new namespace. It has not been submitted, and no full repaired-checkpoint
-inference result exists yet.
+A dedicated full-validation workflow extends the repaired-smoke checkpoint,
+partition-isolation, paired-decoding, schema-2, and artifact-validation
+contract to exactly all 68 validation families in a new namespace. Slurm job
+`3327735` passed its repository, environment, checkpoint, partition, and
+regression preflights, then rejected the unpublished artifact bundle because
+container-side branch discovery returned no branch name. No accepted full
+repaired-checkpoint result or scientific artifact publication exists yet.
 
 ## What has not been established
 

@@ -858,6 +858,184 @@ class EvaluationTests(unittest.TestCase):
             self.assertNotIn(b"phase-b-smoke-b", combined)
             self.assertNotIn(b"/tmp/", combined)
 
+    def test_repaired_full_metadata_uses_final_access_and_branch_fallback(self):
+        base = self.selected()[0]
+        identifiers = tuple(
+            "sf_{:064x}".format(index) for index in range(68)
+        )
+        selected = tuple(
+            replace(
+                base,
+                physical_family_id=family_id,
+                partition="validation",
+            )
+            for family_id in identifiers
+        )
+        records, raw_records = evaluate_records(
+            selected,
+            batch_size=32,
+            max_operations=8,
+            decode_batch=self.decode,
+        )
+        arguments = SimpleNamespace(
+            checkpoint="/shared/repaired/best.pt",
+            split_manifest="iid",
+            partition="validation",
+            family_limit=None,
+            batch_size=32,
+            device="cpu",
+            write_raw_predictions=True,
+            repaired_smoke_contract=False,
+            repaired_full_contract=True,
+        )
+        checkpoint = {
+            "checkpoint_kind": "best",
+            "epoch": REPAIRED_CHECKPOINT_EPOCH,
+            "global_step": REPAIRED_CHECKPOINT_GLOBAL_STEP,
+            "data_state": {"validation_family_ids": list(identifiers)},
+        }
+        source = lambda repository: {
+            "git_commit": "a" * 40,
+            "git_dirty": False,
+            "source_tree_sha256": "d" * 64,
+        }
+        preflight_access = {
+            "train_family_records_loaded": 0,
+            "validation_family_records_loaded": 0,
+            "test_family_records_loaded": 0,
+        }
+
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned._git_value",
+            return_value=None,
+        ):
+            failed_metadata = _run_metadata(
+                arguments,
+                selected,
+                REPAIRED_CHECKPOINT_SHA256,
+                checkpoint,
+                FlatBaselineConfig(),
+                TrainingConfig(seed=2026, vq_init="train-kmeans"),
+                "cpu",
+                identifiers,
+                (),
+                {"train": 544, "validation": 68, "test": 68},
+                source,
+            )
+        self.assertEqual(
+            failed_metadata["payload_access"],
+            {
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": 68,
+                "test_family_records_loaded": 0,
+                "loaded_family_ids": list(identifiers),
+            },
+        )
+        failed_artifacts = make_artifacts(
+            records, raw_records, failed_metadata, selected, True
+        )
+        with self.assertRaisesRegex(
+            EvaluationError,
+            "repository_branch expected='flat-mixed-baseline' actual=None",
+        ):
+            publish_artifacts(
+                Path(self.temporary.name) / "full-missing-container-branch",
+                failed_artifacts,
+                expected_ids=identifiers,
+                expected_partition="validation",
+                authoritative_validation_ids=identifiers,
+                authoritative_examples=selected,
+                reviewed_commit="a" * 40,
+                expected_checkpoint_sha256=REPAIRED_CHECKPOINT_SHA256,
+            )
+
+        probes = []
+
+        def git_value(repository, *command):
+            probes.append(command)
+            if command == ("branch", "--show-current"):
+                return None
+            if command == ("symbolic-ref", "--short", "HEAD"):
+                return "flat-mixed-baseline"
+            self.fail("unexpected git probe {!r}".format(command))
+
+        with mock.patch(
+            "prototype.flat_baseline.evaluate_length_conditioned._git_value",
+            side_effect=git_value,
+        ):
+            metadata = _run_metadata(
+                arguments,
+                selected,
+                REPAIRED_CHECKPOINT_SHA256,
+                checkpoint,
+                FlatBaselineConfig(),
+                TrainingConfig(seed=2026, vq_init="train-kmeans"),
+                "cpu",
+                identifiers,
+                (),
+                {"train": 544, "validation": 68, "test": 68},
+                source,
+            )
+        self.assertEqual(
+            probes,
+            [
+                ("branch", "--show-current"),
+                ("symbolic-ref", "--short", "HEAD"),
+            ],
+        )
+        self.assertEqual(
+            preflight_access,
+            {
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": 0,
+                "test_family_records_loaded": 0,
+            },
+        )
+        self.assertEqual(
+            metadata["payload_access"],
+            {
+                "train_family_records_loaded": 0,
+                "validation_family_records_loaded": 68,
+                "test_family_records_loaded": 0,
+                "loaded_family_ids": list(identifiers),
+            },
+        )
+        artifacts = make_artifacts(
+            records, raw_records, metadata, selected, True
+        )
+        output = Path(self.temporary.name) / "full-final-access"
+        publish_artifacts(
+            output,
+            artifacts,
+            expected_ids=identifiers,
+            expected_partition="validation",
+            authoritative_validation_ids=identifiers,
+            authoritative_examples=selected,
+            reviewed_commit="a" * 40,
+            expected_checkpoint_sha256=REPAIRED_CHECKPOINT_SHA256,
+        )
+        self.assertTrue(output.is_dir())
+
+        damaged_metadata = dict(metadata)
+        damaged_metadata["payload_access"] = dict(preflight_access)
+        damaged_artifacts = make_artifacts(
+            records, raw_records, damaged_metadata, selected, True
+        )
+        with self.assertRaisesRegex(
+            EvaluationError,
+            "payload_access expected=.*validation_family_records_loaded.*68",
+        ):
+            publish_artifacts(
+                Path(self.temporary.name) / "full-preflight-access",
+                damaged_artifacts,
+                expected_ids=identifiers,
+                expected_partition="validation",
+                authoritative_validation_ids=identifiers,
+                authoritative_examples=selected,
+                reviewed_commit="a" * 40,
+                expected_checkpoint_sha256=REPAIRED_CHECKPOINT_SHA256,
+            )
+
     def test_repaired_resolved_selection_is_reconciled_everywhere(self):
         selected, records, raw_records = self.records()
         metadata = self.metadata(selected, raw=True)
