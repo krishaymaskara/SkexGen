@@ -144,6 +144,31 @@ path may be a relative symlink to a hidden sibling backing directory when
 publication backend after success. These artifacts are diagnostic only: they
 cannot change the frozen Gate C or Gate D failures or assign a Gate E result.
 
+## Categorical-isolation replay diagnostic
+
+`categorical_isolation_replay` is the separately preregistered 2-by-2
+reference-plane/profile-category diagnostic over the immutable recovered
+bundle and completed constraint-manifold replay. It verifies both namespaces
+before scientific parsing, requires unchanged parent projection semantics,
+and reconciles its model/model and full-oracle arms exactly with the parent
+records. Plane-only and profile-only transformations receive distinct
+one-field oracle capabilities.
+
+The caller supplies both immutable inputs and a new nonexistent output:
+
+```bash
+python3 -m prototype.flat_baseline.categorical_isolation_replay \
+  --source-bundle /path/to/recovered-phase-b-bundle \
+  --parent-replay /path/to/completed-constraint-manifold-replay \
+  --output /path/to/new-categorical-isolation-namespace
+```
+
+The exact arms, factorial arithmetic, five-family capsule cohort, seven-file
+output contract, and non-retroactivity boundary are frozen in the
+[categorical-isolation preregistration](../../docs/specifications/flat_baseline_phase_b_categorical_isolation_replay.md).
+This diagnostic does not rerun or reinterpret the completed replay and cannot
+alter Gate C, Gate D, or the unevaluated Gate E state.
+
 ## Teacher-forced training milestone
 
 The package now includes reproducible single-process training of the existing

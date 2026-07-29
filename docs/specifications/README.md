@@ -18,3 +18,6 @@ awaiting a decision. When its current-state language differs from the
 - [Phase B constraint-manifold replay](flat_baseline_phase_b_constraint_manifold_replay.md):
   a read-only, four-arm diagnostic over the immutable recovered job `3329040`
   bundle. It cannot alter the frozen Gate C or Gate D failures.
+- [Phase B categorical-isolation replay](flat_baseline_phase_b_categorical_isolation_replay.md):
+  a preregistered 2-by-2 plane-category/profile-category diagnostic over the
+  immutable recovered bundle and completed constraint-manifold replay.
