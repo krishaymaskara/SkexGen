@@ -82,6 +82,9 @@ the immediate next action changes.
 - [Repaired-checkpoint Phase B deterministic
   smoke](experiments/b0_phase_b_repaired_smoke.md) — six-family
   validation-only payload and byte-identical repeat-publication evidence.
+- [Repaired-checkpoint Phase B full
+  validation](experiments/b0_phase_b_repaired_full_validation.md) — recovered
+  68-family result, manifest-only finalization, and frozen Gate B-D inputs.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

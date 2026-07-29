@@ -119,17 +119,19 @@ regression preflights, then rejected the unpublished artifact bundle because
 container-side branch discovery returned no branch name. After that repair,
 job `3329040` completed inference and independent artifact validation, then
 failed while creating the hash manifest because shell `find` did not traverse
-the stable symlink-backed evaluation publication. Its six validated artifacts
-remain unpublished as a completed workflow result pending strict, reviewed
-manifest-only recovery; the scheduler state remains `FAILED`.
+the stable symlink-backed evaluation publication. Reviewed manifest-only
+recovery independently revalidated the namespace and atomically replaced only
+the incomplete manifest with a verified 15-entry stable-path manifest. The
+original scheduler state remains `FAILED 1:0`; see the
+[immutable full-validation record](experiments/b0_phase_b_repaired_full_validation.md).
 
 ## What has not been established
 
 - No graph-discrete or graph-hybrid neural model has been implemented.
 - No capacity-matched graph-versus-flat comparison has been run.
-- The repaired epoch-44 B0 checkpoint has passed a deterministic six-family
-  smoke but has not yet completed its full 68-family validation-only
-  reconstruction evaluation.
+- The repaired epoch-44 B0 checkpoint produced a recovered, fully validated
+  68-family validation result, but neither decoding path produced any
+  controlled-domain-valid history; frozen Gates C and D did not pass.
 - Executable OpenCascade reconstruction of repaired-model predictions has not
   been established.
 - Latent-code semantics and localized learned edits have not been evaluated.
@@ -139,27 +141,27 @@ manifest-only recovery; the scheduler state remains `FAILED`.
 
 ## Immediate scientific gate
 
-The next scientific action is the full 68-family validation-only evaluation
-of the selected epoch-44 checkpoint using the checked-in Phase B evaluator.
-The deterministic six-family smoke has passed, including byte-identical
-repeat publication and zero test-family access. The full evaluation should
-measure teacher-forced and predicted-history reconstruction, the three
-validity layers, structural and geometric accuracy, operation/pointer/edge
-metrics, and code usage. Test data must remain untouched until the validation
-protocol and checkpoint are accepted. The prepared full workflow must first
-be reviewed and committed as the reviewed repository HEAD.
+The recovered full validation used five active codes with perplexity
+`3.120410089936484`, so its frozen Gate B inputs pass. Its teacher-forced and
+predicted-history controlled-domain-valid counts are both 0/68, and its Gate D
+extrude and revolve counts are both zero. Gates C and D therefore do not pass.
+Gate E/OpenCascade was not run, and the frozen report continues to record
+formal final acceptance as undetermined.
 
-OpenCascade execution, code semantics, and localized edit interventions may
-then be added under a frozen protocol. Graph-model implementation should
-begin only after the flat baseline has a credible, shared evaluation path.
+The next scientific action is validation-only diagnosis of the
+controlled-domain reconstruction failures. Test data must remain untouched.
+OpenCascade, code-semantics, localized-edit, or graph-model work requires its
+own reviewed protocol and must not be inferred as authorized by the recovered
+manifest.
 
 ## Documentation maintenance
 
 There is no remaining record backfill for a completed run whose primary
 bundle has been recovered locally. The repaired-checkpoint deterministic
-smoke has its own immutable record. The next full 68-family validation-only
-evaluation must create another immutable experiment record rather than
-editing either smoke or the original-checkpoint Phase B result.
+smoke and recovered full validation have separate immutable records. The
+job `3329040` namespace and recovery log remain external and should be
+downloaded, frozen, and independently hashed to upgrade their inventory state
+from `documented-external` to `verified-local`.
 
 Historical evidence marked `documented-external` in the inventory remains
 eligible for integrity upgrade if its primary artifacts are recovered.
