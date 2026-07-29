@@ -453,8 +453,13 @@ the evaluator/verifier flag `--repaired-full-contract`. This flag is distinct
 from the repaired-smoke and historical evaluator modes. It requires all 68
 validation families, no family limit, batch size 32, raw predictions, CPU,
 and no test authorization. Slurm job `3327735` exercised the workflow but
-failed closed during prepublication metadata validation, so this
-paragraph is not run evidence.
+failed closed during prepublication metadata validation. Job `3329040`
+subsequently completed inference and artifact validation but failed during
+manifest construction because `find` omitted a symlink-backed evaluation
+directory. Neither failed job is accepted full-run evidence. The reviewed
+recovery path must independently revalidate job `3329040` and may replace only
+its incomplete nine-entry manifest with the exact 15-entry stable-path
+manifest.
 
 ## 10. OpenCascade follow-up design
 

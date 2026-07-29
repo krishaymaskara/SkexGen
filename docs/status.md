@@ -116,8 +116,12 @@ partition-isolation, paired-decoding, schema-2, and artifact-validation
 contract to exactly all 68 validation families in a new namespace. Slurm job
 `3327735` passed its repository, environment, checkpoint, partition, and
 regression preflights, then rejected the unpublished artifact bundle because
-container-side branch discovery returned no branch name. No accepted full
-repaired-checkpoint result or scientific artifact publication exists yet.
+container-side branch discovery returned no branch name. After that repair,
+job `3329040` completed inference and independent artifact validation, then
+failed while creating the hash manifest because shell `find` did not traverse
+the stable symlink-backed evaluation publication. Its six validated artifacts
+remain unpublished as a completed workflow result pending strict, reviewed
+manifest-only recovery; the scheduler state remains `FAILED`.
 
 ## What has not been established
 

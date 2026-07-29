@@ -437,7 +437,10 @@ It uses a new commit-and-job-qualified namespace, processes all 68 validation
 families, runs the complete artifact verifier, and preserves environment,
 scheduler, repository, checkpoint, corpus-manifest, regression, artifact-hash,
 and scheduler-log-path evidence. It performs neither test-family loading nor
-OpenCascade execution.
+OpenCascade execution. Its final manifest is an exact 15-entry stable-path
+contract: six evaluation artifacts, eight workflow-evidence artifacts, and
+the Gate A-D input report. Symlink backing names and the manifest itself are
+excluded.
 
 This phase reconstructs authoritative flat targets and measures symbolic
 predictions. It does not yet synthesize stable CAD identifiers into a full

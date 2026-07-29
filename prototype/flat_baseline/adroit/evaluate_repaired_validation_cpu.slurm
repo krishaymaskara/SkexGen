@@ -254,11 +254,10 @@ container_python -B -m \
 test -f "$REPORT"
 
 stage artifact_manifest
-find "$EVALUATION" "$EVIDENCE" -type f -print0 \
-  | sort -z \
-  | xargs -0 sha256sum > "$HASH_MANIFEST"
-sha256sum "$REPORT" >> "$HASH_MANIFEST"
-test "$(wc -l < "$HASH_MANIFEST")" -ge 13
+container_python -B -m prototype.flat_baseline.artifact_manifest \
+  --namespace "$NAMESPACE" \
+  --output "$HASH_MANIFEST"
+test "$(wc -l < "$HASH_MANIFEST")" -eq 15
 
 stage complete
 printf 'namespace=%s\nevaluation=%s\nreport=%s\nhash_manifest=%s\n' \

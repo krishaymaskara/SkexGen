@@ -2017,6 +2017,7 @@ class EvaluationTests(unittest.TestCase):
                 "flat-mixed-baseline\n" + "d" * 40 + "\n" + "d" * 40 + "\n"
             ),
             "scheduler.txt": (
+                "slurm_job_id=3329040\n"
                 "snapshot=post_evaluation\n"
                 "full_evaluation_exit_code=0\n"
                 "JobState=RUNNING RunTime=00:10:00 NodeList=node1\n"
@@ -2025,9 +2026,21 @@ class EvaluationTests(unittest.TestCase):
         for name, content in files.items():
             (root / name).write_text(content)
         hashes = _workflow_evidence_hashes(
-            root, expected_ids=identifiers
+            root,
+            expected_ids=identifiers,
+            expected_job_id="3329040",
+            expected_full_exit_code=0,
         )
         self.assertEqual(set(hashes), set(files))
+        with self.assertRaisesRegex(
+            ValueError, "workflow scheduler evidence differs"
+        ):
+            _workflow_evidence_hashes(
+                root,
+                expected_ids=identifiers,
+                expected_job_id="different-job",
+                expected_full_exit_code=0,
+            )
         (root / "environment.json").write_text(
             files["environment.json"].replace("3.8.13", "3.9.0")
         )

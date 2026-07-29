@@ -24,6 +24,8 @@ from .evaluate_length_conditioned import (
     REPAIRED_SMOKE_FAMILY_COUNT,
     _identifier_sha256,
     _resolve_publication_directory,
+    _resolve_publication_file,
+    _strict_document,
     checkpoint_sha256,
     publish_json_report,
     validate_artifact_directory,
@@ -437,11 +439,30 @@ def main(argv=None):
             )
             compare_publications(arguments.output, arguments.compare_output)
             primary["byte_identical_replay"] = True
-        if arguments.report_output:
+        if arguments.report_output and arguments.existing_report:
+            raise ValueError(
+                "report output and existing report are mutually exclusive"
+            )
+        existing_report = None
+        if arguments.existing_report:
+            if not arguments.repaired_full_contract:
+                raise ValueError(
+                    "existing report verification requires repaired full mode"
+                )
+            existing_report = _strict_document(
+                _resolve_publication_file(arguments.existing_report)
+            )
+            if arguments.full_exit_code is None:
+                arguments.full_exit_code = existing_report.get(
+                    "full_evaluation_exit_code"
+                )
+        if arguments.report_output or existing_report is not None:
             if arguments.repaired_full_contract:
                 workflow_evidence_sha256 = _workflow_evidence_hashes(
                     arguments.workflow_evidence_dir,
                     expected_ids=tuple(primary["selected_validation_ids"]),
+                    expected_job_id=arguments.job_id,
+                    expected_full_exit_code=arguments.full_exit_code,
                 )
                 report = repaired_full_report(
                     primary,
@@ -455,7 +476,14 @@ def main(argv=None):
                 report = _report_from_arguments(
                     arguments, primary, examples, validation_ids, test_ids
                 )
-            publish_json_report(arguments.report_output, report)
+            if existing_report is not None:
+                if existing_report != report:
+                    raise ValueError(
+                        "existing report differs from independently "
+                        "recomputed report"
+                    )
+            else:
+                publish_json_report(arguments.report_output, report)
             output = report
         else:
             output = primary
@@ -527,6 +555,7 @@ def _parser():
     parser.add_argument("--family-limit", type=int)
     parser.add_argument("--compare-output")
     parser.add_argument("--report-output")
+    parser.add_argument("--existing-report")
     parser.add_argument("--smoke-output-a")
     parser.add_argument("--smoke-output-b")
     parser.add_argument("--smoke-family-limit", type=int, default=6)
@@ -560,7 +589,13 @@ def _artifact_hashes(path):
     }
 
 
-def _workflow_evidence_hashes(path, *, expected_ids=None):
+def _workflow_evidence_hashes(
+    path,
+    *,
+    expected_ids=None,
+    expected_job_id=None,
+    expected_full_exit_code=None,
+):
     if path is None:
         raise ValueError("workflow evidence directory is required")
     root = Path(path)
@@ -638,6 +673,16 @@ def _workflow_evidence_hashes(path, *, expected_ids=None):
         or "JobState=" not in scheduler
         or "RunTime=" not in scheduler
         or "NodeList=" not in scheduler
+        or (
+            expected_job_id is not None
+            and "slurm_job_id={}\n".format(expected_job_id) not in scheduler
+        )
+        or (
+            expected_full_exit_code is not None
+            and "full_evaluation_exit_code={}\n".format(
+                expected_full_exit_code
+            ) not in scheduler
+        )
     ):
         raise ValueError("workflow scheduler evidence differs")
     return {
