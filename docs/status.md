@@ -15,7 +15,7 @@ future work lives in the research plan and experimental specification.
 | Checkpoint training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
 | Authoritative checkpoint | Epoch 44, global step 748 |
 | Checkpoint SHA-256 | `282988af00a2dc9a53e14ceb270537d35f85d5339dc989634f88af5f77931267` |
-| Status recorded | July 28, 2026 |
+| Status recorded | July 29, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories |
 | Authoritative corpus | 680 physical families: 544 train, 68 validation, 68 test |
 
@@ -125,6 +125,20 @@ the incomplete manifest with a verified 15-entry stable-path manifest. The
 original scheduler state remains `FAILED 1:0`; see the
 [immutable full-validation record](experiments/b0_phase_b_repaired_full_validation.md).
 
+The recovered full-validation bundle is now frozen and manifest-verified
+locally. Two preregistered read-only diagnostics were completed over it. The
+categorical-isolation replay used 544 rows in a 2-by-2
+reference-plane/profile-category design. Reference-plane correction produced
+zero controlled-validity gain on either path. Authoritative profile category
+plus category-conditioned profile projection produced gains of +32 / 68
+teacher-forced and +34 / 68 predicted-history, with zero factorial
+interaction. Its model-plane/oracle-profile arm reached 68 / 68
+teacher-forced and 63 / 68 predicted-history. The remaining five
+predicted-history failures were second-operation `EE` capsules with
+`nonpositive_fitted_extent`. These are diagnostic counterfactuals and do not
+change the frozen evaluation gates; see the
+[immutable categorical-isolation record](experiments/b0_phase_b_categorical_isolation_replay.md).
+
 ## What has not been established
 
 - No graph-discrete or graph-hybrid neural model has been implemented.
@@ -148,20 +162,24 @@ extrude and revolve counts are both zero. Gates C and D therefore do not pass.
 Gate E/OpenCascade was not run, and the frozen report continues to record
 formal final acceptance as undetermined.
 
-The next scientific action is validation-only diagnosis of the
-controlled-domain reconstruction failures. Test data must remain untouched.
+The validation-only diagnosis attributes the observed controlled-validity
+failure to profile-family categorical errors together with unconstrained
+profile geometry, while finding no controlled-validity gain from
+reference-plane category correction. The immediate next gate is a separately
+reviewed, category-conditioned constrained profile-decoder intervention. Its
+category output must select the profile parameterization and its continuous
+output must satisfy that profile manifold. The five second-operation capsule
+failures are mandatory adversarial cases. Test data must remain untouched.
 OpenCascade, code-semantics, localized-edit, or graph-model work requires its
-own reviewed protocol and must not be inferred as authorized by the recovered
-manifest.
+own reviewed protocol and is not authorized by this diagnostic.
 
 ## Documentation maintenance
 
 There is no remaining record backfill for a completed run whose primary
 bundle has been recovered locally. The repaired-checkpoint deterministic
-smoke and recovered full validation have separate immutable records. The
-job `3329040` namespace and recovery log remain external and should be
-downloaded, frozen, and independently hashed to upgrade their inventory state
-from `documented-external` to `verified-local`.
+smoke, recovered full validation, and categorical-isolation diagnostic have
+separate immutable records. The full-validation source bundle and both
+diagnostic namespaces are locally manifest-verified.
 
 Historical evidence marked `documented-external` in the inventory remains
 eligible for integrity upgrade if its primary artifacts are recovered.

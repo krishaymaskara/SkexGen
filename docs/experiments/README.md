@@ -22,9 +22,9 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was checked on July 28, 2026 from branch
+This inventory was updated on July 29, 2026 from branch
 `flat-mixed-baseline` at
-`b00ac0d1a645ae9559e269ed93f5ee7940a0512c`. The audit used:
+`60325f9a3872bd82c783c687b68a7023bccc2d1b`. The audit used:
 
 - the current repository and its complete local Git history;
 - the supplied cross-chat project conversation record;
@@ -53,7 +53,9 @@ frozen archive described below is now the primary evidence.
 | Train-k-means pilot | `856d6a62187f3d7f4b5cc7a9b4c9efc655b74ce1` | `3326278` | Frozen archive below | 544 train / 68 validation; test false | `verified-local` | [Record](b0_train_kmeans_pilot.md) |
 | Full train-k-means retraining | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` | `3326757` | Frozen archive below | 544 train / 68 validation; test false | `verified-local` | [Record](b0_train_kmeans_full_retrain.md) |
 | Repaired-checkpoint Phase B smoke | `ea4f1e152195c209042c8f713c62be6d7393b3bb` | `3327631` | Two local publications listed below | 6 validation / 0 train / 0 test evaluated | `verified-local` | [Record](b0_phase_b_repaired_smoke.md) |
-| Repaired-checkpoint Phase B full validation | Evaluation `ce4abca8f450745a8832c0189aaae4a7d8263ec0`; recovery implementation `b00ac0d1a645ae9559e269ed93f5ee7940a0512c` | `3329040`, recovered after post-validation failure | Recovered Adroit namespace; local copy not yet downloaded | 68 validation / 0 train / 0 test evaluated; test false | `documented-external` | [Record](b0_phase_b_repaired_full_validation.md) |
+| Repaired-checkpoint Phase B full validation | Evaluation `ce4abca8f450745a8832c0189aaae4a7d8263ec0`; recovery implementation `b00ac0d1a645ae9559e269ed93f5ee7940a0512c` | `3329040`, recovered after post-validation failure | Local immutable bundle listed below | 68 validation / 0 train / 0 test evaluated; test false | `verified-local` | [Record](b0_phase_b_repaired_full_validation.md) |
+| Phase B constraint-manifold replay | `e0829773589a07ab471bc3932bf91578107b5467` | Local diagnostic over job `3329040` | Local immutable replay listed below | 68 validation families; diagnostic only; zero test payload access | `verified-local` | [Record](b0_phase_b_categorical_isolation_replay.md) |
+| Phase B categorical-isolation replay | `60325f9a3872bd82c783c687b68a7023bccc2d1b` | Local diagnostic over job `3329040` | Local immutable replay listed below | 68 validation families, 544 factorial rows; diagnostic only; zero test payload access | `verified-local` | [Record](b0_phase_b_categorical_isolation_replay.md) |
 
 ## Locally verified bundles
 
@@ -188,7 +190,7 @@ loaded. The deterministic smoke passed; it did not evaluate the remaining
 62 validation families or establish final validation quality. See the
 [immutable smoke record](b0_phase_b_repaired_smoke.md).
 
-## Recovered external repaired Phase B full validation
+## Locally verified repaired Phase B validation and diagnostic replays
 
 Job `3329040` completed inference and complete artifact validation for all 68
 validation families, then exited `FAILED 1:0` during post-validation manifest
@@ -201,17 +203,35 @@ extrude/revolve families. Gate E was not run and formal final acceptance
 remains undetermined. See the
 [immutable full-validation record](b0_phase_b_repaired_full_validation.md).
 
-The primary namespace and recovery log remain on Adroit and have not been
-downloaded into the local audited-runs directory. Their current evidence state
-is therefore `documented-external`, not `verified-local`.
+The flattened recovered namespace is now present locally at:
+
+```text
+/Users/krishaymaskara/research/audited-runs/phase-b-full-validation/
+  phase-b-repaired-validation-ce4abca8f450745a8832c0189aaae4a7d8263ec0-3329040
+```
+
+Its verified 15-entry manifest has SHA-256
+`a13d5f35b345b6814912145a56e0cce0290ae677b030a1215b61e92558862541`.
+This upgrades the primary bundle to `verified-local`; the original scheduler
+state remains `FAILED 1:0`.
+
+Two immutable read-only diagnostic namespaces are also locally verified:
+
+| Diagnostic | Implementation | Manifest SHA-256 |
+|---|---|---|
+| Constraint-manifold replay | `e0829773589a07ab471bc3932bf91578107b5467` | `6ff46389fb3947b3448e5e52860833d0592e83f70849536ddfd4aeb32f73b4b2` |
+| Categorical-isolation replay | `60325f9a3872bd82c783c687b68a7023bccc2d1b` | `e9c353a98fd37f5a491c34970d1859c73d61ebb7341d1ac14ca020a6f51aea63` |
+
+The categorical-isolation manifest covers six verified artifacts, including
+exactly 544 factorial JSONL rows. It isolates zero plane-only gain, profile
+gains of +32 teacher-forced and +34 predicted-history, and zero interaction.
+See the
+[immutable categorical-isolation record](b0_phase_b_categorical_isolation_replay.md).
 
 ## Record backlog
 
 Every completed run with a recovered local evidence bundle now has a durable
-experiment record. The recovered repaired-checkpoint full validation also has
-a durable record based on its verified external report and recovery evidence.
-Its next integrity step is to download and freeze the primary namespace and
-recovery log, then upgrade the inventory state to `verified-local` after an
-independent local hash check. Other historical evidence that remains
-`documented-external` should receive the same upgrade if its primary bundle is
-recovered.
+experiment record. The repaired-checkpoint full-validation bundle and both
+diagnostic replays are locally manifest-verified. Other historical evidence
+that remains `documented-external` should receive the same upgrade if its
+primary bundle is recovered.
