@@ -114,6 +114,36 @@ tiny-optimization tests require real PyTorch. They are skipped with an
 explicit reason when PyTorch is absent; the intended compatibility
 environment is Python 3.8 with PyTorch 1.11 on Adroit.
 
+## Constraint-manifold replay diagnostic
+
+`constraint_manifold_replay` is a standalone, read-only analysis of an
+already published repaired Phase B bundle. It verifies the source bundle's
+15-entry manifest before scientific parsing, reconciles the unchanged
+baseline against every stored conversion result, and applies the four arms
+frozen in the
+[replay preregistration](../../docs/specifications/flat_baseline_phase_b_constraint_manifold_replay.md).
+It does not import Torch and never invokes corpus-payload, checkpoint,
+model-execution, or target-continuous-geometry code paths. The input must be
+the flattened local audited copy; a symlink-backed cluster publication is
+flattened as part of the separately verified download/freeze process.
+
+The caller supplies a nonexistent output namespace:
+
+```bash
+python3 -m prototype.flat_baseline.constraint_manifold_replay \
+  --bundle /path/to/recovered-phase-b-bundle \
+  --output /path/to/new-diagnostic-namespace
+```
+
+Publication is atomic and no-replace. A successful namespace contains exactly
+`replay_records.jsonl`, `family_transitions.csv`, `aggregate_summary.json`,
+`projection_failures.csv`, `run_metadata.json`, and
+`sha256-manifest.txt` through its stable published path. On Linux the stable
+path may be a relative symlink to a hidden sibling backing directory when
+`renameat2(RENAME_NOREPLACE)` is unavailable; the command prints the actual
+publication backend after success. These artifacts are diagnostic only: they
+cannot change the frozen Gate C or Gate D failures or assign a Gate E result.
+
 ## Teacher-forced training milestone
 
 The package now includes reproducible single-process training of the existing
