@@ -1,23 +1,147 @@
-# 6-8 Week Research Plan
+# Approved Three-Week Research Plan
 
 *Structured CAD Representations for Systematic Generalization and Localized Editing*
 
 | Prepared for | Project context |
 |---|---|
 | Krishay Maskara | Allen-Blanchette Group, Princeton MAE |
-| Time horizon | 6-week core plan with a 2-week extension |
+| Active time horizon | Three weeks |
 | Controlled operation setting | Sketch + extrude + revolve |
-| Primary target | arXiv-quality preprint or workshop-style submission |
-| Revision basis | Graduate mentor feedback on graph structure, conditional geometry, and counterfactual evaluation |
+| Primary target | One fair, interpretable flat-versus-graph result and a concise technical report or presentation |
+| Scope revision | Approved July 30, 2026 |
 
-*Revised July 16, 2026*
+*Original six-to-eight-week plan revised July 16, 2026; active scope revised
+July 30, 2026*
 
 ## Document role
 
-This is the durable research rationale and original staged roadmap. It is not
-the current progress tracker. Completed milestones, the authoritative
-checkpoint, and the immediate next action are maintained only in
-[the current project status](status.md).
+This document records both the approved active scope and the broader original
+roadmap as historical planning context. It governs future scope, not past
+experimental history. Completed results and run records remain authoritative
+in [the current project status](status.md) and `docs/experiments/`.
+
+The July 30 revision resolves a conflict with the older roadmap: the original
+plan made a fully-discrete-versus-continuous graph comparison central and
+treated a same-representation flat-versus-graph ablation as stretch work. With
+approximately three weeks remaining, the approved active plan instead makes
+one same-decoder flat-versus-graph comparison central and defers the complete
+discrete-versus-continuous comparison. The older roadmap is retained below
+rather than rewritten as if it never governed planning.
+
+## Active three-week scope
+
+### Core research question
+
+**Does a typed dependency-graph representation improve systematic
+generalization and localized editing compared with a flat chronological
+representation when both use the same category-conditioned constrained
+continuous-geometry decoder?**
+
+The controlled sketch/extrude/revolve domain isolates the effect of explicit
+typed dependencies. The principal independent variable is flat chronological
+versus typed dependency-graph representation. Both models must use the same
+profile-family-aware continuous-geometry decoder interface so that geometry
+parameterization is not a confound.
+
+### Required core deliverables
+
+- A shared category-conditioned constrained profile decoder.
+- One repaired flat baseline using that decoder.
+- One minimal typed dependency-graph model using the same decoder.
+- One capacity-conscious flat-versus-graph comparison.
+- Ordinary validation, one systematic-generalization split, and one localized
+  numerical-edit evaluation.
+- A concise technical report or presentation explaining the result and
+  limitations.
+
+The existing epoch-44 flat checkpoint remains the frozen, reproducible failed
+unconstrained baseline. The checked-in deterministic profile-geometry
+contract is a prerequisite for the shared neural decoder, not evidence that
+the neural constrained decoder or a successor flat checkpoint is complete.
+Current implementation and experiment state is maintained in
+[the status page](status.md).
+
+### Three-week schedule
+
+#### Week 1 — Freeze the shared decoder and repair the flat model
+
+- Integrate explicit profile-family prediction and compact continuous profile
+  parameters with the deterministic profile-geometry contract.
+- Freeze the shared category-conditioned constrained decoder interface,
+  targets, losses, and validity checks.
+- Timebox training and validation of one repaired flat chronological model.
+- Preserve the epoch-44 checkpoint as the failed unconstrained reference
+  rather than overwriting its evidence.
+
+**Gate:** the shared neural decoder is implemented and the repaired flat model
+has one reproducible checkpoint suitable for the planned evaluations.
+
+#### Week 2 — Implement the minimal typed graph model
+
+- Begin graph implementation as soon as the shared decoder interface is
+  frozen.
+- Implement one minimal typed dependency-graph encoder using the existing
+  controlled schema and the same decoder.
+- Keep model capacity and training opportunity sufficiently comparable to make
+  the representation contrast interpretable.
+- Avoid adding alternate graph architectures or a fully discrete geometry
+  path.
+
+**Gate:** one graph checkpoint and one repaired-flat checkpoint can be
+evaluated through the same decoder and evaluation interfaces.
+
+#### Week 3 — Run the minimal comparison and report it
+
+- Evaluate both models on ordinary validation.
+- Evaluate both models on one predetermined systematic-generalization split.
+- Evaluate both models on one localized numerical-edit test with target-change
+  and preservation measures.
+- Report capacity, validity, failures, limitations, and any inconclusive or
+  negative result.
+- Produce a concise technical report or presentation.
+
+**Success criterion:** one fair, interpretable repaired-flat-versus-typed-graph
+comparison using the shared decoder on ordinary validation, one systematic
+split, and one localized-edit test.
+
+### Stretch and future work
+
+The following work is outside the required three-week core:
+
+- A graph model with fully discrete geometry.
+- The full discrete-versus-continuous geometry comparison.
+- Multiple graph architectures.
+- Broad evaluation across every systematic split.
+- Extensive multi-seed experiments.
+- Real-CAD validation.
+- Additional operations such as fillet.
+- Language conditioning.
+- Publication preparation.
+
+Experiments may expand only after the minimal comparison is complete. Any
+stretch result must be labeled as such and must not delay the required
+comparison or report.
+
+### Active claims and limitations
+
+- The project may test whether typed dependency structure helps under a shared
+  decoder; it may not attribute differences to geometry representation because
+  that condition is held fixed.
+- A result on the controlled corpus does not establish broad real-CAD
+  generality.
+- One systematic split, one localized-edit test, and limited seeds constrain
+  the breadth and statistical strength of conclusions.
+- The deterministic profile-geometry contract is implemented; the neural
+  constrained decoder, successor flat checkpoint, and graph model are not yet
+  implemented or trained.
+
+## Historical six-to-eight-week planning context
+
+Everything from this heading through the original execution pointer records
+the broader July 16 plan. It is retained to explain earlier architectural
+choices and completed work, but it is not the active schedule or deliverable
+set. Where it conflicts with the active three-week scope above, the active
+scope governs future work.
 
 ## 1. Revised Project Thesis
 

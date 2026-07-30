@@ -9,13 +9,13 @@ future work lives in the research plan and experimental specification.
 
 | Item | Current value |
 |---|---|
-| Active branch | `flat-mixed-baseline` |
+| Active branch | `constrained-profile-decoder` |
 | Current reviewed repository revision | This documentation commit; its hash is intentionally not embedded here |
 | Phase B evaluator implementation commit | `182ff31a121627f7803b29de1859fae9759a1849` |
 | Checkpoint training source commit | `d549ebe4478e166fda8d54f2b173572a1ab52e7a` |
 | Authoritative checkpoint | Epoch 44, global step 748 |
 | Checkpoint SHA-256 | `282988af00a2dc9a53e14ceb270537d35f85d5339dc989634f88af5f77931267` |
-| Status recorded | July 29, 2026 |
+| Status recorded | July 30, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories |
 | Authoritative corpus | 680 physical families: 544 train, 68 validation, 68 test |
 
@@ -28,18 +28,42 @@ as the current repository HEAD.
 
 ## Research objective
 
-The project studies whether typed CAD dependency graphs and different
-structure/geometry latent representations improve systematic generalization
-and localized editing over a flat, mixed representation. Revolve is a
-controlled experimental setting rather than the claimed contribution.
+The active core question is:
 
-The intended principal comparison remains:
+> Does a typed dependency-graph representation improve systematic
+> generalization and localized editing compared with a flat chronological
+> representation when both use the same category-conditioned constrained
+> continuous-geometry decoder?
 
-1. a flat/mixed VQ baseline;
-2. a typed graph with discrete structure and discrete,
-   structure-conditioned geometry;
-3. a typed graph with discrete structure and continuous,
-   structure-conditioned geometry.
+The required principal comparison is one repaired flat model versus one
+minimal typed dependency-graph model using the same decoder. Capacity and
+training opportunity must be controlled closely enough for the representation
+comparison to remain interpretable. Ordinary validation, one
+systematic-generalization split, and one localized numerical-edit evaluation
+form the required evaluation set.
+
+This three-week scope supersedes the older active three-model roadmap for
+future work; the broader six-to-eight-week plan remains labeled as historical
+context in [the research plan](research_plan.md). Fully discrete graph
+geometry and the complete discrete-versus-continuous geometry comparison are
+deferred.
+
+## Active implementation boundary
+
+| Item | Current state |
+|---|---|
+| Epoch-44 flat checkpoint | Frozen as the reproducible failed unconstrained baseline; no results or artifacts are replaced |
+| Deterministic profile-geometry contract | Implemented additively in commit `f1a3cb7d3744869126b0589563c866f6b28f3ca9` |
+| Neural category-conditioned constrained decoder | Not yet implemented |
+| Successor repaired-flat checkpoint | Not yet trained |
+| Typed dependency-graph model | Not yet implemented |
+| Fully discrete graph geometry | Deferred |
+
+The deterministic contract maps an explicit profile family plus compact
+continuous parameters to valid controlled-profile geometry and supports exact
+extraction for canonical targets. It does not predict profile family or
+continuous parameters, does not integrate those predictions into the neural
+decoder, and does not constitute a trained neural result.
 
 ## Completed implementation milestones
 
@@ -59,6 +83,8 @@ The intended principal comparison remains:
 - Implemented VQ-collapse diagnosis.
 - Implemented deterministic train-only k-means codebook initialization,
   a bounded pilot, and full epoch-boundary retraining.
+- Implemented an additive deterministic profile-family/continuous-parameter
+  geometry construction and extraction contract.
 
 These completion statements describe checked-in capabilities. Individual
 scientific run results require separate experiment records.
@@ -141,7 +167,10 @@ change the frozen evaluation gates; see the
 
 ## What has not been established
 
-- No graph-discrete or graph-hybrid neural model has been implemented.
+- The neural category-conditioned constrained profile decoder has not been
+  implemented; only its deterministic profile-geometry contract exists.
+- No successor repaired-flat checkpoint has been trained.
+- No typed dependency-graph neural model has been implemented.
 - No capacity-matched graph-versus-flat comparison has been run.
 - The repaired epoch-44 B0 checkpoint produced a recovered, fully validated
   68-family validation result, but neither decoding path produced any
@@ -153,7 +182,7 @@ change the frozen evaluation gates; see the
   yet exist.
 - The held-out IID test partition has not been evaluated.
 
-## Immediate scientific gate
+## Immediate scientific direction
 
 The recovered full validation used five active codes with perplexity
 `3.120410089936484`, so its frozen Gate B inputs pass. Its teacher-forced and
@@ -165,13 +194,20 @@ formal final acceptance as undetermined.
 The validation-only diagnosis attributes the observed controlled-validity
 failure to profile-family categorical errors together with unconstrained
 profile geometry, while finding no controlled-validity gain from
-reference-plane category correction. The immediate next gate is a separately
-reviewed, category-conditioned constrained profile-decoder intervention. Its
-category output must select the profile parameterization and its continuous
-output must satisfy that profile manifold. The five second-operation capsule
-failures are mandatory adversarial cases. Test data must remain untouched.
-OpenCascade, code-semantics, localized-edit, or graph-model work requires its
-own reviewed protocol and is not authorized by this diagnostic.
+reference-plane category correction. The deterministic geometry contract for
+the bounded intervention is now implemented additively. The next neural step
+is to integrate explicit profile-family prediction and compact continuous
+profile parameters so the predicted family selects the applicable
+parameterization and the continuous output satisfies that manifold. The five
+second-operation capsule failures remain mandatory adversarial cases.
+
+The repaired flat model is timeboxed. Once the shared decoder interface is
+frozen, implementation of the minimal typed graph model begins rather than
+waiting for broad flat-model optimization. The required principal experiment
+then compares repaired flat versus typed graph under that same decoder,
+capacity-conscious controls, ordinary validation, one systematic split, and
+one localized numerical-edit test. Fully discrete graph geometry is deferred.
+The held-out test partition must remain untouched.
 
 ## Documentation maintenance
 

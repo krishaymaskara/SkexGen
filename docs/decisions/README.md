@@ -26,3 +26,7 @@ it superseded by a later ADR.
   vocabulary, consumer-to-resource edge convention, `DEFINED_IN` and
   `DEPENDS_ON` semantics, operation sequence, single-body Boolean rules, and
   controlled-generator restrictions.
+- [ADR-0002: Three-week flat-versus-graph research
+  scope](ADR-0002-three-week-flat-versus-graph-scope.md) — narrows the active
+  project to one repaired-flat-versus-typed-graph comparison under a shared
+  category-conditioned constrained continuous-geometry decoder.

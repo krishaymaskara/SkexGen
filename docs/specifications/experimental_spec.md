@@ -9,21 +9,37 @@ controlled schema and completed package contracts are now implemented.
 [ADR-0001](../decisions/ADR-0001-controlled-cad-schema-v1.md) is
 authoritative for schema version 1 whenever historical proposal language in
 this document differs from the checked-in representation.
+[ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md) is
+authoritative for the active model comparison, shared decoder condition,
+minimum evaluation set, and expansion rule. The broader model matrix and
+phase language retained below record the earlier candidate protocol; any
+fully discrete geometry path, complete discrete-versus-continuous comparison,
+additional graph architecture, broad split suite, or extensive multi-seed
+requirement is deferred unless the minimal ADR-0002 comparison is complete.
 
 Every normative statement has one of these labels:
 
+- **[ACTIVE PLAN REQUIREMENT]** — required by the approved July 30
+  three-week scope.
+- **[ACTIVE IMPLEMENTATION BOUNDARY]** — the current distinction between
+  checked-in deterministic capability and unimplemented neural work.
 - **[PLAN REQUIREMENT]** — stated directly in the research plan.
 - **[PROPOSED V0]** — a concrete initial choice needed to make the experiment implementable; it is not yet established.
 - **[IMPLEMENTED V1]** — frozen for controlled schema version 1 and enforced
   by checked-in code; it may remain a revisitable choice for a later schema.
 - **[MENTOR DECISION]** — a choice that materially affects the scientific comparison and should be confirmed before the dataset or model interface is frozen.
 - **[LATER IMPLEMENTATION DECISION]** — an engineering or reporting choice that must eventually be frozen, but does not need mentor approval in the next discussion.
+- **[HISTORICAL ...]** — retained from the broader July 16 protocol and
+  deferred wherever it conflicts with ADR-0002.
 
 If an unlabeled explanation conflicts with a labeled statement, the labeled statement controls. Parameter ranges, token IDs, dataset sizes, split ratios, loss weights, codebook sizes, and neural-network dimensions remain unspecified unless explicitly marked as proposed.
 
 ## 1. Experimental objective and controlled scope
 
-**[PLAN REQUIREMENT] Research question:** How should CAD feature structure and geometry be represented to support systematic generalization and localized counterfactual editing across extrude-and-revolve feature histories?
+**[ACTIVE PLAN REQUIREMENT] Research question:** Does a typed
+dependency-graph representation improve systematic generalization and
+localized editing compared with a flat chronological representation when both
+use the same category-conditioned constrained continuous-geometry decoder?
 
 **[PLAN REQUIREMENT] Controlled domain:**
 
@@ -33,19 +49,29 @@ If an unlabeled explanation conflicts with a labeled statement, the labeled stat
 - join and cut Boolean modes where the data and CAD kernel support them reliably;
 - bounded history length and normalized geometric dimensions.
 
-**[PLAN REQUIREMENT] Primary scientific comparison:**
+**[ACTIVE PLAN REQUIREMENT] Primary scientific comparison:**
 
-1. a capacity-matched flat/mixed representation;
-2. a typed graph with discrete structure and discrete, structure-conditioned geometry;
-3. a typed graph with discrete structure and continuous, structure-conditioned geometry.
+1. one repaired flat chronological model; and
+2. one minimal typed dependency-graph model.
 
-**[PROPOSED V0] Phased causal controls:** organize implementation into the following evidence levels:
+Both conditions use one frozen category-conditioned constrained
+continuous-geometry decoder, with capacity and training opportunity controlled
+closely enough to isolate the input representation. The required evaluation is
+ordinary validation, one predetermined systematic-generalization split, and
+one localized numerical-edit test.
 
-- **Phase 1 — minimum rigorous experiment:** `B0-FLAT-MIXED-VQ`, `F0-FLAT-FACTORED-DISCRETE`, and `A-GRAPH-DISCRETE`. These three models are sufficient to test whether separating structure and geometry helps over a mixed representation and whether typed graph structure helps over a flat factored representation in the fully discrete setting.
-- **Phase 2 — full geometry-representation ablation:** `F1-FLAT-FACTORED-HYBRID` and `B-GRAPH-HYBRID`. These are required only for a full discrete-versus-continuous conditioned-geometry claim.
-- **Optional:** `B1-FLAT-MIXED-CONT` remains an additional mixed-continuous control if time permits.
+**[ACTIVE IMPLEMENTATION BOUNDARY]:** The deterministic profile-geometry
+contract is implemented. Explicit neural profile-family prediction, compact
+continuous parameter prediction, decoder integration, a successor flat
+checkpoint, and the graph model are not implemented or trained. The epoch-44
+checkpoint remains the frozen failed unconstrained baseline.
 
-Without `F0`, Phase 1 tests a combined graph-and-factorization framework and cannot attribute an improvement specifically to graph structure. Without both Phase 2 models, the study must not make the full discrete-versus-continuous conditioned-geometry claim.
+**[HISTORICAL PROPOSED V0] Earlier phased causal controls:** the superseded
+candidate protocol organized `B0-FLAT-MIXED-VQ`,
+`F0-FLAT-FACTORED-DISCRETE`, and `A-GRAPH-DISCRETE` as Phase 1, followed by
+`F1-FLAT-FACTORED-HYBRID` and `B-GRAPH-HYBRID` for a Phase 2 geometry
+ablation. This remains useful future-design context but is not the active
+three-week experiment.
 
 **[PROPOSED V0] Unit of modeling:** one complete, ordered CAD feature history that deterministically reconstructs one final solid. Intermediate states must also execute successfully so that an invalid early feature is not hidden by a later feature.
 
@@ -357,6 +383,24 @@ is optional and unimplemented.
 
 ## 8. Exact model comparisons
 
+### 8.1 Active three-week comparison
+
+| Condition | Input representation | Shared geometry condition | Required status |
+|---|---|---|---|
+| Repaired flat | Canonical chronological serialization without dependency edges | Category-conditioned constrained continuous-geometry decoder | Required |
+| Minimal typed graph | Typed dependency graph under schema version 1 | The same category-conditioned constrained continuous-geometry decoder | Required |
+
+The shared decoder must explicitly predict profile family and compact
+continuous profile parameters, then use the family to select the deterministic
+profile construction. Its interface, targets, losses, and evaluation treatment
+must be frozen before the graph condition begins.
+
+### 8.2 Historical candidate model matrix
+
+The matrix below is preserved from the broader protocol. Its fully discrete
+models, full geometry ablation, and optional baselines are deferred under
+ADR-0002.
+
 | ID | Input representation | Structure latent | Geometry latent | Decoder target | Required status |
 |---|---|---|---|---|---|
 | `B0-FLAT-MIXED-VQ` | Canonical flat serialization | Not separated | One mixed discrete VQ latent | Canonical flat stream | **[PLAN REQUIREMENT + PROPOSED V0] Phase 1 required** |
@@ -366,7 +410,7 @@ is optional and unimplemented.
 | `B-GRAPH-HYBRID` | Typed graph plus geometry | Discrete VQ | Continuous latent conditioned on structural latent | Executable graph/history | **[PLAN REQUIREMENT + PROPOSED V0] Phase 2 required for the full geometry-ablation claim** |
 | `B1-FLAT-MIXED-CONT` | Canonical flat serialization | Not separated | One mixed continuous latent | Canonical flat stream | **[PLAN REQUIREMENT if time permits] Optional** |
 
-### 8.1 Controlled variables
+### 8.3 Controlled variables
 
 **[PLAN REQUIREMENT]** Baselines must be capacity matched.
 
@@ -381,7 +425,7 @@ is optional and unimplemented.
 
 Exact architecture dimensions, VQ codebook counts/sizes, optimizer settings, and tolerances are **[LATER IMPLEMENTATION DECISION]** items after the data audit and compute budget are known.
 
-### 8.2 Claims supported by the required comparisons
+### 8.4 Historical claims supported by the broader comparisons
 
 **[PROPOSED V0]** Compare models in matched pairs:
 
@@ -392,7 +436,7 @@ Exact architecture dimensions, VQ codebook counts/sizes, optimizer settings, and
 
 If Phase 1 omits `F0`, all graph-specific claims must be withdrawn. If Phase 2 is not completed, the paper may report only the Phase 1 factorization and graph results and must not claim a complete discrete-versus-continuous geometry ablation.
 
-### 8.3 Graph encoder and decoder ordering
+### 8.5 Graph encoder and decoder ordering
 
 **[PLAN REQUIREMENT]** Candidate structural encoders are a typed GNN, graph Transformer, or typed-edge/sequence Transformer. Geometry must be conditioned on structure.
 
@@ -407,7 +451,22 @@ During early training, geometry may be conditioned on ground-truth structure. Fi
 
 ## 9. Training protocol and order
 
-**[PLAN REQUIREMENT + PROPOSED V0] Training order:**
+**[ACTIVE PLAN REQUIREMENT] Training order:**
+
+1. integrate explicit profile-family prediction and compact continuous profile
+   parameters with the deterministic geometry contract;
+2. freeze the shared neural decoder interface, targets, losses, and validity
+   checks;
+3. timebox the repaired flat model and produce one reproducible successor
+   checkpoint;
+4. begin the minimal typed graph model as soon as the shared decoder interface
+   is frozen;
+5. evaluate both models on ordinary validation, one predetermined systematic
+   split, and one localized numerical-edit test; and
+6. expand experiments only after that comparison and its concise report or
+   presentation are complete.
+
+**[HISTORICAL PLAN REQUIREMENT + PROPOSED V0] Earlier training order:**
 
 1. freeze data schema, converter, deterministic serialization, split manifests, and executor;
 2. begin **Phase 1** by training `B0-FLAT-MIXED-VQ` and verifying decreasing loss plus executable reconstructions;
