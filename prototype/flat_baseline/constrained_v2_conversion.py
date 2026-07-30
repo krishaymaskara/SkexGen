@@ -14,7 +14,6 @@ from prototype.model_data.vocab import (
     LOOP_ROLES,
     NODE_TYPES,
     OPERATION_TYPES,
-    PRIMITIVE_TYPES,
     REFERENCE_PLANES,
 )
 from prototype.profile_geometry import (
@@ -37,7 +36,6 @@ from .autonomous import (
     derive_geometry_mask,
 )
 from .constrained_v2 import (
-    NON_PROFILE_GEOMETRY_INDICES,
     NON_PROFILE_GEOMETRY_WIDTH,
     ConstrainedProfileV2Output,
     scatter_non_profile_geometry,
@@ -64,6 +62,18 @@ class V2PredictedProfileTensors:
     family_ids: torch.Tensor
     constrained_parameters: torch.Tensor
     primitive_type_ids: torch.Tensor
+    geometry: torch.Tensor
+    geometry_mask: torch.Tensor
+
+
+@dataclass(frozen=True)
+class V2PredictedNodeTensors:
+    """Complete canonical node records built only from V2 predictions."""
+
+    node_type_ids: torch.Tensor
+    categorical_ids: torch.Tensor
+    family_ids: torch.Tensor
+    constrained_parameters: torch.Tensor
     geometry: torch.Tensor
     geometry_mask: torch.Tensor
 
@@ -100,6 +110,74 @@ def canonicalize_v2_predicted_profiles(
     )
 
 
+def construct_v2_predicted_node_tensors(
+    node_type_ids: torch.Tensor,
+    retained_categorical_ids: torch.Tensor,
+    profile_family_logits: torch.Tensor,
+    raw_profile_parameters: torch.Tensor,
+    non_profile_geometry: torch.Tensor,
+) -> V2PredictedNodeTensors:
+    """Construct complete feedback records from current-node predictions."""
+
+    leading_shape = _validate_predicted_node_inputs(
+        node_type_ids,
+        retained_categorical_ids,
+        profile_family_logits,
+        raw_profile_parameters,
+        non_profile_geometry,
+    )
+    sketch_mask = node_type_ids == NODE_TYPES.id("sketch")
+    predicted_families = profile_family_logits.argmax(dim=-1)
+    family_ids = torch.where(
+        sketch_mask,
+        predicted_families,
+        torch.full_like(node_type_ids, NO_PROFILE_FAMILY_ID),
+    )
+    profiles = canonicalize_v2_predicted_profiles(
+        family_ids, raw_profile_parameters, sketch_mask
+    )
+    categorical_ids = torch.cat(
+        (
+            retained_categorical_ids[..., :4],
+            profiles.primitive_type_ids,
+            retained_categorical_ids[..., 4:],
+        ),
+        dim=-1,
+    ).contiguous()
+    mask_rows = tuple(
+        derive_geometry_mask(int(node_type), tuple(attributes))
+        for node_type, attributes in zip(
+            node_type_ids.reshape(-1).detach().cpu().tolist(),
+            categorical_ids.reshape(-1, 9).detach().cpu().tolist(),
+        )
+    )
+    geometry_mask = torch.tensor(
+        mask_rows,
+        dtype=torch.bool,
+        device=node_type_ids.device,
+    ).reshape(leading_shape + (GEOMETRY_WIDTH,)).contiguous()
+    if not torch.equal(
+        geometry_mask[..., 9:33],
+        profiles.geometry_mask[..., 9:33],
+    ):
+        raise AssertionError(
+            "canonical profile mask disagrees with primitive slots"
+        )
+    scattered = scatter_non_profile_geometry(non_profile_geometry)
+    combined = scattered + profiles.geometry
+    geometry = torch.where(
+        geometry_mask, combined, torch.zeros_like(combined)
+    ).contiguous()
+    return V2PredictedNodeTensors(
+        node_type_ids,
+        categorical_ids,
+        family_ids,
+        profiles.constrained_parameters,
+        geometry,
+        geometry_mask,
+    )
+
+
 def v2_teacher_forced_predictions(
     output: ConstrainedProfileV2Output,
     *,
@@ -120,32 +198,18 @@ def v2_teacher_forced_predictions(
             tuple(logits.argmax(dim=-1) for logits in output.categorical_logits),
             dim=-1,
         )
-        predicted_sketch_mask = (
-            node_mask
-            & (node_type_ids == NODE_TYPES.id("sketch"))
-        )
-        predicted_family_ids = torch.where(
-            predicted_sketch_mask,
-            output.profile_family_logits.argmax(dim=-1),
-            torch.full_like(node_type_ids, NO_PROFILE_FAMILY_ID),
-        )
-        profiles = canonicalize_v2_predicted_profiles(
-            predicted_family_ids,
+        records = construct_v2_predicted_node_tensors(
+            node_type_ids,
+            retained_ids,
+            output.profile_family_logits,
             output.raw_profile_parameters,
-            predicted_sketch_mask,
+            output.non_profile_geometry,
         )
-        non_profile = scatter_non_profile_geometry(
-            output.non_profile_geometry
-        )
-        geometry = non_profile + profiles.geometry
 
         return tuple(
             _prediction_row(
                 output,
-                node_type_ids,
-                retained_ids,
-                profiles,
-                geometry,
+                records,
                 node_mask,
                 batch_index,
                 node_count_source,
@@ -179,10 +243,7 @@ def validate_and_convert_v2_teacher_forced_prediction(
 
 def _prediction_row(
     output,
-    node_type_ids,
-    retained_ids,
-    profiles,
-    geometry,
+    records,
     node_mask,
     batch_index,
     node_count_source,
@@ -191,47 +252,22 @@ def _prediction_row(
     raw_nodes = []
     for position in range(node_count):
         node_type_id = int(
-            node_type_ids[batch_index, position].item()
-        )
-        retained = tuple(
-            int(value)
-            for value in retained_ids[
-                batch_index, position
-            ].detach().cpu().tolist()
-        )
-        primitives = tuple(
-            int(value)
-            for value in profiles.primitive_type_ids[
-                batch_index, position
-            ].detach().cpu().tolist()
+            records.node_type_ids[batch_index, position].item()
         )
         categorical_ids = (
-            retained[0],
-            retained[1],
-            retained[2],
-            retained[3],
-            *primitives,
-            retained[4],
+            tuple(
+                int(value)
+                for value in records.categorical_ids[
+                    batch_index, position
+                ].detach().cpu().tolist()
+            )
         )
-        applicability = derive_geometry_mask(
-            node_type_id, categorical_ids
-        )
-        profile_mask = tuple(
+        geometry_mask = tuple(
             bool(value)
-            for value in profiles.geometry_mask[
+            for value in records.geometry_mask[
                 batch_index, position
             ].detach().cpu().tolist()
         )
-        if any(
-            applicability[channel] != profile_mask[channel]
-            for channel in range(9, 33)
-        ):
-            raise AssertionError(
-                "canonical profile mask disagrees with primitive slots"
-            )
-        merged_mask = list(profile_mask)
-        for channel in NON_PROFILE_GEOMETRY_INDICES:
-            merged_mask[channel] = applicability[channel]
         raw_nodes.append(
             RawDecodedNode(
                 position,
@@ -239,11 +275,11 @@ def _prediction_row(
                 categorical_ids,
                 tuple(
                     float(value)
-                    for value in geometry[
+                    for value in records.geometry[
                         batch_index, position
                     ].detach().cpu().tolist()
                 ),
-                tuple(merged_mask),
+                geometry_mask,
             )
         )
 
@@ -321,7 +357,7 @@ def _prediction_row(
         ),
         tuple(
             int(value)
-            for value in profiles.family_ids[
+            for value in records.family_ids[
                 batch_index, :node_count
             ].detach().cpu().tolist()
         ),
@@ -333,11 +369,83 @@ def _prediction_row(
         ),
         tuple(
             tuple(float(value) for value in row)
-            for row in profiles.constrained_parameters[
+            for row in records.constrained_parameters[
                 batch_index, :node_count
             ].detach().cpu().tolist()
         ),
     )
+
+
+def _validate_predicted_node_inputs(
+    node_type_ids,
+    retained_categorical_ids,
+    profile_family_logits,
+    raw_profile_parameters,
+    non_profile_geometry,
+):
+    if not torch.is_tensor(node_type_ids) or node_type_ids.dtype != torch.long:
+        raise TypeError("node_type_ids must be a torch.long tensor")
+    if node_type_ids.dim() < 1 or node_type_ids.numel() == 0:
+        raise ValueError("node_type_ids must have nonempty leading dimensions")
+    leading_shape = tuple(node_type_ids.shape)
+    if (
+        not torch.is_tensor(retained_categorical_ids)
+        or retained_categorical_ids.dtype != torch.long
+        or tuple(retained_categorical_ids.shape) != leading_shape + (5,)
+    ):
+        raise ValueError(
+            "retained_categorical_ids must have shape [..., 5]"
+        )
+    floats = (
+        (
+            "profile_family_logits",
+            profile_family_logits,
+            leading_shape + (len(PROFILE_FAMILIES),),
+        ),
+        (
+            "raw_profile_parameters",
+            raw_profile_parameters,
+            leading_shape + (3,),
+        ),
+        (
+            "non_profile_geometry",
+            non_profile_geometry,
+            leading_shape + (NON_PROFILE_GEOMETRY_WIDTH,),
+        ),
+    )
+    reference_dtype = (
+        raw_profile_parameters.dtype
+        if torch.is_tensor(raw_profile_parameters)
+        else None
+    )
+    for name, value, expected_shape in floats:
+        if not torch.is_tensor(value) or not value.dtype.is_floating_point:
+            raise TypeError("{} must be floating point".format(name))
+        if tuple(value.shape) != expected_shape:
+            raise ValueError("{} is misaligned".format(name))
+        if value.dtype != reference_dtype:
+            raise TypeError("predicted floating tensors must share dtype")
+        if value.device != node_type_ids.device:
+            raise ValueError("predicted node tensors must share device")
+        if not torch.isfinite(value).all():
+            raise ValueError("{} must be finite".format(name))
+    if retained_categorical_ids.device != node_type_ids.device:
+        raise ValueError("predicted node tensors must share device")
+    id_fields = ((node_type_ids, NODE_TYPES),) + tuple(
+        (retained_categorical_ids[..., index], vocabulary)
+        for index, vocabulary in enumerate(
+            _RETAINED_ATTRIBUTE_VOCABULARIES
+        )
+    )
+    for values, vocabulary in id_fields:
+        if (
+            int(values.min().item()) < 0
+            or int(values.max().item()) >= len(vocabulary.tokens)
+        ):
+            raise ValueError(
+                "{} contains an invalid ID".format(vocabulary.name)
+            )
+    return leading_shape
 
 
 def _validate_conversion_inputs(output, node_mask, node_count_source):

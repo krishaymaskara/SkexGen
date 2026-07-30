@@ -94,6 +94,18 @@ class ConstrainedProfileV2Output:
     codebook_perplexity: torch.Tensor
 
 
+@dataclass(frozen=True)
+class ConstrainedProfileV2PrefixOutput:
+    """V2 predictions for BOS plus a generated-record prefix."""
+
+    decoded_states: torch.Tensor
+    node_type_logits: torch.Tensor
+    categorical_logits: tuple
+    profile_family_logits: torch.Tensor
+    raw_profile_parameters: torch.Tensor
+    non_profile_geometry: torch.Tensor
+
+
 def scatter_non_profile_geometry(values: torch.Tensor) -> torch.Tensor:
     """Scatter the frozen 15-channel order into the serialized width 39."""
 
@@ -301,10 +313,64 @@ class ConstrainedProfileV2Model(FlatMixedVQModel):
             encoded.vq.perplexity,
         )
 
-    def decode_prefix(self, *args, **kwargs):
-        del args, kwargs
-        raise NotImplementedError(
-            "V2 autonomous or prefix prediction is outside Stage 2B"
+    def decode_prefix(
+        self,
+        memory,
+        categorical_prefix,
+        geometry_prefix,
+        geometry_mask_prefix,
+        prefix_mask=None,
+    ):
+        """Decode BOS plus complete preceding V2 node records."""
+
+        batch_size, prefix_length = _validate_v2_prefix_inputs(
+            self,
+            memory,
+            categorical_prefix,
+            geometry_prefix,
+            geometry_mask_prefix,
+            prefix_mask,
+        )
+        if prefix_mask is None:
+            prefix_mask = torch.ones(
+                batch_size,
+                prefix_length,
+                dtype=torch.bool,
+                device=memory.device,
+            )
+        prefix_content = self._record_content(
+            categorical_prefix,
+            geometry_prefix,
+            geometry_mask_prefix,
+        )
+        bos = self.bos.view(1, 1, -1).expand(batch_size, 1, -1)
+        shifted = torch.cat((bos, prefix_content), dim=1)
+        decoder_valid = torch.cat(
+            (
+                torch.ones(
+                    batch_size,
+                    1,
+                    dtype=torch.bool,
+                    device=memory.device,
+                ),
+                prefix_mask,
+            ),
+            dim=1,
+        )
+        decoded_states = self._decode_embedded_prefix(
+            shifted, memory, decoder_valid
+        )
+        profile_output = self.profile_heads(decoded_states)
+        return ConstrainedProfileV2PrefixOutput(
+            decoded_states,
+            self.node_type_head(decoded_states),
+            tuple(
+                head(decoded_states)
+                for head in self.remaining_categorical_heads
+            ),
+            profile_output.family_logits,
+            profile_output.raw_parameters,
+            torch.tanh(self.non_profile_geometry_head(decoded_states)),
         )
 
     def _teacher_forced_states(
@@ -362,3 +428,80 @@ def _scatter_non_profile_mask(mask):
     )
     result[..., NON_PROFILE_GEOMETRY_INDICES] = mask
     return result.contiguous()
+
+
+def _validate_v2_prefix_inputs(
+    model,
+    memory,
+    categorical_prefix,
+    geometry_prefix,
+    geometry_mask_prefix,
+    prefix_mask,
+):
+    if (
+        not torch.is_tensor(memory)
+        or memory.dim() != 3
+        or memory.size(1) != model.config.latent_tokens
+        or memory.size(2) != model.config.model_dim
+        or memory.size(0) == 0
+    ):
+        raise ValueError(
+            "memory must have shape [B, latent_tokens, model_dim]"
+        )
+    if not memory.dtype.is_floating_point:
+        raise TypeError("memory must be floating point")
+    if memory.dtype != model.bos.dtype:
+        raise TypeError("memory dtype must match model dtype")
+    if memory.device != model.bos.device:
+        raise ValueError("memory device must match model device")
+    if not torch.isfinite(memory).all():
+        raise ValueError("memory must be finite")
+
+    batch_size = memory.size(0)
+    if not torch.is_tensor(categorical_prefix):
+        raise TypeError("categorical prefix must be a tensor")
+    if categorical_prefix.dim() != 3:
+        raise ValueError("categorical prefix must have shape [B, P, 10]")
+    prefix_length = categorical_prefix.size(1)
+    if categorical_prefix.shape != (batch_size, prefix_length, 10):
+        raise ValueError("categorical prefix must have shape [B, P, 10]")
+    if categorical_prefix.dtype != torch.long:
+        raise TypeError("categorical prefix must use torch.long")
+    expected_geometry = (batch_size, prefix_length, GEOMETRY_WIDTH)
+    if (
+        not torch.is_tensor(geometry_prefix)
+        or tuple(geometry_prefix.shape) != expected_geometry
+    ):
+        raise ValueError("geometry prefix must have shape [B, P, 39]")
+    if (
+        not torch.is_tensor(geometry_mask_prefix)
+        or tuple(geometry_mask_prefix.shape) != expected_geometry
+    ):
+        raise ValueError("geometry-mask prefix must align with geometry")
+    if not geometry_prefix.dtype.is_floating_point:
+        raise TypeError("geometry prefix must be floating point")
+    if geometry_prefix.dtype != memory.dtype:
+        raise TypeError("geometry prefix dtype must match memory dtype")
+    if geometry_mask_prefix.dtype != torch.bool:
+        raise TypeError("geometry-mask prefix must use torch.bool")
+    if prefix_length + 1 > model.config.max_nodes:
+        raise ValueError("decoded prefix exceeds configured max_nodes")
+    if prefix_mask is not None and (
+        not torch.is_tensor(prefix_mask)
+        or tuple(prefix_mask.shape) != (batch_size, prefix_length)
+    ):
+        raise ValueError("prefix mask must have shape [B, P]")
+    if prefix_mask is not None and prefix_mask.dtype != torch.bool:
+        raise TypeError("prefix mask must use torch.bool")
+    tensors = (
+        categorical_prefix,
+        geometry_prefix,
+        geometry_mask_prefix,
+    )
+    if prefix_mask is not None:
+        tensors = tensors + (prefix_mask,)
+    if any(value.device != memory.device for value in tensors):
+        raise ValueError("decoder prefix tensors must share memory device")
+    if not torch.isfinite(geometry_prefix).all():
+        raise ValueError("geometry prefix must be finite")
+    return batch_size, prefix_length

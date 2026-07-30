@@ -55,6 +55,7 @@ if torch is not None:
         NON_PROFILE_GEOMETRY_WIDTH,
         REMAINING_CATEGORICAL_FIELDS,
         ConstrainedProfileV2Model,
+        ConstrainedProfileV2PrefixOutput,
         scatter_non_profile_geometry,
     )
     from prototype.flat_baseline.constrained_v2_losses import (
@@ -686,9 +687,52 @@ class ConstrainedProfileV2TensorTests(unittest.TestCase):
         ):
             torch.testing.assert_close(left, right, rtol=0.0, atol=0.0)
 
-    def test_v2_prefix_prediction_is_explicitly_out_of_scope(self):
-        with self.assertRaisesRegex(NotImplementedError, "Stage 2B"):
-            self.model.decode_prefix()
+    def test_v2_bos_prefix_matches_first_teacher_forced_output(self):
+        self.model.eval()
+        with torch.no_grad():
+            full = self._forward()
+            batch_size = self.target["node_mask"].size(0)
+            empty_categories = torch.empty(
+                (batch_size, 0, 10), dtype=torch.long
+            )
+            empty_geometry = torch.empty(
+                (batch_size, 0, GEOMETRY_WIDTH), dtype=torch.float32
+            )
+            empty_mask = torch.empty(
+                (batch_size, 0, GEOMETRY_WIDTH), dtype=torch.bool
+            )
+            prefix = self.model.decode_prefix(
+                full.quantized_memory,
+                empty_categories,
+                empty_geometry,
+                empty_mask,
+            )
+        self.assertIsInstance(prefix, ConstrainedProfileV2PrefixOutput)
+        for expected, actual in (
+            (full.decoded_states[:, :1], prefix.decoded_states),
+            (full.node_type_logits[:, :1], prefix.node_type_logits),
+            (
+                full.profile_family_logits[:, :1],
+                prefix.profile_family_logits,
+            ),
+            (
+                full.raw_profile_parameters[:, :1],
+                prefix.raw_profile_parameters,
+            ),
+            (
+                full.non_profile_geometry[:, :1],
+                prefix.non_profile_geometry,
+            ),
+        ):
+            torch.testing.assert_close(
+                expected, actual, rtol=0.0, atol=0.0
+            )
+        for expected, actual in zip(
+            full.categorical_logits, prefix.categorical_logits
+        ):
+            torch.testing.assert_close(
+                expected[:, :1], actual, rtol=0.0, atol=0.0
+            )
 
 
 if __name__ == "__main__":
