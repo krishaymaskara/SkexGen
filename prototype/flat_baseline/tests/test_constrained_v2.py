@@ -9,6 +9,7 @@ import json
 import math
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 import unittest
 
 try:
@@ -60,6 +61,11 @@ if torch is not None:
     )
     from prototype.flat_baseline.constrained_v2_losses import (
         constrained_profile_v2_loss,
+    )
+    from prototype.flat_baseline.constrained_v2_conversion import (
+        construct_v2_predicted_node_tensors,
+        validate_and_convert_v2_teacher_forced_prediction,
+        v2_teacher_forced_predictions,
     )
     from prototype.flat_baseline.model import FlatMixedVQModel
     from prototype.model_data.geometry import GEOMETRY_WIDTH
@@ -689,49 +695,393 @@ class ConstrainedProfileV2TensorTests(unittest.TestCase):
 
     def test_v2_bos_prefix_matches_first_teacher_forced_output(self):
         self.model.eval()
-        with torch.no_grad():
-            full = self._forward()
-            batch_size = self.target["node_mask"].size(0)
-            empty_categories = torch.empty(
-                (batch_size, 0, 10), dtype=torch.long
+        vq_before = {
+            name: value.detach().clone()
+            for name, value in self.model.named_buffers()
+            if name.startswith("vq.")
+        }
+        decode_calls = []
+        original_decode = self.model._decode_embedded_prefix
+
+        def capture_decode(shifted, memory, decoder_valid):
+            decode_calls.append(
+                (
+                    shifted.detach().clone(),
+                    memory,
+                    decoder_valid.detach().clone(),
+                    self.model.training,
+                    torch.is_grad_enabled(),
+                )
             )
-            empty_geometry = torch.empty(
-                (batch_size, 0, GEOMETRY_WIDTH), dtype=torch.float32
+            return original_decode(shifted, memory, decoder_valid)
+
+        with mock.patch.object(
+            self.model,
+            "_decode_embedded_prefix",
+            side_effect=capture_decode,
+        ):
+            with torch.no_grad():
+                full = self._forward()
+                batch_size, teacher_length = self.target[
+                    "node_mask"
+                ].shape
+                empty_categories = torch.empty(
+                    (batch_size, 0, 10), dtype=torch.long
+                )
+                empty_geometry = torch.empty(
+                    (batch_size, 0, GEOMETRY_WIDTH),
+                    dtype=torch.float32,
+                )
+                empty_mask = torch.empty(
+                    (batch_size, 0, GEOMETRY_WIDTH), dtype=torch.bool
+                )
+                prefix = self.model.decode_prefix(
+                    full.quantized_memory,
+                    empty_categories,
+                    empty_geometry,
+                    empty_mask,
+                )
+                one_node_mask = torch.ones(
+                    (batch_size, 1), dtype=torch.bool
+                )
+                prefix_relations = self.model.decode_relations(
+                    prefix.decoded_states, one_node_mask
+                )
+
+        self.assertEqual(len(decode_calls), 2)
+        teacher_call, prefix_call = decode_calls
+        self.assertEqual(
+            teacher_call[0].shape,
+            (batch_size, teacher_length, self.config.model_dim),
+        )
+        self.assertEqual(
+            prefix_call[0].shape,
+            (batch_size, 1, self.config.model_dim),
+        )
+        self.assertEqual(
+            teacher_call[1].data_ptr(),
+            full.quantized_memory.data_ptr(),
+        )
+        self.assertEqual(
+            prefix_call[1].data_ptr(),
+            full.quantized_memory.data_ptr(),
+        )
+        expected_bos = self.model.bos.detach().view(1, 1, -1).expand(
+            batch_size, 1, -1
+        )
+        self.assertTrue(torch.equal(teacher_call[0][:, :1], expected_bos))
+        self.assertTrue(torch.equal(prefix_call[0], expected_bos))
+        self.assertTrue(teacher_call[2][:, 0].all())
+        self.assertTrue(prefix_call[2].all())
+        self.assertFalse(teacher_call[3])
+        self.assertFalse(prefix_call[3])
+        self.assertFalse(teacher_call[4])
+        self.assertFalse(prefix_call[4])
+        self.assertFalse(self.model.training)
+        for name, expected in vq_before.items():
+            torch.testing.assert_close(
+                expected,
+                dict(self.model.named_buffers())[name],
+                rtol=0.0,
+                atol=0.0,
             )
-            empty_mask = torch.empty(
-                (batch_size, 0, GEOMETRY_WIDTH), dtype=torch.bool
-            )
-            prefix = self.model.decode_prefix(
-                full.quantized_memory,
-                empty_categories,
-                empty_geometry,
-                empty_mask,
-            )
+
         self.assertIsInstance(prefix, ConstrainedProfileV2PrefixOutput)
-        for expected, actual in (
-            (full.decoded_states[:, :1], prefix.decoded_states),
-            (full.node_type_logits[:, :1], prefix.node_type_logits),
+        continuous_pairs = (
             (
+                "decoded_states",
+                full.decoded_states[:, :1],
+                prefix.decoded_states,
+            ),
+            (
+                "node_type_logits",
+                full.node_type_logits[:, :1],
+                prefix.node_type_logits,
+            ),
+            (
+                "profile_family_logits",
                 full.profile_family_logits[:, :1],
                 prefix.profile_family_logits,
             ),
             (
+                "raw_profile_parameters",
                 full.raw_profile_parameters[:, :1],
                 prefix.raw_profile_parameters,
             ),
             (
+                "non_profile_geometry",
                 full.non_profile_geometry[:, :1],
                 prefix.non_profile_geometry,
             ),
-        ):
-            torch.testing.assert_close(
-                expected, actual, rtol=0.0, atol=0.0
+            (
+                "edge_presence_logits",
+                full.edge_presence_logits[:, :1, :1],
+                prefix_relations.edge_presence_logits,
+            ),
+            (
+                "edge_type_logits",
+                full.edge_type_logits[:, :1, :1],
+                prefix_relations.edge_type_logits,
+            ),
+            (
+                "operation_pointer_logits",
+                full.operation_pointer_logits[:, :, :1],
+                prefix_relations.operation_pointer_logits,
+            ),
+        )
+        continuous_pairs += tuple(
+            (
+                "categorical_logits_{}".format(index),
+                expected[:, :1],
+                actual,
             )
-        for expected, actual in zip(
-            full.categorical_logits, prefix.categorical_logits
+            for index, (expected, actual) in enumerate(
+                zip(full.categorical_logits, prefix.categorical_logits)
+            )
+        )
+        # The teacher path executes a length-seven causal kernel while the
+        # autonomous BOS path executes a length-one kernel. Float32 reduction
+        # ordering may therefore differ by roughly one machine epsilon even
+        # though batch, memory, BOS, mask, model mode, and semantics are equal.
+        for name, teacher_tensor, autonomous_tensor in continuous_pairs:
+            with self.subTest(continuous=name):
+                self.assertEqual(
+                    teacher_tensor.shape, autonomous_tensor.shape
+                )
+                self.assertEqual(teacher_tensor.dtype, torch.float32)
+                self.assertEqual(autonomous_tensor.dtype, torch.float32)
+                torch.testing.assert_close(
+                    autonomous_tensor,
+                    teacher_tensor,
+                    rtol=1e-5,
+                    atol=2e-7,
+                )
+
+        teacher_node_ids = full.node_type_logits[:, :1].argmax(dim=-1)
+        autonomous_node_ids = prefix.node_type_logits.argmax(dim=-1)
+        self.assertTrue(torch.equal(
+            teacher_node_ids, autonomous_node_ids
+        ))
+        teacher_retained = torch.stack(
+            tuple(
+                logits[:, :1].argmax(dim=-1)
+                for logits in full.categorical_logits
+            ),
+            dim=-1,
+        )
+        autonomous_retained = torch.stack(
+            tuple(
+                logits.argmax(dim=-1)
+                for logits in prefix.categorical_logits
+            ),
+            dim=-1,
+        )
+        self.assertTrue(torch.equal(
+            teacher_retained, autonomous_retained
+        ))
+        self.assertTrue(torch.equal(
+            full.profile_family_logits[:, :1].argmax(dim=-1),
+            prefix.profile_family_logits.argmax(dim=-1),
+        ))
+        self.assertTrue(torch.equal(
+            full.edge_type_logits[:, :1, :1].argmax(dim=-1),
+            prefix_relations.edge_type_logits.argmax(dim=-1),
+        ))
+        self.assertTrue(torch.equal(
+            full.operation_pointer_logits[:, :, :1].argmax(dim=-1),
+            prefix_relations.operation_pointer_logits.argmax(dim=-1),
+        ))
+        self.assertTrue(torch.equal(
+            full.edge_presence_logits[:, :1, :1] >= 0.0,
+            prefix_relations.edge_presence_logits >= 0.0,
+        ))
+
+        teacher_records = construct_v2_predicted_node_tensors(
+            teacher_node_ids,
+            teacher_retained,
+            full.profile_family_logits[:, :1],
+            full.raw_profile_parameters[:, :1],
+            full.non_profile_geometry[:, :1],
+        )
+        autonomous_records = construct_v2_predicted_node_tensors(
+            autonomous_node_ids,
+            autonomous_retained,
+            prefix.profile_family_logits,
+            prefix.raw_profile_parameters,
+            prefix.non_profile_geometry,
+        )
+        for teacher_tensor, autonomous_tensor in (
+            (
+                teacher_records.node_type_ids,
+                autonomous_records.node_type_ids,
+            ),
+            (
+                teacher_records.categorical_ids,
+                autonomous_records.categorical_ids,
+            ),
+            (
+                teacher_records.family_ids,
+                autonomous_records.family_ids,
+            ),
+            (
+                teacher_records.geometry_mask,
+                autonomous_records.geometry_mask,
+            ),
         ):
-            torch.testing.assert_close(
-                expected[:, :1], actual, rtol=0.0, atol=0.0
+            self.assertTrue(torch.equal(
+                teacher_tensor, autonomous_tensor
+            ))
+        teacher_feedback = torch.cat(
+            (
+                teacher_records.node_type_ids.unsqueeze(-1),
+                teacher_records.categorical_ids,
+            ),
+            dim=-1,
+        )
+        autonomous_feedback = torch.cat(
+            (
+                autonomous_records.node_type_ids.unsqueeze(-1),
+                autonomous_records.categorical_ids,
+            ),
+            dim=-1,
+        )
+        self.assertTrue(torch.equal(
+            teacher_feedback, autonomous_feedback
+        ))
+        torch.testing.assert_close(
+            autonomous_records.constrained_parameters,
+            teacher_records.constrained_parameters,
+            rtol=1e-5,
+            atol=2e-7,
+        )
+        torch.testing.assert_close(
+            autonomous_records.geometry,
+            teacher_records.geometry,
+            rtol=1e-5,
+            atol=2e-7,
+        )
+        operation_ids = torch.tensor(
+            (
+                NODE_TYPES.id("extrude"),
+                NODE_TYPES.id("revolve"),
+            )
+        )
+        teacher_operation_count = (
+            teacher_node_ids.unsqueeze(-1) == operation_ids
+        ).any(dim=-1).sum(dim=-1)
+        autonomous_operation_count = (
+            autonomous_node_ids.unsqueeze(-1) == operation_ids
+        ).any(dim=-1).sum(dim=-1)
+        self.assertTrue(torch.equal(
+            teacher_operation_count, autonomous_operation_count
+        ))
+
+        first_full = replace(
+            full,
+            decoded_states=full.decoded_states[:, :1],
+            node_type_logits=full.node_type_logits[:, :1],
+            categorical_logits=tuple(
+                logits[:, :1] for logits in full.categorical_logits
+            ),
+            profile_family_logits=full.profile_family_logits[:, :1],
+            raw_profile_parameters=full.raw_profile_parameters[:, :1],
+            constrained_profile_parameters=(
+                full.constrained_profile_parameters[:, :1]
+            ),
+            non_profile_geometry=full.non_profile_geometry[:, :1],
+            non_profile_geometry_scattered=(
+                full.non_profile_geometry_scattered[:, :1]
+            ),
+            non_profile_geometry_mask=(
+                full.non_profile_geometry_mask[:, :1]
+            ),
+            training_primitive_type_ids=(
+                full.training_primitive_type_ids[:, :1]
+            ),
+            training_profile_geometry=(
+                full.training_profile_geometry[:, :1]
+            ),
+            training_profile_geometry_mask=(
+                full.training_profile_geometry_mask[:, :1]
+            ),
+            training_geometry=full.training_geometry[:, :1],
+            training_geometry_mask=full.training_geometry_mask[:, :1],
+            edge_presence_logits=full.edge_presence_logits[:, :1, :1],
+            edge_type_logits=full.edge_type_logits[:, :1, :1],
+            operation_pointer_logits=full.operation_pointer_logits[:, :, :1],
+        )
+        first_prefix = replace(
+            first_full,
+            decoded_states=prefix.decoded_states,
+            node_type_logits=prefix.node_type_logits,
+            categorical_logits=prefix.categorical_logits,
+            profile_family_logits=prefix.profile_family_logits,
+            raw_profile_parameters=prefix.raw_profile_parameters,
+            non_profile_geometry=prefix.non_profile_geometry,
+            edge_presence_logits=prefix_relations.edge_presence_logits,
+            edge_type_logits=prefix_relations.edge_type_logits,
+            operation_pointer_logits=(
+                prefix_relations.operation_pointer_logits
+            ),
+        )
+        teacher_predictions = v2_teacher_forced_predictions(
+            first_full,
+            node_mask=one_node_mask,
+            node_count_source="bos_equivalence",
+        )
+        autonomous_predictions = v2_teacher_forced_predictions(
+            first_prefix,
+            node_mask=one_node_mask,
+            node_count_source="bos_equivalence",
+        )
+        for teacher_prediction, autonomous_prediction in zip(
+            teacher_predictions, autonomous_predictions
+        ):
+            teacher_result = (
+                validate_and_convert_v2_teacher_forced_prediction(
+                    teacher_prediction,
+                    max_operations=self.config.max_operations,
+                )
+            )
+            autonomous_result = (
+                validate_and_convert_v2_teacher_forced_prediction(
+                    autonomous_prediction,
+                    max_operations=self.config.max_operations,
+                )
+            )
+            self.assertEqual(
+                teacher_result.raw_integrity,
+                autonomous_result.raw_integrity,
+            )
+            self.assertEqual(
+                teacher_result.reconstruction_target,
+                autonomous_result.reconstruction_target,
+            )
+            self.assertEqual(
+                teacher_result.controlled_domain,
+                autonomous_result.controlled_domain,
+            )
+            self.assertEqual(
+                (
+                    None
+                    if teacher_result.primary_failure is None
+                    else teacher_result.primary_failure.code
+                ),
+                (
+                    None
+                    if autonomous_result.primary_failure is None
+                    else autonomous_result.primary_failure.code
+                ),
+            )
+            self.assertEqual(
+                tuple(
+                    failure.code
+                    for failure in teacher_result.secondary_failures
+                ),
+                tuple(
+                    failure.code
+                    for failure in autonomous_result.secondary_failures
+                ),
             )
 
 
