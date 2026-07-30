@@ -7,19 +7,33 @@ import math
 import unittest
 
 from prototype.controlled_data.builders import build_history
+from prototype.controlled_data.config import GeneratorConfig
 from prototype.controlled_data.factors import PrimitiveFamily
 from prototype.model_data.canonical import (
     canonical_nodes_and_edges,
     reconstruction_target,
 )
-from prototype.model_data.geometry import GEOMETRY_WIDTH, NORMALIZED_MAX
+from prototype.model_data.geometry import (
+    GEOMETRY_WIDTH,
+    LENGTH_SCALE,
+    NORMALIZED_MAX,
+)
 from prototype.model_data.tests.fixtures import source
 from prototype.model_data.vocab import NODE_TYPES, PRIMITIVE_TYPES
 from prototype.profile_geometry import (
+    PROFILE_EXTENT_MAX,
+    PROFILE_EXTENT_MIN,
+    PROFILE_FAMILIES,
+    PROFILE_TEMPLATES,
     canonical_primitive_type_ids,
+    canonical_primitive_type_ids_from_family_id,
+    canonical_profile_template,
     construct_profile_geometry,
     extract_profile_parameters,
+    profile_family_from_id,
     profile_family_from_primitive_type_ids,
+    profile_family_id,
+    profile_family_id_from_primitive_type_ids,
 )
 from prototype.representation.model import GeometryEncoding
 
@@ -45,6 +59,31 @@ def _slot(values, slot, width):
 
 
 class ProfileGeometryTests(unittest.TestCase):
+    def test_profile_family_class_order_and_extent_bounds_are_frozen(self):
+        self.assertEqual(
+            PROFILE_FAMILIES,
+            (
+                PrimitiveFamily.CIRCLE,
+                PrimitiveFamily.RECTANGLE_LINES,
+                PrimitiveFamily.CAPSULE_LINE_ARC,
+            ),
+        )
+        self.assertEqual(PROFILE_EXTENT_MIN, 0.25)
+        self.assertEqual(PROFILE_EXTENT_MAX, 0.75)
+        physical_extents = (
+            GeneratorConfig.__dataclass_fields__["sketch_extents"].default
+        )
+        self.assertEqual(
+            PROFILE_EXTENT_MIN, min(physical_extents) / LENGTH_SCALE
+        )
+        self.assertEqual(
+            PROFILE_EXTENT_MAX, max(physical_extents) / LENGTH_SCALE
+        )
+        self.assertEqual(
+            tuple(template.family for template in PROFILE_TEMPLATES),
+            PROFILE_FAMILIES,
+        )
+
     def test_exact_primitive_family_mappings(self):
         none = PRIMITIVE_TYPES.id(None)
         arc = PRIMITIVE_TYPES.id("arc")
@@ -61,6 +100,49 @@ class ProfileGeometryTests(unittest.TestCase):
                 self.assertIs(
                     profile_family_from_primitive_type_ids(pattern), family
                 )
+                class_id = profile_family_id(family)
+                self.assertIs(profile_family_from_id(class_id), family)
+                self.assertEqual(
+                    profile_family_id_from_primitive_type_ids(pattern),
+                    class_id,
+                )
+                self.assertEqual(
+                    canonical_primitive_type_ids_from_family_id(class_id),
+                    pattern,
+                )
+
+    def test_templates_are_complete_and_drive_python_construction(self):
+        for family in PROFILE_FAMILIES:
+            template = canonical_profile_template(family)
+            with self.subTest(family=family.value):
+                self.assertEqual(
+                    len(template.geometry_coefficients), GEOMETRY_WIDTH
+                )
+                self.assertEqual(len(template.geometry_bias), GEOMETRY_WIDTH)
+                self.assertEqual(len(template.geometry_mask), GEOMETRY_WIDTH)
+                self.assertEqual(
+                    template.primitive_type_ids,
+                    canonical_primitive_type_ids(family),
+                )
+                values, mask = construct_profile_geometry(
+                    family, 0.3, -0.1, 0.5
+                )
+                expected = tuple(
+                    (
+                        coefficients[0] * 0.3
+                        + coefficients[1] * -0.1
+                        + coefficients[2] * 0.5
+                        + bias
+                    )
+                    if applicable else 0.0
+                    for coefficients, bias, applicable in zip(
+                        template.geometry_coefficients,
+                        template.geometry_bias,
+                        template.geometry_mask,
+                    )
+                )
+                self.assertEqual(values, expected)
+                self.assertEqual(mask, template.geometry_mask)
 
     def test_circle_center_radius_and_mask(self):
         values, mask = construct_profile_geometry(
@@ -106,38 +188,42 @@ class ProfileGeometryTests(unittest.TestCase):
         self.assertEqual(right_arc, (0.5, -0.125, 0.625, 0.0, 0.5, 0.125))
         self.assertEqual(left_arc, (0.25, 0.125, 0.125, 0.0, 0.25, -0.125))
 
-    def test_generator_targets_extract_and_reconstruct_exactly(self):
-        representatives = (
-            (PrimitiveFamily.CIRCLE, 1.0),
-            (PrimitiveFamily.RECTANGLE_LINES, 1.5),
-            (PrimitiveFamily.CAPSULE_LINE_ARC, 3.0),
+    def test_all_generator_targets_extract_and_reconstruct_exactly(self):
+        physical_extents = (
+            GeneratorConfig.__dataclass_fields__["sketch_extents"].default
         )
         for encoding in GeometryEncoding:
-            for family, physical_extent in representatives:
-                with self.subTest(
-                    encoding=encoding.value, family=family.value
-                ):
-                    target = _target(family, physical_extent, encoding)
-                    index = _sketch_index(target)
-                    parameters = extract_profile_parameters(target, index)
-                    self.assertIs(parameters.family, family)
-                    self.assertEqual(
-                        parameters.extent, physical_extent / 4.0
-                    )
-                    self.assertEqual(
-                        parameters.center_x,
-                        (0.5 + physical_extent / 2.0) / 4.0,
-                    )
-                    self.assertEqual(parameters.center_y, 0.0)
-                    self.assertEqual(
-                        construct_profile_geometry(
-                            parameters.family,
+            for family in PROFILE_FAMILIES:
+                for physical_extent in physical_extents:
+                    with self.subTest(
+                        encoding=encoding.value,
+                        family=family.value,
+                        extent=physical_extent,
+                    ):
+                        target = _target(family, physical_extent, encoding)
+                        index = _sketch_index(target)
+                        parameters = extract_profile_parameters(target, index)
+                        self.assertIs(parameters.family, family)
+                        self.assertEqual(
+                            parameters.extent, physical_extent / LENGTH_SCALE
+                        )
+                        self.assertEqual(
                             parameters.center_x,
-                            parameters.center_y,
-                            parameters.extent,
-                        ),
-                        (target.geometry[index], target.geometry_mask[index]),
-                    )
+                            (0.5 + physical_extent / 2.0) / LENGTH_SCALE,
+                        )
+                        self.assertEqual(parameters.center_y, 0.0)
+                        self.assertEqual(
+                            construct_profile_geometry(
+                                parameters.family,
+                                parameters.center_x,
+                                parameters.center_y,
+                                parameters.extent,
+                            ),
+                            (
+                                target.geometry[index],
+                                target.geometry_mask[index],
+                            ),
+                        )
 
     def test_positive_extent_is_enforced(self):
         for extent in (0.0, -0.1):
