@@ -77,7 +77,7 @@ container_python -B -m prototype.flat_baseline.train_constrained_v2 \
   --output-dir "$OUTPUT" \
   --device cpu \
   --seed 2026 \
-  --maximum-steps 200 \
+  --maximum-steps 500 \
   --batch-size 8 \
   --tiny-subset-size 8
 

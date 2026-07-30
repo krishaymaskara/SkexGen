@@ -49,6 +49,7 @@ V2_TRAINING_LOSS_FIELDS = (
     "operation_pointer_loss",
     "vq_commitment_loss",
 )
+V2_TINY_EVALUATION_MILESTONES = (100, 200)
 V2_CHECKPOINT_FIELDS = {
     "checkpoint_version",
     "model_name",
@@ -667,6 +668,23 @@ def run_v2_tiny_overfit(
         history.append(result.metrics)
         if step == 1 or step % training_config.logging_cadence == 0:
             logger.write({"event": "training_step", **result.metrics})
+        if (
+            step in V2_TINY_EVALUATION_MILESTONES
+            and step < training_config.maximum_steps
+        ):
+            milestone_snapshot = _aggregate_evaluation_snapshots(
+                model,
+                batches,
+                model_config,
+                training_config,
+                device,
+                torch_module=torch_module,
+            )
+            logger.write({
+                "event": "milestone_evaluation_snapshot",
+                "global_step": step,
+                **milestone_snapshot.metrics,
+            })
         if step % training_config.checkpoint_cadence == 0:
             payload = v2_checkpoint_payload(
                 model,

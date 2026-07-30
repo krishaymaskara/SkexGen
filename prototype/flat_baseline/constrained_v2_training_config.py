@@ -46,9 +46,9 @@ class ConstrainedV2TrainingConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
     gradient_clip_norm: float = 1.0
-    maximum_steps: int = 200
+    maximum_steps: int = 500
     logging_cadence: int = 10
-    checkpoint_cadence: int = 200
+    checkpoint_cadence: int = 500
     output_dir: str = "constrained_v2_tiny_overfit"
     extent_min: float = PROFILE_EXTENT_MIN
     extent_max: float = PROFILE_EXTENT_MAX

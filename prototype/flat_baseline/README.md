@@ -606,6 +606,13 @@ and writes a strict version-2 checkpoint. It does not load a validation or test
 payload, perform validation-based checkpoint selection, initialize from a V1
 checkpoint, or constitute a full pilot or scientific result.
 
+The bounded smoke evaluates deterministic snapshots at steps 100 and 200 for
+diagnostics and makes its success decision only from the initial snapshot and
+the completed step-500 snapshot. A synthetic train-fixture diagnostic found
+that 100 steps can be insufficient during a temporary fresh-normal VQ/EMA
+code-assignment transition, while the unchanged objective recovered by step
+200. No VQ freeze or warmup policy was adopted.
+
 The authoritative CPU wrapper is
 `adroit/constrained_v2_tiny_overfit_cpu.slurm`; set `REVIEWED_COMMIT` to the
 reviewed clean commit before submission.
