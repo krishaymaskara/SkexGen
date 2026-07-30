@@ -553,13 +553,50 @@ class ConstrainedProfileV2TensorTests(unittest.TestCase):
             family_ids, parameters, mask
         )
         target = {key: value.clone() for key, value in self.target.items()}
+        sequence_shape = target["node_mask"].shape
+        self.assertEqual(target["node_type_ids"].shape, sequence_shape)
+        self.assertEqual(
+            target["categorical_attributes"].shape[:2], sequence_shape
+        )
+        self.assertEqual(target["geometry"].shape[:2], sequence_shape)
+        self.assertEqual(target["geometry_mask"].shape[:2], sequence_shape)
+        self.assertEqual(profile_targets.family_ids.shape, sequence_shape)
+        self.assertEqual(profile_targets.parameters.shape[:2], sequence_shape)
+        self.assertEqual(profile_targets.sketch_mask.shape, sequence_shape)
+
         original_sketches = self.profile_targets.sketch_mask
+        original_profiles = (
+            target["node_mask"]
+            & (target["node_type_ids"] == NODE_TYPES.id("profile"))
+        )
+        self.assertTrue(
+            torch.equal(
+                original_sketches.sum(dim=1),
+                original_profiles.sum(dim=1),
+            )
+        )
         target["node_type_ids"][original_sketches] = NODE_TYPES.id("profile")
-        target["categorical_attributes"][
-            original_sketches, 4:8
-        ] = PRIMITIVE_TYPES.id(None)
-        target["geometry"][original_sketches, 9:33] = 0.0
-        target["geometry_mask"][original_sketches, 9:33] = False
+        target["categorical_attributes"][original_sketches] = (
+            self.target["categorical_attributes"][original_profiles]
+        )
+        target["boolean_mode_targets"][original_sketches] = (
+            self.target["boolean_mode_targets"][original_profiles]
+        )
+        target["geometry"][original_sketches] = self.target["geometry"][
+            original_profiles
+        ]
+        target["geometry_mask"][original_sketches] = (
+            self.target["geometry_mask"][original_profiles]
+        )
+        self.assertTrue(
+            torch.equal(target["node_mask"], self.target["node_mask"])
+        )
+        self.assertFalse(
+            (
+                target["node_mask"]
+                & (target["node_type_ids"] == NODE_TYPES.id("sketch"))
+            ).any()
+        )
         losses = constrained_profile_v2_loss(
             output, target, profile_targets, self.config
         )
@@ -568,6 +605,8 @@ class ConstrainedProfileV2TensorTests(unittest.TestCase):
         self.assertEqual(losses.profile_family_count, 0)
         self.assertEqual(losses.profile_parameter_count, 0)
         (losses.profile_family + losses.profile_parameter).backward()
+        self.assertIsNotNone(family_logits.grad)
+        self.assertIsNotNone(raw_parameters.grad)
         self.assertFalse(family_logits.grad.any())
         self.assertFalse(raw_parameters.grad.any())
 
