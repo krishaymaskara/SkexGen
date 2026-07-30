@@ -250,6 +250,91 @@ class ConstrainedV2ConversionTensorTests(unittest.TestCase):
             node_count_source="authoritative_node_mask_length_only",
         )
 
+    def test_real_forward_non_profile_geometry_layout_is_accepted(self):
+        batch_size, node_count = self.target["node_mask"].shape
+        expected_nodes = (batch_size, node_count)
+        self.assertEqual(expected_nodes, (3, 8))
+        self.assertEqual(
+            tuple(self.model_output.node_type_logits.shape),
+            expected_nodes + (len(NODE_TYPES.tokens),),
+        )
+        self.assertEqual(
+            tuple(self.model_output.profile_family_logits.shape),
+            expected_nodes + (len(PROFILE_FAMILIES),),
+        )
+        self.assertEqual(
+            tuple(self.model_output.raw_profile_parameters.shape),
+            expected_nodes + (3,),
+        )
+        self.assertEqual(
+            tuple(self.model_output.non_profile_geometry.shape),
+            expected_nodes + (len(NON_PROFILE_GEOMETRY_INDICES),),
+        )
+        self.assertEqual(
+            tuple(self.output.non_profile_geometry.shape),
+            expected_nodes + (len(NON_PROFILE_GEOMETRY_INDICES),),
+        )
+        self.assertEqual(
+            tuple(self.model_output.training_geometry.shape),
+            expected_nodes + (39,),
+        )
+        self.assertEqual(
+            tuple(self.model_output.edge_presence_logits.shape),
+            expected_nodes + (node_count,),
+        )
+        self.assertEqual(
+            tuple(self.model_output.edge_type_logits.shape),
+            expected_nodes + (node_count, len(EDGE_TYPES.tokens)),
+        )
+        self.assertEqual(
+            tuple(self.model_output.operation_pointer_logits.shape),
+            (batch_size, self.config.max_operations, node_count),
+        )
+        self.assertEqual(
+            tuple(
+                tuple(value.shape)
+                for value in self.model_output.categorical_logits
+            ),
+            tuple(
+                expected_nodes + (len(vocabulary.tokens),)
+                for vocabulary in _RETAINED_VOCABULARIES
+            ),
+        )
+        predictions = v2_teacher_forced_predictions(
+            self.model_output,
+            node_mask=self.target["node_mask"],
+            node_count_source="authoritative_node_mask_length_only",
+        )
+        self.assertEqual(len(predictions), batch_size)
+
+    def test_malformed_non_profile_geometry_layouts_are_rejected(self):
+        values = self.output.non_profile_geometry
+        malformed = (
+            ("missing node axis", values[:, 0, :]),
+            ("swapped node and channel axes", values.transpose(1, 2)),
+            (
+                "full serialized geometry width",
+                torch.zeros(
+                    values.shape[:2] + (39,),
+                    dtype=values.dtype,
+                    device=values.device,
+                ),
+            ),
+            ("wrong batch size", values[:-1]),
+            ("wrong node count", values[:, :-1]),
+        )
+        for label, candidate in malformed:
+            with self.subTest(label=label, shape=tuple(candidate.shape)):
+                with self.assertRaisesRegex(
+                    ValueError, "non_profile_geometry is misaligned"
+                ):
+                    self._predictions(
+                        replace(
+                            self.output,
+                            non_profile_geometry=candidate,
+                        )
+                    )
+
     def test_all_families_convert_to_valid_internal_profiles(self):
         predictions = self._predictions()
         self.assertEqual(len(predictions), 3)

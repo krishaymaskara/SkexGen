@@ -353,33 +353,39 @@ def _validate_conversion_inputs(output, node_mask, node_count_source):
     batch_size, node_count = node_mask.shape
     expected_nodes = (batch_size, node_count)
     float_fields = (
-        ("node_type_logits", output.node_type_logits, 3),
-        ("profile_family_logits", output.profile_family_logits, 3),
-        ("raw_profile_parameters", output.raw_profile_parameters, 3),
+        (
+            "node_type_logits",
+            output.node_type_logits,
+            expected_nodes + (len(NODE_TYPES.tokens),),
+        ),
+        (
+            "profile_family_logits",
+            output.profile_family_logits,
+            expected_nodes + (len(PROFILE_FAMILIES),),
+        ),
+        (
+            "raw_profile_parameters",
+            output.raw_profile_parameters,
+            expected_nodes + (3,),
+        ),
         (
             "non_profile_geometry",
             output.non_profile_geometry,
-            NON_PROFILE_GEOMETRY_WIDTH,
+            expected_nodes + (NON_PROFILE_GEOMETRY_WIDTH,),
         ),
     )
-    for name, value, rank in float_fields:
+    for name, value, expected_shape in float_fields:
         if (
             not torch.is_tensor(value)
             or not value.dtype.is_floating_point
         ):
             raise TypeError("{} must be floating point".format(name))
-        if value.dim() != rank or value.shape[:2] != expected_nodes:
+        if tuple(value.shape) != expected_shape:
             raise ValueError("{} is misaligned".format(name))
         if value.device != node_mask.device:
             raise ValueError("{} must share node_mask device".format(name))
         if not torch.isfinite(value).all():
             raise ValueError("{} must be finite".format(name))
-    if output.node_type_logits.size(-1) != len(NODE_TYPES.tokens):
-        raise ValueError("node_type_logits has the wrong class width")
-    if output.profile_family_logits.size(-1) != len(PROFILE_FAMILIES):
-        raise ValueError("profile_family_logits must have width three")
-    if output.raw_profile_parameters.size(-1) != 3:
-        raise ValueError("raw_profile_parameters must have width three")
 
     if (
         not isinstance(output.categorical_logits, tuple)
