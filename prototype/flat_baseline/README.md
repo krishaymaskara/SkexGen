@@ -590,6 +590,26 @@ must be established separately. Current verified project state and
 limitations are tracked in
 [the project status](../../docs/status.md).
 
+## Constrained-profile V2 tiny training
+
+The Stage 2E smoke workflow is additive and train-only:
+
+```bash
+python -m prototype.flat_baseline.train_constrained_v2 \
+  --corpus-dir /path/to/controlled-corpus \
+  --output-dir /new/path/v2-tiny-overfit
+```
+
+It deterministically selects 6–12 training-partition examples, uses fresh
+normal VQ initialization, performs at most 500 teacher-forced optimizer steps,
+and writes a strict version-2 checkpoint. It does not load a validation or test
+payload, perform validation-based checkpoint selection, initialize from a V1
+checkpoint, or constitute a full pilot or scientific result.
+
+The authoritative CPU wrapper is
+`adroit/constrained_v2_tiny_overfit_cpu.slurm`; set `REVIEWED_COMMIT` to the
+reviewed clean commit before submission.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
