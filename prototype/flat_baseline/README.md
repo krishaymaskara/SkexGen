@@ -617,6 +617,43 @@ The authoritative CPU wrapper is
 `adroit/constrained_v2_tiny_overfit_cpu.slurm`; set `REVIEWED_COMMIT` to the
 reviewed clean commit before submission.
 
+## Constrained-profile V2 ordinary-validation pilot
+
+Stage 2F adds an engineering pilot that starts a fresh V2 model with normal
+VQ initialization, trains on the complete authorized training partition for
+exactly two shuffled deterministic epochs (batch size 8), and evaluates the
+complete ordinary IID validation partition after each epoch:
+
+```bash
+python -m prototype.flat_baseline.run_constrained_v2_pilot \
+  --corpus-dir /path/to/controlled-corpus \
+  --output-dir /new/immutable/path/v2-iid-pilot \
+  --device cpu
+```
+
+The two-epoch budget is 136 optimizer steps and 1,088 example presentations
+for the authoritative 544-family training partition. It is the smaller
+meaningful budget considered for the CPU pilot: every training family is seen
+twice, without extending the run in response to validation results.
+
+Teacher-forced validation reports every V2 loss component, applicable profile
+counts, family confusion and per-class accuracy, family-routed compact
+parameter errors, and VQ usage. Length-conditioned autonomous validation
+reports validity by profile, node count, operation family, and operation
+count; family confusion; finite/canonical/conversion rates; and registered
+conversion failure codes. The final checkpoint is always saved. The
+lowest ordinary-validation total-loss checkpoint is identified only as
+predeclared diagnostic metadata, then strictly reloaded to reproduce both
+validation summaries without VQ EMA mutation.
+
+This workflow is ordinary-validation-only. It rejects systematic and held-out
+test access, never initializes from V1 or a prior V2 checkpoint, performs no
+hyperparameter search or early stopping, and is not a final training run or a
+V1-versus-V2 scientific comparison. The authoritative CPU wrapper is
+`adroit/constrained_v2_pilot_cpu.slurm`; it must be submitted only after
+setting `REVIEWED_COMMIT` to the reviewed clean Stage 2F commit. No pilot
+success is claimed until that Slurm job completes.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
