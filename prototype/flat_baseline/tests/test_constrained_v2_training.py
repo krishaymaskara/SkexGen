@@ -38,9 +38,11 @@ if torch is not None:
         V2_CHECKPOINT_FIELDS,
         V2_TRAINING_LOSS_FIELDS,
         build_v2_optimizer,
+        constrained_v2_evaluation_snapshot,
         constrained_v2_training_step,
         load_v2_checkpoint,
         load_v2_tiny_training_selection,
+        operation_coverage_for_example,
         run_v2_tiny_overfit,
         save_v2_checkpoint,
         select_v2_tiny_training_examples,
@@ -151,26 +153,26 @@ class ConstrainedV2TrainingTensorTests(unittest.TestCase):
         self.training_config = ConstrainedV2TrainingConfig(
             seed=37,
             batch_size=8,
-            learning_rate=1e-2,
-            maximum_steps=40,
+            learning_rate=1e-3,
+            maximum_steps=100,
             logging_cadence=10,
-            checkpoint_cadence=40,
+            checkpoint_cadence=100,
             output_dir=str(Path(self.temporary.name) / "run"),
             require_clean_source=False,
         )
         self.model_config = ConstrainedProfileV2Config(
-            model_dim=16,
-            num_heads=2,
-            feedforward_dim=24,
+            model_dim=32,
+            num_heads=4,
+            feedforward_dim=64,
             encoder_layers=1,
             decoder_layers=1,
             dropout=0.0,
             max_nodes=10,
             max_operations=2,
-            latent_tokens=1,
-            codebook_size=8,
-            codebook_dim=8,
-            edge_pair_dim=12,
+            latent_tokens=2,
+            codebook_size=16,
+            codebook_dim=16,
+            edge_pair_dim=32,
         )
         self.selection = load_v2_tiny_training_selection(
             self.corpus, self.training_config
@@ -216,7 +218,15 @@ class ConstrainedV2TrainingTensorTests(unittest.TestCase):
             count > 0 for count in first.family_counts.values()
         ))
         self.assertEqual(
-            set(first.operation_coverage), {"extrude", "revolve"}
+            set(first.exact_operation_types),
+            {"extrude_1", "revolve_1", "revolve_2"},
+        )
+        self.assertEqual(
+            set(first.operation_families), {"extrude", "revolve"}
+        )
+        self.assertEqual(
+            first.selected_example_ids,
+            tuple(item.physical_family_id for item in physical),
         )
         self.assertIn(8, first.node_count_distribution)
         self.assertFalse(first.missing_coverage)
@@ -224,6 +234,27 @@ class ConstrainedV2TrainingTensorTests(unittest.TestCase):
         self.assertEqual(first.metadata()["validation_partition"], "none")
         self.assertFalse(first.metadata()["test_partition_accessed"])
         self.assertEqual(len(first.train_selection_sha256), 64)
+        exact, families = operation_coverage_for_example(physical[0])
+        self.assertEqual(exact, physical[0].operation_sequence)
+        self.assertEqual(
+            families,
+            tuple(
+                next(
+                    node.operation_type
+                    for node in physical[0].nodes
+                    if node.node_id == operation_id
+                )
+                for operation_id in exact
+            ),
+        )
+
+        malformed = replace(
+            physical[0], operation_sequence=("loft_1",)
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "unsupported_operation_type"
+        ):
+            operation_coverage_for_example(malformed)
 
     def test_partition_rejection_occurs_before_loader_or_model(self):
         invalid = replace(
@@ -307,17 +338,230 @@ class ConstrainedV2TrainingTensorTests(unittest.TestCase):
         ))
 
     def test_total_and_both_profile_losses_decrease_on_repeated_batch(self):
+        from prototype.constrained_profile_decoder import (
+            profile_targets_for_loss,
+        )
+        from prototype.flat_baseline.constrained_v2_losses import (
+            constrained_profile_v2_loss,
+        )
+
+        # Training-step losses observe a changing EMA codebook. Fixed-batch
+        # evaluation snapshots provide deterministic before/after comparisons
+        # without updating EMA state or sampling different batch compositions.
+        initial_ema = {
+            name: value.clone()
+            for name, value in self.model.vq.state_dict().items()
+        }
+        self.assertTrue(self.model.training)
+        initial = constrained_v2_evaluation_snapshot(
+            self.model,
+            self.batch,
+            self.model_config,
+            self.training_config,
+            torch.device("cpu"),
+        )
+        self.assertTrue(self.model.training)
+        for name, expected in initial_ema.items():
+            torch.testing.assert_close(
+                expected,
+                self.model.vq.state_dict()[name],
+                rtol=0.0,
+                atol=0.0,
+            )
+
+        inputs = self.batch.to_torch(torch)
+        target = self.batch.target.to_torch(torch)
+        profile_targets = profile_targets_for_loss(
+            self.batch.target, inputs["geometry"]
+        )
+        self.model.eval()
+        output = self.model(
+            target=target,
+            profile_targets=profile_targets,
+            **inputs
+        )
+        losses = constrained_profile_v2_loss(
+            output, target, profile_targets, self.model_config
+        )
+        self.model.train()
+        selected_ids = profile_targets.family_ids[
+            profile_targets.sketch_mask
+        ]
+        self.assertEqual(
+            profile_targets.sketch_mask.shape,
+            target["node_mask"].shape,
+        )
+        self.assertEqual(
+            int(profile_targets.sketch_mask.sum().item()), 11
+        )
+        self.assertEqual(
+            selected_ids.tolist(),
+            [0, 0, 0, 2, 1, 1, 1, 0, 1, 2, 2],
+        )
+        self.assertTrue(
+            (profile_targets.family_ids[
+                ~profile_targets.sketch_mask
+            ] == -1).all()
+        )
+        self.assertEqual(
+            tuple(item.value for item in PROFILE_FAMILIES),
+            self.model_config.profile_family_order,
+        )
+        self.assertEqual(
+            output.profile_family_logits.shape,
+            profile_targets.family_ids.shape + (len(PROFILE_FAMILIES),),
+        )
+        self.assertEqual(
+            self.model_config.profile_family_loss_weight, 1.0
+        )
+        self.assertEqual(losses.profile_family_count, 11)
+        self.assertEqual(
+            torch.bincount(
+                selected_ids, minlength=len(PROFILE_FAMILIES)
+            ).tolist(),
+            [4, 4, 3],
+        )
+        self.assertTrue(output.profile_family_logits.requires_grad)
+        self.assertTrue(losses.profile_family.requires_grad)
+        weighted_total = (
+            self.model_config.node_type_loss_weight * losses.node_type
+            + self.model_config.categorical_loss_weight
+            * losses.categorical_attributes
+            + self.model_config.geometry_loss_weight
+            * losses.non_profile_geometry
+            + self.model_config.profile_family_loss_weight
+            * losses.profile_family
+            + self.model_config.profile_parameter_loss_weight
+            * losses.profile_parameter
+            + self.model_config.edge_presence_loss_weight
+            * losses.edge_presence
+            + self.model_config.edge_type_loss_weight * losses.edge_type
+            + self.model_config.operation_pointer_loss_weight
+            * losses.operation_pointer
+            + self.model_config.vq_loss_weight * losses.vq_commitment
+        )
+        torch.testing.assert_close(
+            losses.total, weighted_total, rtol=1e-6, atol=1e-7
+        )
+        family_total_gradient = torch.autograd.grad(
+            losses.total,
+            output.profile_family_logits,
+            retain_graph=True,
+        )[0]
+        parameter_total_gradient = torch.autograd.grad(
+            losses.total,
+            output.raw_profile_parameters,
+            retain_graph=True,
+        )[0]
+        self.assertTrue(torch.isfinite(family_total_gradient).all())
+        self.assertTrue(torch.isfinite(parameter_total_gradient).all())
+        self.assertGreater(
+            float(family_total_gradient.norm().item()), 0.0
+        )
+        self.assertGreater(
+            float(parameter_total_gradient.norm().item()), 0.0
+        )
+        optimized = tuple(
+            parameter
+            for group in self.optimizer.param_groups
+            for parameter in group["params"]
+        )
+        self.assertEqual(
+            sum(
+                parameter is self.model.profile_heads.family_head.weight
+                for parameter in optimized
+            ),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                parameter is self.model.profile_heads.parameter_head.weight
+                for parameter in optimized
+            ),
+            1,
+        )
+        for name, expected in initial_ema.items():
+            torch.testing.assert_close(
+                expected,
+                self.model.vq.state_dict()[name],
+                rtol=0.0,
+                atol=0.0,
+            )
+        del output, losses, weighted_total
+
+        family_before = (
+            self.model.profile_heads.family_head.weight.detach().clone()
+        )
+        parameter_before = (
+            self.model.profile_heads.parameter_head.weight.detach().clone()
+        )
+        family_gradient_norms = []
+        parameter_gradient_norms = []
         history = []
-        for step in range(1, 41):
-            history.append(self._step(step).metrics)
+        for step in range(1, 101):
+            result = self._step(step)
+            history.append(result.metrics)
+            family_gradient_norms.append(float(
+                self.model.profile_heads.family_head.weight.grad.norm().item()
+            ))
+            parameter_gradient_norms.append(float(
+                self.model.profile_heads.parameter_head.weight.grad.norm().item()
+            ))
+        self.assertTrue(all(
+            math.isfinite(value) and value > 0.0
+            for value in family_gradient_norms
+        ))
+        self.assertTrue(all(
+            math.isfinite(value) and value > 0.0
+            for value in parameter_gradient_norms
+        ))
+        self.assertFalse(torch.equal(
+            family_before, self.model.profile_heads.family_head.weight
+        ))
+        self.assertFalse(torch.equal(
+            parameter_before, self.model.profile_heads.parameter_head.weight
+        ))
+        self.assertTrue(all(
+            math.isfinite(float(value))
+            for row in history
+            for value in row.values()
+        ))
+        self.assertTrue(any(
+            not torch.equal(value, self.model.vq.state_dict()[name])
+            for name, value in initial_ema.items()
+        ))
+
+        final_ema = {
+            name: value.clone()
+            for name, value in self.model.vq.state_dict().items()
+        }
+        final = constrained_v2_evaluation_snapshot(
+            self.model,
+            self.batch,
+            self.model_config,
+            self.training_config,
+            torch.device("cpu"),
+        )
+        self.assertTrue(self.model.training)
+        for name, expected in final_ema.items():
+            torch.testing.assert_close(
+                expected,
+                self.model.vq.state_dict()[name],
+                rtol=0.0,
+                atol=0.0,
+            )
         for name in (
             "total_loss",
             "profile_family_loss",
             "profile_parameter_loss",
         ):
-            initial = sum(item[name] for item in history[:5]) / 5.0
-            final = sum(item[name] for item in history[-5:]) / 5.0
-            self.assertLess(final, initial, name)
+            self.assertLess(
+                final.metrics[name],
+                initial.metrics[name],
+                "{}: initial={!r}, final={!r}".format(
+                    name, initial.metrics[name], final.metrics[name]
+                ),
+            )
 
     def test_nonfinite_loss_gradient_parameter_and_optimizer_failures(self):
         with mock.patch(

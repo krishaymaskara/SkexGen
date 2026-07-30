@@ -15,6 +15,7 @@ from prototype.model_data.adapters import adapt_flat_mixed
 from prototype.model_data.batching import collate_flat
 from prototype.model_data.loader import load_partition_physical_examples
 from prototype.profile_geometry import PROFILE_FAMILIES
+from prototype.representation.model import NodeType
 
 from .checkpointing import capture_rng_state, save_checkpoint
 from .constrained_v2 import ConstrainedProfileV2Model
@@ -85,7 +86,8 @@ class TinyOverfitSelection:
     selected_example_ids: tuple
     selection_rule: str
     family_counts: dict
-    operation_coverage: tuple
+    exact_operation_types: tuple
+    operation_families: tuple
     node_count_distribution: tuple
     missing_coverage: tuple
     corpus_dir: str
@@ -98,7 +100,8 @@ class TinyOverfitSelection:
             "selected_example_ids": list(self.selected_example_ids),
             "selection_rule": self.selection_rule,
             "family_counts": dict(self.family_counts),
-            "operation_coverage": list(self.operation_coverage),
+            "exact_operation_types": list(self.exact_operation_types),
+            "operation_families": list(self.operation_families),
             "node_count_distribution": list(self.node_count_distribution),
             "missing_coverage": list(self.missing_coverage),
             "corpus_dir": self.corpus_dir,
@@ -114,6 +117,11 @@ class TinyOverfitSelection:
 class V2TrainingStepResult:
     metrics: dict
     gradient_parameter_names: tuple
+
+
+@dataclass(frozen=True)
+class V2LossSnapshot:
+    metrics: dict
 
 
 @dataclass(frozen=True)
@@ -178,13 +186,25 @@ def select_v2_tiny_training_examples(
     selected = []
     selected_ids = set()
     family_names = tuple(item.value for item in PROFILE_FAMILIES)
+    operation_coverage = {
+        item.physical_family_id: operation_coverage_for_example(item)
+        for item in ordered
+    }
     goals = tuple(
         ("family:{}".format(name), lambda item, name=name:
          item.metadata.primitive_family == name)
         for name in family_names
     ) + (
-        ("operation:extrude", lambda item: "extrude" in item.operation_sequence),
-        ("operation:revolve", lambda item: "revolve" in item.operation_sequence),
+        (
+            "operation:extrude",
+            lambda item: "extrude"
+            in operation_coverage[item.physical_family_id][1],
+        ),
+        (
+            "operation:revolve",
+            lambda item: "revolve"
+            in operation_coverage[item.physical_family_id][1],
+        ),
         ("multi_operation", lambda item: len(item.operation_sequence) > 1),
     )
     for unused_name, predicate in goals:
@@ -225,8 +245,15 @@ def select_v2_tiny_training_examples(
         name: sum(item.metadata.primitive_family == name for item in selected)
         for name in family_names
     }
-    operations = tuple(sorted({
-        operation for item in selected for operation in item.operation_sequence
+    exact_operations = tuple(sorted({
+        operation
+        for item in selected
+        for operation in operation_coverage[item.physical_family_id][0]
+    }))
+    operation_families = tuple(sorted({
+        family
+        for item in selected
+        for family in operation_coverage[item.physical_family_id][1]
     }))
     missing = tuple(
         name for name, predicate in goals
@@ -256,7 +283,8 @@ def select_v2_tiny_training_examples(
         selected_example_ids,
         V2_TINY_SELECTION_IDENTITY,
         observed_families,
-        operations,
+        exact_operations,
+        operation_families,
         tuple(sorted(len(item.nodes) for item in selected)),
         missing,
         str(corpus_dir),
@@ -264,6 +292,39 @@ def select_v2_tiny_training_examples(
         str(split_name),
         "train",
     )
+
+
+def operation_coverage_for_example(physical_example):
+    """Return exact operation IDs and typed extrusion/revolution families."""
+
+    nodes = {
+        node.node_id: node for node in physical_example.nodes
+    }
+    if len(nodes) != len(physical_example.nodes):
+        raise ConstrainedV2TrainingError(
+            "invalid_operation_coverage",
+            "canonical node IDs must be unique",
+        )
+    supported = {
+        NodeType.EXTRUDE.value,
+        NodeType.REVOLVE.value,
+    }
+    families = []
+    for operation_id in physical_example.operation_sequence:
+        node = nodes.get(operation_id)
+        if (
+            node is None
+            or node.node_type not in supported
+            or node.operation_type != node.node_type
+        ):
+            raise ConstrainedV2TrainingError(
+                "unsupported_operation_type",
+                "operation {!r} has no supported typed node".format(
+                    operation_id
+                ),
+            )
+        families.append(node.operation_type)
+    return tuple(physical_example.operation_sequence), tuple(families)
 
 
 def build_v2_optimizer(model, training_config, torch_module=torch):
@@ -380,6 +441,53 @@ def constrained_v2_training_step(
         examples_processed,
     )
     return V2TrainingStepResult(metrics, gradient_names)
+
+
+def constrained_v2_evaluation_snapshot(
+    model,
+    batch,
+    model_config,
+    training_config,
+    device,
+    *,
+    torch_module=torch,
+) -> V2LossSnapshot:
+    """Evaluate one fixed teacher-forced batch without gradients or EMA updates."""
+
+    _validate_model_and_training_config(model_config, training_config)
+    was_training = model.training
+    try:
+        model.eval()
+        inputs = {
+            name: value.to(device)
+            for name, value in batch.to_torch(torch_module).items()
+        }
+        target = {
+            name: value.to(device)
+            for name, value in batch.target.to_torch(torch_module).items()
+        }
+        profile_targets = profile_targets_for_loss(
+            batch.target, inputs["geometry"]
+        )
+        with torch_module.no_grad():
+            output = model(
+                target=target,
+                profile_targets=profile_targets,
+                **inputs
+            )
+            _validate_training_output(output, torch_module)
+            losses = constrained_profile_v2_loss(
+                output, target, profile_targets, model_config
+            )
+        for name, value in losses.as_dict().items():
+            _require_finite_tensor(
+                value,
+                "nonfinite_evaluation_{}_loss".format(name),
+                torch_module,
+            )
+        return V2LossSnapshot(_loss_metrics(losses))
+    finally:
+        model.train(was_training)
 
 
 def v2_checkpoint_payload(
@@ -526,6 +634,18 @@ def run_v2_tiny_overfit(
         collate_flat(selection.examples[index:index + training_config.batch_size])
         for index in range(0, len(selection.examples), training_config.batch_size)
     )
+    initial_snapshot = _aggregate_evaluation_snapshots(
+        model,
+        batches,
+        model_config,
+        training_config,
+        device,
+        torch_module=torch_module,
+    )
+    logger.write({
+        "event": "initial_evaluation_snapshot",
+        **initial_snapshot.metrics,
+    })
     family_before = model.profile_heads.family_head.weight.detach().clone()
     parameter_before = model.profile_heads.parameter_head.weight.detach().clone()
     history = []
@@ -563,8 +683,26 @@ def run_v2_tiny_overfit(
                 payload,
                 torch_module,
             )
+    final_snapshot = _aggregate_evaluation_snapshots(
+        model,
+        batches,
+        model_config,
+        training_config,
+        device,
+        torch_module=torch_module,
+    )
+    logger.write({
+        "event": "final_evaluation_snapshot",
+        **final_snapshot.metrics,
+    })
     criteria = _tiny_success_criteria(
-        history, model, family_before, parameter_before, selection
+        history,
+        initial_snapshot,
+        final_snapshot,
+        model,
+        family_before,
+        parameter_before,
+        selection,
     )
     final_path = output_dir / "final.pt"
     payload = v2_checkpoint_payload(
@@ -693,6 +831,86 @@ def _step_metrics(
     return metrics
 
 
+def _loss_metrics(losses):
+    metrics = {
+        "total_loss": float(losses.total.detach().cpu().item()),
+        "node_type_loss": float(losses.node_type.detach().cpu().item()),
+        "remaining_categorical_loss": float(
+            losses.categorical_attributes.detach().cpu().item()
+        ),
+        "profile_family_loss": float(
+            losses.profile_family.detach().cpu().item()
+        ),
+        "profile_parameter_loss": float(
+            losses.profile_parameter.detach().cpu().item()
+        ),
+        "non_profile_geometry_loss": float(
+            losses.non_profile_geometry.detach().cpu().item()
+        ),
+        "edge_presence_loss": float(
+            losses.edge_presence.detach().cpu().item()
+        ),
+        "edge_type_loss": float(losses.edge_type.detach().cpu().item()),
+        "operation_pointer_loss": float(
+            losses.operation_pointer.detach().cpu().item()
+        ),
+        "vq_commitment_loss": float(
+            losses.vq_commitment.detach().cpu().item()
+        ),
+        "profile_family_count": losses.profile_family_count,
+        "profile_parameter_count": losses.profile_parameter_count,
+    }
+    if not all(math.isfinite(float(value)) for value in metrics.values()):
+        raise ConstrainedV2TrainingError(
+            "nonfinite_evaluation_metric",
+            "evaluation snapshot metrics must be finite",
+        )
+    return metrics
+
+
+def _aggregate_evaluation_snapshots(
+    model,
+    batches,
+    model_config,
+    training_config,
+    device,
+    *,
+    torch_module,
+):
+    weighted = {name: 0.0 for name in V2_TRAINING_LOSS_FIELDS}
+    family_count = 0
+    parameter_count = 0
+    example_count = 0
+    for batch in batches:
+        current_count = len(batch.family_ids)
+        snapshot = constrained_v2_evaluation_snapshot(
+            model,
+            batch,
+            model_config,
+            training_config,
+            device,
+            torch_module=torch_module,
+        )
+        for name in V2_TRAINING_LOSS_FIELDS:
+            weighted[name] += snapshot.metrics[name] * current_count
+        family_count += snapshot.metrics["profile_family_count"]
+        parameter_count += snapshot.metrics["profile_parameter_count"]
+        example_count += current_count
+    if example_count <= 0:
+        raise ConstrainedV2TrainingError(
+            "empty_evaluation_snapshot",
+            "evaluation snapshots require at least one training example",
+        )
+    return V2LossSnapshot({
+        **{
+            name: weighted[name] / float(example_count)
+            for name in V2_TRAINING_LOSS_FIELDS
+        },
+        "profile_family_count": family_count,
+        "profile_parameter_count": parameter_count,
+    })
+
+
 def _validate_v2_checkpoint(checkpoint, model_config, training_config, selection):
     if not isinstance(checkpoint, dict) or set(checkpoint) != V2_CHECKPOINT_FIELDS:
         raise ConstrainedV2TrainingError(
@@ -764,23 +982,27 @@ def _validate_v2_checkpoint(checkpoint, model_config, training_config, selection
 
 
 def _tiny_success_criteria(
-    history, model, family_before, parameter_before, selection
+    history,
+    initial_snapshot,
+    final_snapshot,
+    model,
+    family_before,
+    parameter_before,
+    selection,
 ):
-    window = max(1, min(10, len(history) // 4))
-    def mean(name, rows):
-        return sum(item[name] for item in rows) / float(len(rows))
+    initial = initial_snapshot.metrics
+    final = final_snapshot.metrics
     criteria = {
         "total_loss_decreased": (
-            mean("total_loss", history[-window:])
-            < mean("total_loss", history[:window])
+            final["total_loss"] < initial["total_loss"]
         ),
         "profile_family_loss_decreased": (
-            mean("profile_family_loss", history[-window:])
-            < mean("profile_family_loss", history[:window])
+            final["profile_family_loss"]
+            < initial["profile_family_loss"]
         ),
         "profile_parameter_loss_decreased": (
-            mean("profile_parameter_loss", history[-window:])
-            < mean("profile_parameter_loss", history[:window])
+            final["profile_parameter_loss"]
+            < initial["profile_parameter_loss"]
         ),
         "family_head_changed": not torch.equal(
             family_before, model.profile_heads.family_head.weight
