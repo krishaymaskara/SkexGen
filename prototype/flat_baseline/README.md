@@ -685,6 +685,36 @@ The authoritative wrapper is
 `adroit/constrained_v2_pilot_diagnostic_cpu.slurm`; it uses a new diagnostic
 directory and never writes into the Stage 2F pilot run.
 
+## Frozen reference-plane geometry diagnostic
+
+Stage 2H is a second read-only diagnostic over the same frozen epoch-2 V2
+checkpoint. It traces reference-plane geometry through the schema,
+serialization, normalization, V2 15-channel non-profile output, applicability
+mask, and strict controlled-domain validator. Plane channels 0-2 are an origin
+normalized by the length scale 4.0; channels 3-5 and 6-8 are unscaled,
+dimensionless x- and y-axis vectors. The general schema requires orthonormal
+axes within `1e-6`, while the controlled contract additionally requires zero
+origin and the exact categorical `XY`, `XZ`, or `YZ` frame within `1e-6`.
+
+```bash
+python -m prototype.flat_baseline.diagnose_reference_plane_geometry \
+  --corpus-dir /path/to/controlled-corpus \
+  --checkpoint /path/to/frozen/epoch-0002.pt \
+  --output-dir /new/immutable/path/v2-reference-plane-diagnostic \
+  --device cpu
+```
+
+H0 exactly reproduces Stage 2G Arm E. H1 replaces only reference-plane
+geometry, H2 replaces all non-profile continuous geometry, H3 applies a
+target-free zero-origin and Gram-Schmidt projection, and H5 replaces only
+compact profile parameters. H4 is explicitly inapplicable: after the
+categorical orientation is canonicalized, the controlled origin is fixed at
+zero and no separate continuous plane scalar remains. All arms are diagnostic
+oracle interventions except that H3 uses no target geometry. The workflow
+does not train, create an optimizer, mutate VQ state, or access systematic or
+held-out test partitions. Its authoritative CPU wrapper is
+`adroit/constrained_v2_reference_plane_diagnostic_cpu.slurm`.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
