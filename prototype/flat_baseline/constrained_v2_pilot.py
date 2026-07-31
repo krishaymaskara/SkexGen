@@ -1150,7 +1150,7 @@ def _run_constrained_v2_pilot(
             "systematic_partition_accessed": False,
             "test_partition_accessed": False,
         })
-    acceptance = {
+    scientific_acceptance = {
         "configured_budget_completed": (
             global_step == configured_maximum_steps
             and examples_processed
@@ -1185,15 +1185,18 @@ def _run_constrained_v2_pilot(
         ),
         "strict_selected_reload_reproduced": True,
         "strict_final_reload_reproduced": final_reload_reproduced,
-        "systematic_partition_accessed": False,
-        "test_partition_accessed": False,
     }
-    if not all(
-        value is True for value in acceptance.values()
-    ):
-        raise ConstrainedV2PilotError(
-            "pilot_acceptance_failed", repr(acceptance)
-        )
+    acceptance = _require_pilot_acceptance(
+        scientific_acceptance,
+        {
+            "systematic_partition_accessed": (
+                pilot_config.systematic_partition_accessed
+            ),
+            "test_partition_accessed": (
+                pilot_config.test_partition_accessed
+            ),
+        },
+    )
     terminal = {
         "acceptance": acceptance,
         "configured_maximum_steps": configured_maximum_steps,
@@ -1264,6 +1267,26 @@ def _write_terminal_success(logger, terminal):
         "systematic_partition_accessed": False,
         "test_partition_accessed": False,
     })
+
+
+def _require_pilot_acceptance(scientific_criteria, access_state):
+    criteria = dict(scientific_criteria)
+    access = access_state if isinstance(access_state, dict) else {}
+    criteria["systematic_partition_not_accessed"] = (
+        access.get("systematic_partition_accessed") is False
+    )
+    criteria["test_partition_not_accessed"] = (
+        access.get("test_partition_accessed") is False
+    )
+    unmet = tuple(
+        name for name, value in criteria.items() if value is not True
+    )
+    if unmet:
+        raise ConstrainedV2PilotError(
+            "pilot_acceptance_failed",
+            repr({"criteria": criteria, "unmet": unmet}),
+        )
+    return criteria
 
 
 def _assert_nested_close(expected, actual, path="$"):

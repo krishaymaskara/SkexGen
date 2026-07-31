@@ -45,6 +45,7 @@ if torch is not None:
     from prototype.flat_baseline.constrained_v2_pilot import (
         PILOT_CHECKPOINT_FIELDS,
         PilotPartition,
+        _require_pilot_acceptance,
         _require_finite_json,
         _write_terminal_success,
         autonomous_validation,
@@ -530,11 +531,75 @@ class ConstrainedV2PilotTensorTests(unittest.TestCase):
         self.assertFalse(records[-1]["systematic_partition_accessed"])
         self.assertFalse(records[-1]["test_partition_accessed"])
 
+        scientific = {"scientific_criteria_satisfied": True}
+        accepted = _require_pilot_acceptance(
+            scientific,
+            {
+                "systematic_partition_accessed": False,
+                "test_partition_accessed": False,
+            },
+        )
+        self.assertTrue(all(value is True for value in accepted.values()))
+        invalid_access_states = (
+            (
+                {
+                    "systematic_partition_accessed": True,
+                    "test_partition_accessed": False,
+                },
+                "systematic_partition_not_accessed",
+            ),
+            (
+                {
+                    "systematic_partition_accessed": False,
+                    "test_partition_accessed": True,
+                },
+                "test_partition_not_accessed",
+            ),
+            ({}, "systematic_partition_not_accessed"),
+            (
+                {
+                    "systematic_partition_accessed": 0,
+                    "test_partition_accessed": False,
+                },
+                "systematic_partition_not_accessed",
+            ),
+            (
+                {
+                    "systematic_partition_accessed": False,
+                    "test_partition_accessed": None,
+                },
+                "test_partition_not_accessed",
+            ),
+        )
+        for access_state, unmet_name in invalid_access_states:
+            with self.subTest(access_state=access_state):
+                with self.assertRaises(
+                    ConstrainedV2PilotError
+                ) as raised:
+                    _require_pilot_acceptance(
+                        scientific, access_state
+                    )
+                self.assertEqual(
+                    raised.exception.code, "pilot_acceptance_failed"
+                )
+                self.assertIn(unmet_name, raised.exception.detail)
+        with self.assertRaises(ConstrainedV2PilotError) as raised:
+            _require_pilot_acceptance(
+                {"scientific_criteria_satisfied": False},
+                {
+                    "systematic_partition_accessed": False,
+                    "test_partition_accessed": False,
+                },
+            )
+        self.assertIn(
+            "scientific_criteria_satisfied", raised.exception.detail
+        )
+
         success_path = Path(self.temporary.name) / "success.jsonl"
         _write_terminal_success(
             JsonlLogger(success_path),
             {
-                "acceptance": {"configured_budget_completed": True},
+                "acceptance": accepted,
                 "global_step": 2,
             },
         )
