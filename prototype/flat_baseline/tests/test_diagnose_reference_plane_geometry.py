@@ -44,7 +44,10 @@ if torch is not None:
         scatter_non_profile_geometry,
         select_non_profile_geometry,
     )
-    from prototype.flat_baseline.constrained_v2_autonomous import greedy_decode_v2
+    from prototype.flat_baseline.constrained_v2_autonomous import (
+        greedy_decode_v2,
+        validate_and_convert_v2_autonomous_prediction,
+    )
     from prototype.flat_baseline.constrained_v2_config import ConstrainedProfileV2Config
     from prototype.flat_baseline.constrained_v2_conversion import (
         construct_v2_predicted_node_tensors,
@@ -59,16 +62,22 @@ if torch is not None:
         ARM_CONTRACTS,
         ATOMIC_CONSTRAINT_ORDER,
         CANONICAL_FRAMES,
+        OUTPUT_ARM_ORDER,
         REFERENCE_PLANE_CHANNELS,
         _partition_diagnostic,
         _require_finite_json,
         build_reference_plane_arms,
+        canonical_reference_plane,
+        canonicalize_autonomous_reference_planes,
         classify_reference_plane_diagnostic,
         evaluate_reference_plane,
         project_reference_plane,
+        project_reference_plane_basis,
+        project_reference_plane_origin,
         reference_plane_contract,
         run_frozen_reference_plane_diagnostic,
     )
+    from prototype.flat_baseline.autonomous import derive_geometry_mask
     from prototype.model_data.batching import collate_flat
     from prototype.model_data.vocab import NODE_TYPES, REFERENCE_PLANES
 
@@ -241,14 +250,25 @@ class ReferencePlaneTensorTests(unittest.TestCase):
 
     def test_projection_is_deterministic_target_free_and_handles_degeneracy(self):
         predicted = (0.2, -0.3, 0.4, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
-        first = project_reference_plane(predicted)
-        second = project_reference_plane(predicted)
-        self.assertEqual(first, second)
-        self.assertEqual(first[:3], (0.0, 0.0, 0.0))
+        origin_only = project_reference_plane_origin(predicted)
+        basis_only = project_reference_plane_basis(predicted)
+        combined = project_reference_plane(predicted)
+        self.assertEqual(origin_only[:3], (0.0, 0.0, 0.0))
+        self.assertEqual(origin_only[3:9], predicted[3:9])
+        self.assertEqual(basis_only[:3], predicted[:3])
+        self.assertEqual(combined[:3], origin_only[:3])
+        self.assertEqual(combined[3:9], basis_only[3:9])
+        self.assertEqual(combined, project_reference_plane(predicted))
         mask = (True,) * 9 + (False,) * 30
         for plane in CANONICAL_FRAMES:
-            result = evaluate_reference_plane(first, mask, plane)
+            result = evaluate_reference_plane(combined, mask, plane)
             self.assertTrue(result["mathematical_form_pass"])
+        noncanonical = project_reference_plane_basis(
+            (0.0, 0.0, 0.0, -0.9, 0.1, 0.0, 0.2, -0.8, 0.3)
+        )
+        evaluation = evaluate_reference_plane(noncanonical, mask, "XY")
+        self.assertTrue(evaluation["mathematical_form_pass"])
+        self.assertFalse(evaluation["controlled_contract_pass"])
         with self.assertRaises(ValueError):
             project_reference_plane((math.inf,) + predicted[1:])
         with self.assertRaises(ValueError):
@@ -288,21 +308,42 @@ class ReferencePlaneTensorTests(unittest.TestCase):
             stage2g = build_hybrid_arms(
                 output, target, profiles, partition.physical_examples, autonomous
             )
-            arms = build_reference_plane_arms(
-                output, target, profiles, partition.physical_examples
+            arms, h6_audits = build_reference_plane_arms(
+                output, target, profiles, partition.physical_examples,
+                autonomous,
             )
         self.assertEqual(arms["H0"], stage2g["E"])
+        self.assertEqual(len(h6_audits), len(partition.physical_examples))
+        self.assertEqual(tuple(OUTPUT_ARM_ORDER), (
+            "H0", "H1a", "H1b", "H1c", "H2", "H3a", "H3b",
+            "H3c", "H4", "H5", "H6",
+        ))
         self.assertFalse(ARM_CONTRACTS["H4"]["enabled"])
         for example_index, example in enumerate(partition.physical_examples):
             h0 = arms["H0"][example_index]
-            h1 = arms["H1"][example_index]
+            h1a = arms["H1a"][example_index]
+            h1b = arms["H1b"][example_index]
+            h1c = arms["H1c"][example_index]
             h2 = arms["H2"][example_index]
-            h3 = arms["H3"][example_index]
+            h3a = arms["H3a"][example_index]
+            h3b = arms["H3b"][example_index]
+            h3c = arms["H3c"][example_index]
             h5 = arms["H5"][example_index]
+            h6 = arms["H6"][example_index]
             plane = next(index for index, node in enumerate(example.nodes) if node.node_type == "reference_plane")
-            self.assertEqual(h1.raw_nodes[plane].normalized_geometry[:9], example.target.geometry[plane][:9])
-            self.assertEqual(h1.raw_nodes[plane].normalized_geometry[9:], h0.raw_nodes[plane].normalized_geometry[9:])
-            self.assertEqual(h3.raw_nodes[plane].normalized_geometry[:9], project_reference_plane(h0.raw_nodes[plane].normalized_geometry[:9]))
+            predicted = h0.raw_nodes[plane].normalized_geometry
+            authoritative = example.target.geometry[plane]
+            self.assertEqual(h1a.raw_nodes[plane].normalized_geometry[:3], authoritative[:3])
+            self.assertEqual(h1a.raw_nodes[plane].normalized_geometry[3:], predicted[3:])
+            self.assertEqual(h1b.raw_nodes[plane].normalized_geometry[:3], predicted[:3])
+            self.assertEqual(h1b.raw_nodes[plane].normalized_geometry[3:9], authoritative[3:9])
+            self.assertEqual(h1b.raw_nodes[plane].normalized_geometry[9:], predicted[9:])
+            self.assertEqual(h1c.raw_nodes[plane].normalized_geometry[:9], authoritative[:9])
+            self.assertEqual(h1c.raw_nodes[plane].normalized_geometry[9:], predicted[9:])
+            self.assertEqual(authoritative[:9], canonical_reference_plane(example.nodes[plane].reference_plane))
+            self.assertEqual(h3a.raw_nodes[plane].normalized_geometry[:9], project_reference_plane_origin(predicted[:9]))
+            self.assertEqual(h3b.raw_nodes[plane].normalized_geometry[:9], project_reference_plane_basis(predicted[:9]))
+            self.assertEqual(h3c.raw_nodes[plane].normalized_geometry[:9], project_reference_plane(predicted[:9]))
             for position in range(len(example.nodes)):
                 for channel in NON_PROFILE_GEOMETRY_INDICES:
                     self.assertEqual(h2.raw_nodes[position].normalized_geometry[channel], example.target.geometry[position][channel])
@@ -310,23 +351,145 @@ class ReferencePlaneTensorTests(unittest.TestCase):
                     self.assertEqual(h2.raw_nodes[position].normalized_geometry[channel], h0.raw_nodes[position].normalized_geometry[channel])
                 for channel in NON_PROFILE_GEOMETRY_INDICES:
                     self.assertEqual(h5.raw_nodes[position].normalized_geometry[channel], h0.raw_nodes[position].normalized_geometry[channel])
+            self.assertEqual(h6.raw_edges, autonomous[example_index].raw_edges)
+            self.assertEqual(
+                h6.raw_operation_pointers,
+                autonomous[example_index].raw_operation_pointers,
+            )
+            for before, after in zip(
+                autonomous[example_index].raw_nodes, h6.raw_nodes
+            ):
+                self.assertEqual(before.node_type_id, after.node_type_id)
+                self.assertEqual(before.categorical_ids, after.categorical_ids)
+                self.assertEqual(
+                    before.normalized_geometry[9:],
+                    after.normalized_geometry[9:],
+                )
+
+    def test_exact_lookup_and_h6_invalid_categories_never_use_targets(self):
+        self.assertEqual(
+            canonical_reference_plane("XY"),
+            (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        )
+        self.assertEqual(
+            canonical_reference_plane("XZ"),
+            (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+        )
+        self.assertEqual(
+            canonical_reference_plane("YZ"),
+            (0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+        )
+        partition, unused_batch, inputs, target, unused_profiles, unused_output = self._batch_output()
+        with torch.no_grad():
+            autonomous = greedy_decode_v2(
+                self.model, inputs,
+                node_counts=target["node_mask"].sum(dim=1),
+                node_count_source="authorized_validation_length",
+            )[0]
+        base = autonomous.raw_nodes[0]
+        categories = list(base.categorical_ids)
+        categories[3] = REFERENCE_PLANES.id("XZ")
+        geometry = tuple(-0.37 for unused in range(GEOMETRY_WIDTH))
+        valid_node = replace(
+            base,
+            node_type_id=NODE_TYPES.id("reference_plane"),
+            categorical_ids=tuple(categories),
+            normalized_geometry=geometry,
+            derived_geometry_mask=derive_geometry_mask(
+                NODE_TYPES.id("reference_plane"), tuple(categories)
+            ),
+        )
+        tail = tuple(
+            replace(
+                node,
+                node_type_id=NODE_TYPES.id("profile"),
+                derived_geometry_mask=derive_geometry_mask(
+                    NODE_TYPES.id("profile"), node.categorical_ids
+                ),
+            )
+            if node.node_type_id == NODE_TYPES.id("reference_plane") else node
+            for node in autonomous.raw_nodes[1:]
+        )
+        valid_prediction = replace(
+            autonomous, raw_nodes=(valid_node,) + tail
+        )
+        canonicalized, audit = canonicalize_autonomous_reference_planes(
+            valid_prediction
+        )
+        self.assertEqual(
+            canonicalized.raw_nodes[0].normalized_geometry[:9],
+            canonical_reference_plane("XZ"),
+        )
+        self.assertEqual(
+            canonicalized.raw_nodes[0].normalized_geometry[9:], geometry[9:]
+        )
+        self.assertEqual(audit["exact_canonicalization_count"], 1)
+        self.assertFalse(audit["target_geometry_used"])
+        self.assertFalse(audit["authoritative_category_used"])
+
+        for invalid_id in (REFERENCE_PLANES.id(None), len(REFERENCE_PLANES.tokens) + 4):
+            with self.subTest(invalid_id=invalid_id):
+                invalid_categories = list(categories)
+                invalid_categories[3] = invalid_id
+                invalid_node = replace(
+                    valid_node, categorical_ids=tuple(invalid_categories)
+                )
+                invalid_prediction = replace(
+                    valid_prediction,
+                    raw_nodes=(invalid_node,) + valid_prediction.raw_nodes[1:],
+                )
+                unchanged, invalid_audit = (
+                    canonicalize_autonomous_reference_planes(
+                        invalid_prediction
+                    )
+                )
+                self.assertEqual(unchanged.raw_nodes[0], invalid_node)
+                self.assertEqual(
+                    invalid_audit["missing_or_invalid_predicted_category_count"],
+                    1,
+                )
+                self.assertEqual(
+                    invalid_audit["exact_canonicalization_count"], 0
+                )
+                self.assertFalse(invalid_audit["target_fallback_used"])
+                conversion = validate_and_convert_v2_autonomous_prediction(
+                    unchanged,
+                    max_operations=self.model_config.max_operations,
+                )
+                self.assertFalse(conversion.controlled_domain.valid)
 
     def test_h3_does_not_use_target_geometry(self):
         partition, unused_batch, unused_inputs, target, profiles, output = self._batch_output()
-        original = build_reference_plane_arms(
+        original, unused_audits = build_reference_plane_arms(
             output, target, profiles, partition.physical_examples
         )
         changed_examples = []
         for example in partition.physical_examples:
-            geometry = tuple(tuple(0.75 for unused in row) for row in example.target.geometry)
+            plane = next(
+                index for index, node in enumerate(example.nodes)
+                if node.node_type == "reference_plane"
+            )
+            old_name = example.nodes[plane].reference_plane
+            new_name = {"XY": "XZ", "XZ": "YZ", "YZ": "XY"}[old_name]
+            geometry = list(example.target.geometry)
+            geometry[plane] = (
+                canonical_reference_plane(new_name) + geometry[plane][9:]
+            )
+            nodes = list(example.nodes)
+            nodes[plane] = replace(nodes[plane], reference_plane=new_name)
             changed_examples.append(replace(
-                example, target=replace(example.target, geometry=geometry)
+                example,
+                nodes=tuple(nodes),
+                target=replace(example.target, geometry=tuple(geometry)),
             ))
-        changed = build_reference_plane_arms(
+        changed, unused_changed_audits = build_reference_plane_arms(
             output, target, profiles, tuple(changed_examples)
         )
-        self.assertEqual(original["H3"], changed["H3"])
-        self.assertNotEqual(original["H1"], changed["H1"])
+        for name in ("H3a", "H3b", "H3c"):
+            self.assertEqual(original[name], changed[name])
+        self.assertEqual(original["H1a"], changed["H1a"])
+        for name in ("H1b", "H1c"):
+            self.assertNotEqual(original[name], changed[name])
 
     def test_partition_authorization_precedes_checkpoint_and_payload_access(self):
         config = replace(
@@ -367,20 +530,56 @@ class ReferencePlaneTensorTests(unittest.TestCase):
 
     def test_classification_rules_are_predeclared_and_h5_is_not_a_repair(self):
         summaries = {
-            name: {"validity": 0.0} for name in ("H0", "H1", "H2", "H3", "H5")
+            name: {"validity": 0.0, "controlled_plane_pass_rate": 0.0}
+            for name in ("H1a", "H1b", "H1c", "H3c")
         }
-        summaries["H1"]["validity"] = 0.8
-        summaries["H2"]["validity"] = 1.0
-        summaries["H3"]["validity"] = 0.1
+        summaries["H0"] = {"validity": 0.0}
+        summaries["H2"] = {"validity": 1.0}
+        summaries["H5"] = {"validity": 0.0}
+        summaries["H6"] = {
+            "validity": 0.2,
+            "validity_improvement_over_arm_a": 0.2,
+        }
+        summaries["H1a"]["controlled_plane_pass_rate"] = 0.1
+        summaries["H1b"]["controlled_plane_pass_rate"] = 0.1
+        summaries["H1c"]["controlled_plane_pass_rate"] = 0.9
+        summaries["H3c"]["controlled_plane_pass_rate"] = 0.2
         classifications = classify_reference_plane_diagnostic(summaries)
-        self.assertIn("reference_plane_geometry_is_immediate_blocker", classifications)
-        self.assertIn("additional_non_profile_geometry_also_matters", classifications)
-        self.assertIn("reference_plane_prediction_accuracy_is_inadequate", classifications)
-        self.assertIn("constrained_profile_decoder_supported_with_oracle_non_profile_geometry", classifications)
+        self.assertIn(
+            "reference_plane_origin_and_basis_both_contribute",
+            classifications,
+        )
+        self.assertIn(
+            "exact_categorical_canonicalization_is_required",
+            classifications,
+        )
+        self.assertIn(
+            "autonomous_categorical_canonicalization_is_viable",
+            classifications,
+        )
         summaries["H5"]["validity"] = 1.0
         self.assertEqual(
             classifications,
             classify_reference_plane_diagnostic(summaries),
+        )
+        summaries["H1a"]["controlled_plane_pass_rate"] = 0.8
+        summaries["H1b"]["controlled_plane_pass_rate"] = 0.1
+        summaries["H1c"]["controlled_plane_pass_rate"] = 0.8
+        summaries["H3c"]["controlled_plane_pass_rate"] = 0.8
+        origin = classify_reference_plane_diagnostic(summaries)
+        self.assertIn("reference_plane_origin_is_primary", origin)
+        self.assertIn("general_orthonormal_projection_is_sufficient", origin)
+        summaries["H1a"]["controlled_plane_pass_rate"] = 0.1
+        summaries["H1b"]["controlled_plane_pass_rate"] = 0.8
+        basis = classify_reference_plane_diagnostic(summaries)
+        self.assertIn("reference_plane_basis_is_primary", basis)
+        for name in ("H1a", "H1b", "H1c", "H3c"):
+            summaries[name]["validity"] = 0.0
+            summaries[name]["controlled_plane_pass_rate"] = 0.0
+        summaries["H6"]["validity_improvement_over_arm_a"] = 0.0
+        routing = classify_reference_plane_diagnostic(summaries)
+        self.assertIn(
+            "reference_plane_channel_routing_or_contract_mismatch", routing
         )
 
 

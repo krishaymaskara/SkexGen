@@ -44,6 +44,10 @@ from .constrained_v2 import (
     select_non_profile_geometry,
 )
 from .constrained_v2_config import ConstrainedProfileV2Config
+from .constrained_v2_autonomous import (
+    greedy_decode_v2,
+    validate_and_convert_v2_autonomous_prediction,
+)
 from .constrained_v2_conversion import (
     _prediction_row,
     construct_v2_predicted_node_tensors,
@@ -109,13 +113,32 @@ ARM_CONTRACTS = {
             "compact_profile_parameters", "all_non_profile_geometry"
         ],
     },
-    "H1": {
-        "label": "oracle_reference_plane_geometry_only",
+    "H1a": {
+        "label": "oracle_reference_plane_origin_only",
+        "oracle": True,
+        "replacements": ["reference_plane_origin_channels_0_through_2"],
+        "retained_predictions": [
+            "reference_plane_basis_channels_3_through_8",
+            "compact_profile_parameters", "other_non_profile_geometry",
+        ],
+    },
+    "H1b": {
+        "label": "oracle_reference_plane_basis_only",
+        "oracle": True,
+        "replacements": ["reference_plane_basis_channels_3_through_8"],
+        "retained_predictions": [
+            "reference_plane_origin_channels_0_through_2",
+            "compact_profile_parameters", "other_non_profile_geometry",
+        ],
+    },
+    "H1c": {
+        "label": "oracle_complete_reference_plane",
         "oracle": True,
         "replacements": ["reference_plane_geometry_channels_0_through_8"],
         "retained_predictions": [
             "compact_profile_parameters", "other_non_profile_geometry"
         ],
+        "previous_arm_name": "H1",
     },
     "H2": {
         "label": "oracle_all_non_profile_geometry",
@@ -123,14 +146,40 @@ ARM_CONTRACTS = {
         "replacements": ["serialized_channels_0_through_8_and_33_through_38"],
         "retained_predictions": ["compact_profile_parameters"],
     },
-    "H3": {
-        "label": "target_free_projected_reference_plane",
+    "H3a": {
+        "label": "target_free_zero_origin_only",
         "oracle": True,
-        "replacements": ["deterministic_projection_of_predicted_channels_0_through_8"],
+        "replacements": ["constant_zero_in_channels_0_through_2"],
+        "retained_predictions": [
+            "predicted_basis_channels_3_through_8",
+            "compact_profile_parameters", "other_non_profile_geometry"
+        ],
+        "target_geometry_used": False,
+    },
+    "H3b": {
+        "label": "target_free_gram_schmidt_basis_only",
+        "oracle": True,
+        "replacements": ["gram_schmidt_of_predicted_channels_3_through_8"],
+        "retained_predictions": [
+            "predicted_origin_channels_0_through_2",
+            "compact_profile_parameters", "other_non_profile_geometry",
+        ],
+        "target_geometry_used": False,
+        "categorical_plane_used": False,
+    },
+    "H3c": {
+        "label": "target_free_zero_origin_plus_gram_schmidt",
+        "oracle": True,
+        "replacements": [
+            "constant_zero_in_channels_0_through_2",
+            "gram_schmidt_of_predicted_channels_3_through_8",
+        ],
         "retained_predictions": [
             "compact_profile_parameters", "other_non_profile_geometry"
         ],
         "target_geometry_used": False,
+        "categorical_plane_used": False,
+        "previous_arm_name": "H3",
     },
     "H4": {
         "label": "not_applicable_no_separable_bounded_scalar",
@@ -147,7 +196,27 @@ ARM_CONTRACTS = {
         "replacements": ["compact_profile_parameters"],
         "retained_predictions": ["all_non_profile_geometry"],
     },
+    "H6": {
+        "label": "autonomous_predicted_category_canonicalization",
+        "oracle": False,
+        "source": "fully_autonomous_stage_2g_arm_a",
+        "replacements": [
+            "canonical_channels_0_through_8_from_predicted_plane_category"
+        ],
+        "retained_predictions": ["all_other_autonomous_fields"],
+        "target_geometry_used": False,
+        "authoritative_category_used": False,
+        "invalid_category_fallback": False,
+    },
 }
+
+TEACHER_ARMS = (
+    "H0", "H1a", "H1b", "H1c", "H2", "H3a", "H3b", "H3c", "H5"
+)
+OUTPUT_ARM_ORDER = (
+    "H0", "H1a", "H1b", "H1c", "H2", "H3a", "H3b", "H3c",
+    "H4", "H5", "H6",
+)
 
 
 @dataclass(frozen=True)
@@ -415,9 +484,7 @@ def evaluate_reference_plane(values, mask, plane_name):
     return result
 
 
-def project_reference_plane(values):
-    """Project a predicted plane to an orthonormal frame without targets."""
-
+def _validated_predicted_plane(values):
     try:
         row = tuple(float(value) for value in values)
     except (TypeError, ValueError, OverflowError) as exc:
@@ -428,6 +495,20 @@ def project_reference_plane(values):
         raise ValueError("predicted plane must be finite")
     if any(not NORMALIZED_MIN <= value <= NORMALIZED_MAX for value in row):
         raise ValueError("predicted plane must be within normalized bounds")
+    return row
+
+
+def project_reference_plane_origin(values):
+    """Set only the controlled constant origin without reading targets."""
+
+    row = _validated_predicted_plane(values)
+    return (0.0, 0.0, 0.0) + row[3:9]
+
+
+def project_reference_plane_basis(values):
+    """Gram-Schmidt only the predicted basis without categorical axes."""
+
+    row = _validated_predicted_plane(values)
     x_axis = row[3:6]
     if _norm(x_axis) <= DEGENERATE_VECTOR_EPSILON:
         x_axis = (1.0, 0.0, 0.0)
@@ -444,28 +525,115 @@ def project_reference_plane(values):
             fallback, _scale(x_axis, _dot(fallback, x_axis))
         )
     y_axis = _scale(y_axis, 1.0 / _norm(y_axis))
-    projected = (0.0, 0.0, 0.0) + tuple(x_axis) + tuple(y_axis)
+    projected = row[:3] + tuple(x_axis) + tuple(y_axis)
     if not all(NORMALIZED_MIN <= value <= NORMALIZED_MAX for value in projected):
         raise AssertionError("orthonormal projection left normalized bounds")
     return tuple(0.0 if value == 0.0 else float(value) for value in projected)
 
 
-def build_reference_plane_arms(output, target, profiles, physical_examples):
-    """Build H0-H5 with explicit, narrow oracle replacement boundaries."""
+def project_reference_plane(values):
+    """Preserve the previous H3 zero-origin plus Gram-Schmidt experiment."""
+
+    return project_reference_plane_basis(
+        project_reference_plane_origin(values)
+    )
+
+
+def canonical_reference_plane(plane_name):
+    """Construct the exact controlled frame from one categorical value."""
+
+    if plane_name not in CANONICAL_FRAMES:
+        raise ValueError("unsupported reference-plane category")
+    x_axis, y_axis = CANONICAL_FRAMES[plane_name]
+    return (0.0, 0.0, 0.0) + tuple(x_axis) + tuple(y_axis)
+
+
+def canonicalize_autonomous_reference_planes(prediction):
+    """Canonicalize generated planes from predicted categories only."""
+
+    nodes = []
+    histogram = {name: 0 for name in CANONICAL_FRAMES}
+    generated_count = 0
+    invalid_count = 0
+    canonicalized_count = 0
+    plane_node_id = NODE_TYPES.id("reference_plane")
+    for current in prediction.raw_nodes:
+        if current.node_type_id == plane_node_id:
+            generated_count += 1
+            category_id = (
+                current.categorical_ids[3]
+                if len(current.categorical_ids) > 3 else None
+            )
+            plane_name = None
+            if (
+                not isinstance(category_id, bool)
+                and isinstance(category_id, int)
+                and 0 <= category_id < len(REFERENCE_PLANES.tokens)
+            ):
+                token = REFERENCE_PLANES.tokens[category_id]
+                if token in CANONICAL_FRAMES:
+                    plane_name = token
+            if plane_name is None:
+                invalid_count += 1
+            else:
+                histogram[plane_name] += 1
+                geometry = list(current.normalized_geometry)
+                geometry[:9] = canonical_reference_plane(plane_name)
+                current = replace(current, normalized_geometry=tuple(geometry))
+                canonicalized_count += 1
+        nodes.append(current)
+    return replace(prediction, raw_nodes=tuple(nodes)), {
+        "generated_reference_plane_node_count": generated_count,
+        "predicted_category_histogram": histogram,
+        "missing_or_invalid_predicted_category_count": invalid_count,
+        "exact_canonicalization_count": canonicalized_count,
+        "target_geometry_used": False,
+        "authoritative_category_used": False,
+        "target_fallback_used": False,
+    }
+
+
+def build_reference_plane_arms(
+    output, target, profiles, physical_examples, autonomous_predictions=None
+):
+    """Build split Stage 2H arms with explicit replacement boundaries."""
 
     h0 = _build_h0(output, target, profiles, physical_examples)
-    arms = {"H0": h0, "H1": [], "H2": [], "H3": [], "H4": (), "H5": []}
+    arms = {name: [] for name in TEACHER_ARMS}
+    arms["H0"] = h0
+    arms["H4"] = ()
+    arms["H6"] = []
+    h6_audits = []
     for batch_index, (prediction, example) in enumerate(zip(h0, physical_examples)):
-        arms["H1"].append(_replace_reference_plane_geometry(prediction, example))
+        arms["H1a"].append(_replace_reference_plane_origin(prediction, example))
+        arms["H1b"].append(_replace_reference_plane_basis(prediction, example))
+        arms["H1c"].append(_replace_reference_plane_geometry(prediction, example))
         arms["H2"].append(_replace_all_non_profile_geometry(prediction, example))
-        arms["H3"].append(_project_prediction_reference_plane(prediction))
+        arms["H3a"].append(_project_prediction_reference_plane(
+            prediction, project_reference_plane_origin
+        ))
+        arms["H3b"].append(_project_prediction_reference_plane(
+            prediction, project_reference_plane_basis
+        ))
+        arms["H3c"].append(_project_prediction_reference_plane(
+            prediction, project_reference_plane
+        ))
         arms["H5"].append(_replace_compact_profile_parameters(
             prediction, profiles, batch_index, len(example.nodes)
         ))
+    if autonomous_predictions is not None:
+        if len(autonomous_predictions) != len(physical_examples):
+            raise ValueError("autonomous predictions do not align with examples")
+        for prediction in autonomous_predictions:
+            canonicalized, audit = canonicalize_autonomous_reference_planes(
+                prediction
+            )
+            arms["H6"].append(canonicalized)
+            h6_audits.append(audit)
     return {
         name: tuple(values) if isinstance(values, list) else values
         for name, values in arms.items()
-    }
+    }, tuple(h6_audits)
 
 
 def run_frozen_reference_plane_diagnostic(
@@ -598,7 +766,7 @@ def run_frozen_reference_plane_diagnostic(
             "systematic_partition_accessed": False,
             "test_partition_accessed": False,
         })
-    for name in ("H0", "H1", "H2", "H3", "H4", "H5"):
+    for name in OUTPUT_ARM_ORDER:
         logger.write({
             "event": "reference_plane_arm_summary",
             "arm": name,
@@ -682,26 +850,50 @@ def run_frozen_reference_plane_diagnostic(
 
 
 def classify_reference_plane_diagnostic(summaries):
-    h0 = summaries["H0"]["validity"]
-    h1 = summaries["H1"]["validity"]
-    h2 = summaries["H2"]["validity"]
-    h3 = summaries["H3"]["validity"]
+    h1a = _arm_evidence_score(summaries["H1a"])
+    h1b = _arm_evidence_score(summaries["H1b"])
+    h1c = _arm_evidence_score(summaries["H1c"])
+    h3c = _arm_evidence_score(summaries["H3c"])
     classifications = []
-    if h0 == 0.0 and h1 >= HIGH_VALIDITY:
-        classifications.append("reference_plane_geometry_is_immediate_blocker")
-    if h2 - h1 >= MATERIAL_VALIDITY_IMPROVEMENT:
-        classifications.append("additional_non_profile_geometry_also_matters")
-    if h1 >= HIGH_VALIDITY and h3 >= h1 - MATERIAL_VALIDITY_IMPROVEMENT:
-        classifications.append("deterministic_projection_is_viable_direction")
-    if h1 >= HIGH_VALIDITY and h3 < h1 - MATERIAL_VALIDITY_IMPROVEMENT:
-        classifications.append("reference_plane_prediction_accuracy_is_inadequate")
-    if h2 >= HIGH_VALIDITY:
-        classifications.append("constrained_profile_decoder_supported_with_oracle_non_profile_geometry")
-    if h1 == 0.0 and h2 == 0.0:
-        classifications.append("routing_or_validator_contract_requires_reaudit")
+    if h1a >= HIGH_VALIDITY and h1b < HIGH_VALIDITY:
+        classifications.append("reference_plane_origin_is_primary")
+    if h1b >= HIGH_VALIDITY and h1a < HIGH_VALIDITY:
+        classifications.append("reference_plane_basis_is_primary")
+    if (
+        h1c - h1a >= MATERIAL_VALIDITY_IMPROVEMENT
+        and h1c - h1b >= MATERIAL_VALIDITY_IMPROVEMENT
+    ):
+        classifications.append(
+            "reference_plane_origin_and_basis_both_contribute"
+        )
+    if (
+        h1c >= HIGH_VALIDITY
+        and h3c >= h1c - MATERIAL_VALIDITY_IMPROVEMENT
+    ):
+        classifications.append("general_orthonormal_projection_is_sufficient")
+    if (
+        h1c >= HIGH_VALIDITY
+        and h3c < h1c - MATERIAL_VALIDITY_IMPROVEMENT
+    ):
+        classifications.append("exact_categorical_canonicalization_is_required")
+    if (
+        summaries["H6"]["validity_improvement_over_arm_a"]
+        >= MATERIAL_VALIDITY_IMPROVEMENT
+    ):
+        classifications.append(
+            "autonomous_categorical_canonicalization_is_viable"
+        )
+    if summaries["H1c"]["validity"] == 0.0 and h1c == 0.0:
+        classifications.append(
+            "reference_plane_channel_routing_or_contract_mismatch"
+        )
     if not classifications:
         classifications.append("insufficient_evidence")
     return tuple(classifications)
+
+
+def _arm_evidence_score(summary):
+    return max(summary["validity"], summary["controlled_plane_pass_rate"])
 
 
 def _partition_diagnostic(
@@ -709,7 +901,9 @@ def _partition_diagnostic(
 ):
     records = []
     routing = []
-    arm_rows = {name: [] for name in ("H0", "H1", "H2", "H3", "H5")}
+    arm_rows = {name: [] for name in TEACHER_ARMS}
+    h6_rows = []
+    autonomous_rows = []
     with torch.no_grad():
         for start in range(0, len(partition.flat_examples), batch_size):
             flat = partition.flat_examples[start:start + batch_size]
@@ -729,8 +923,16 @@ def _partition_diagnostic(
             }
             profiles = profile_targets_for_loss(batch.target, inputs["geometry"])
             output = model(target=target, profile_targets=profiles, **inputs)
-            arms = build_reference_plane_arms(
-                output, target, profiles, physical
+            autonomous = None
+            if include_arms:
+                autonomous = greedy_decode_v2(
+                    model,
+                    inputs,
+                    node_counts=target["node_mask"].sum(dim=1),
+                    node_count_source="authorized_validation_length",
+                )
+            arms, h6_audits = build_reference_plane_arms(
+                output, target, profiles, physical, autonomous
             )
             routing.append(_channel_routing_audit(
                 output, target, arms["H0"], physical
@@ -746,20 +948,25 @@ def _partition_diagnostic(
                     predicted.derived_geometry_mask,
                     plane_name,
                 )
-                projected = project_reference_plane(
-                    predicted.normalized_geometry[:9]
-                )
-                post = evaluate_reference_plane(
-                    projected, predicted.derived_geometry_mask, plane_name
-                )
+                projection_evaluations = {
+                    name: evaluate_reference_plane(
+                        arms[name][batch_index].raw_nodes[
+                            plane_position
+                        ].normalized_geometry[:9],
+                        predicted.derived_geometry_mask,
+                        plane_name,
+                    )
+                    for name in ("H3a", "H3b", "H3c")
+                }
                 authoritative_evaluation = evaluate_reference_plane(
                     authoritative[:9], example.target.geometry_mask[plane_position],
                     plane_name,
                 )
                 arm_success = {}
                 arm_failures = {}
+                h6_record_audit = None
                 if include_arms:
-                    for name in ("H0", "H1", "H2", "H3", "H5"):
+                    for name in TEACHER_ARMS:
                         raw = arms[name][batch_index]
                         conversion = validate_and_convert_v2_teacher_forced_prediction(
                             raw, max_operations=model_config.max_operations
@@ -770,6 +977,37 @@ def _partition_diagnostic(
                             conversion.primary_failure.code
                             if conversion.primary_failure is not None else "valid"
                         )
+                    autonomous_raw = autonomous[batch_index]
+                    autonomous_conversion = (
+                        validate_and_convert_v2_autonomous_prediction(
+                            autonomous_raw,
+                            max_operations=model_config.max_operations,
+                        )
+                    )
+                    autonomous_rows.append(
+                        (example, autonomous_raw, autonomous_conversion)
+                    )
+                    h6_raw = arms["H6"][batch_index]
+                    h6_conversion = validate_and_convert_v2_autonomous_prediction(
+                        h6_raw, max_operations=model_config.max_operations
+                    )
+                    h6_rows.append((
+                        example, h6_raw, h6_conversion,
+                        h6_audits[batch_index],
+                    ))
+                    h6_record_audit = dict(h6_audits[batch_index])
+                    h6_record_audit["predicted_category_match_group"] = (
+                        _h6_category_match_group(
+                            h6_raw, example, h6_audits[batch_index]
+                        )
+                    )
+                    arm_success["H6"] = bool(
+                        h6_conversion.controlled_domain.valid
+                    )
+                    arm_failures["H6"] = (
+                        h6_conversion.primary_failure.code
+                        if h6_conversion.primary_failure is not None else "valid"
+                    )
                     arm_success["H4"] = None
                     arm_failures["H4"] = "not_applicable"
                 record = {
@@ -787,21 +1025,26 @@ def _partition_diagnostic(
                     ),
                     "authoritative_reference_plane": list(authoritative[:9]),
                     "pre_projection": pre,
-                    "post_projection": post,
+                    "projection_evaluations": projection_evaluations,
+                    "post_projection": projection_evaluations["H3c"],
                     "authoritative_evaluation": authoritative_evaluation,
                     "arm_success": arm_success,
                     "arm_failure_code": arm_failures,
+                    "h6_canonicalization": h6_record_audit,
                 }
                 _require_finite_json(record)
                 records.append(record)
     arm_summaries = {}
     if include_arms:
-        for name in ("H0", "H1", "H2", "H3", "H5"):
+        for name in TEACHER_ARMS:
             arm_summaries[name] = _reference_plane_arm_summary(name, arm_rows[name])
         arm_summaries["H4"] = {
             "arm": "H4", "enabled": False,
             "reason": ARM_CONTRACTS["H4"]["reason"],
         }
+        arm_summaries["H6"] = _h6_arm_summary(
+            h6_rows, autonomous_rows
+        )
     return {
         "partition_summary": _partition_summary(records),
         "constraint_summary": _constraint_summary(records),
@@ -842,14 +1085,39 @@ def _build_h0(output, target, profiles, physical_examples):
     )
 
 
-def _replace_reference_plane_geometry(prediction, example):
+def _replace_reference_plane_slice(prediction, example, start, stop):
     position = _one_plane_position(example)
     nodes = list(prediction.raw_nodes)
     current = nodes[position]
     geometry = list(current.normalized_geometry)
-    geometry[:9] = example.target.geometry[position][:9]
+    authoritative = example.target.geometry[position][:9]
+    expected = canonical_reference_plane(
+        example.nodes[position].reference_plane
+    )
+    if any(
+        not math.isclose(left, right, rel_tol=0.0,
+                         abs_tol=REFERENCE_PLANE_TOLERANCE)
+        for left, right in zip(authoritative, expected)
+    ):
+        raise ReferencePlaneDiagnosticError(
+            "authoritative_plane_contract_mismatch",
+            example.physical_family_id,
+        )
+    geometry[start:stop] = authoritative[start:stop]
     nodes[position] = replace(current, normalized_geometry=tuple(geometry))
     return replace(prediction, raw_nodes=tuple(nodes))
+
+
+def _replace_reference_plane_origin(prediction, example):
+    return _replace_reference_plane_slice(prediction, example, 0, 3)
+
+
+def _replace_reference_plane_basis(prediction, example):
+    return _replace_reference_plane_slice(prediction, example, 3, 9)
+
+
+def _replace_reference_plane_geometry(prediction, example):
+    return _replace_reference_plane_slice(prediction, example, 0, 9)
 
 
 def _replace_all_non_profile_geometry(prediction, example):
@@ -863,12 +1131,12 @@ def _replace_all_non_profile_geometry(prediction, example):
     return replace(prediction, raw_nodes=tuple(nodes))
 
 
-def _project_prediction_reference_plane(prediction):
+def _project_prediction_reference_plane(prediction, projection):
     nodes = []
     for current in prediction.raw_nodes:
         if current.node_type_id == NODE_TYPES.id("reference_plane"):
             geometry = list(current.normalized_geometry)
-            geometry[:9] = project_reference_plane(geometry[:9])
+            geometry[:9] = projection(geometry[:9])
             current = replace(current, normalized_geometry=tuple(geometry))
         nodes.append(current)
     return replace(prediction, raw_nodes=tuple(nodes))
@@ -1069,6 +1337,34 @@ def _constraint_summary(records):
         "post_projection_controlled_pass_count": sum(
             record["post_projection"]["controlled_contract_pass"] for record in records
         ),
+        "projection_constraint_pass_counts": {
+            name: {
+                "mathematical_form_pass_count": sum(
+                    record["projection_evaluations"][name][
+                        "mathematical_form_pass"
+                    ] for record in records
+                ),
+                "controlled_contract_pass_count": sum(
+                    record["projection_evaluations"][name][
+                        "controlled_contract_pass"
+                    ] for record in records
+                ),
+                "origin_pass_count": sum(
+                    record["projection_evaluations"][name]["constraints"][
+                        "origin_zero"
+                    ]["passed"] for record in records
+                ),
+                "basis_form_pass_count": sum(
+                    all(record["projection_evaluations"][name]["constraints"][
+                        constraint
+                    ]["passed"] for constraint in (
+                        "x_axis_nonzero", "y_axis_nonzero", "x_axis_unit",
+                        "y_axis_unit", "axes_orthogonal",
+                    )) for record in records
+                ),
+            }
+            for name in ("H3a", "H3b", "H3c")
+        },
     }
 
 
@@ -1101,6 +1397,7 @@ def _reference_plane_arm_summary(name, rows):
     valid = sum(result.controlled_domain.valid for _, _, result in rows)
     failures = {}
     subtypes = {}
+    evaluations = []
     groups = {
         "validity_by_node_count": ({}, {}),
         "validity_by_operation_count": ({}, {}),
@@ -1117,6 +1414,7 @@ def _reference_plane_arm_summary(name, rows):
             raw.raw_nodes[position].derived_geometry_mask,
             example.nodes[position].reference_plane,
         )
+        evaluations.append(evaluation)
         subtype = evaluation["failure_subtype"]
         subtypes[subtype] = subtypes.get(subtype, 0) + 1
         template = OperationTemplate(example.metadata.operation_template)
@@ -1131,7 +1429,10 @@ def _reference_plane_arm_summary(name, rows):
     summary = {
         "arm": name,
         "enabled": True,
-        "oracle_intervention": True,
+        "oracle_intervention": ARM_CONTRACTS[name]["oracle"],
+        "target_free_geometry_intervention": (
+            ARM_CONTRACTS[name].get("target_geometry_used") is False
+        ),
         "total_count": total,
         "valid_count": valid,
         "validity": valid / float(total),
@@ -1140,6 +1441,22 @@ def _reference_plane_arm_summary(name, rows):
         "conversion_success_rate": sum(result.reconstruction_target.valid for _, _, result in rows) / float(total),
         "failure_reason_histogram": failures,
         "failure_subtype_histogram": subtypes,
+        "controlled_plane_pass_rate": sum(
+            item["controlled_contract_pass"] for item in evaluations
+        ) / float(total),
+        "mathematical_form_pass_rate": sum(
+            item["mathematical_form_pass"] for item in evaluations
+        ) / float(total),
+        "origin_pass_rate": sum(
+            item["constraints"]["origin_zero"]["passed"]
+            for item in evaluations
+        ) / float(total),
+        "basis_form_pass_rate": sum(
+            all(item["constraints"][constraint]["passed"] for constraint in (
+                "x_axis_nonzero", "y_axis_nonzero", "x_axis_unit",
+                "y_axis_unit", "axes_orthogonal",
+            )) for item in evaluations
+        ) / float(total),
     }
     for group_name, (totals, successes) in groups.items():
         summary[group_name] = {
@@ -1149,6 +1466,119 @@ def _reference_plane_arm_summary(name, rows):
         }
     _require_finite_json(summary)
     return summary
+
+
+def _h6_arm_summary(rows, autonomous_rows):
+    total = len(rows)
+    valid = sum(result.controlled_domain.valid for _, _, result, _ in rows)
+    baseline_valid = sum(
+        result.controlled_domain.valid for _, _, result in autonomous_rows
+    )
+    failures = {}
+    histogram = {name: 0 for name in CANONICAL_FRAMES}
+    generated = 0
+    invalid = 0
+    canonicalized = 0
+    match_totals = {}
+    match_successes = {}
+    groups = {
+        "validity_by_node_count": ({}, {}),
+        "validity_by_operation_count": ({}, {}),
+        "validity_by_operation_family": ({}, {}),
+        "validity_by_authoritative_profile_family": ({}, {}),
+    }
+    for example, raw, result, audit in rows:
+        if result.primary_failure is not None:
+            code = result.primary_failure.code
+            failures[code] = failures.get(code, 0) + 1
+        generated += audit["generated_reference_plane_node_count"]
+        invalid += audit["missing_or_invalid_predicted_category_count"]
+        canonicalized += audit["exact_canonicalization_count"]
+        for name, count in audit["predicted_category_histogram"].items():
+            histogram[name] += count
+        match = _h6_category_match_group(raw, example, audit)
+        match_totals[match] = match_totals.get(match, 0) + 1
+        if result.controlled_domain.valid:
+            match_successes[match] = match_successes.get(match, 0) + 1
+        template = OperationTemplate(example.metadata.operation_template)
+        keys = (
+            str(len(example.nodes)), str(len(example.operation_sequence)),
+            "+".join(template.operations), example.metadata.primitive_family,
+        )
+        for (totals, successes), key in zip(groups.values(), keys):
+            totals[key] = totals.get(key, 0) + 1
+            if result.controlled_domain.valid:
+                successes[key] = successes.get(key, 0) + 1
+    summary = {
+        "arm": "H6",
+        "enabled": True,
+        "oracle_intervention": False,
+        "target_free_intervention": True,
+        "total_count": total,
+        "valid_count": valid,
+        "validity": valid / float(total),
+        "baseline_arm_a_valid_count": baseline_valid,
+        "baseline_arm_a_validity": baseline_valid / float(total),
+        "validity_improvement_over_arm_a": (
+            valid - baseline_valid
+        ) / float(total),
+        "finite_rate": sum(
+            _raw_prediction_is_finite(raw) for _, raw, _, _ in rows
+        ) / float(total),
+        "canonical_profile_rate": sum(
+            _raw_profile_records_are_canonical(raw) for _, raw, _, _ in rows
+        ) / float(total),
+        "conversion_success_rate": sum(
+            result.reconstruction_target.valid for _, _, result, _ in rows
+        ) / float(total),
+        "failure_reason_histogram": failures,
+        "generated_reference_plane_node_count": generated,
+        "predicted_category_histogram": histogram,
+        "missing_or_invalid_predicted_category_count": invalid,
+        "exact_canonicalization_count": canonicalized,
+        "validity_by_predicted_category_match": {
+            key: {
+                "count": match_totals[key],
+                "valid_count": match_successes.get(key, 0),
+                "validity": match_successes.get(key, 0)
+                / float(match_totals[key]),
+            }
+            for key in sorted(match_totals)
+        },
+        "target_geometry_used": False,
+        "authoritative_category_used_for_canonicalization": False,
+        "target_fallback_used": False,
+    }
+    for group_name, (totals, successes) in groups.items():
+        summary[group_name] = {
+            key: {
+                "count": totals[key],
+                "valid_count": successes.get(key, 0),
+                "validity": successes.get(key, 0) / float(totals[key]),
+            }
+            for key in sorted(totals)
+        }
+    _require_finite_json(summary)
+    return summary
+
+
+def _h6_category_match_group(raw, example, audit):
+    if (
+        audit["generated_reference_plane_node_count"] != 1
+        or audit["missing_or_invalid_predicted_category_count"] != 0
+    ):
+        return "missing_or_invalid"
+    position = next(
+        index for index, node in enumerate(raw.raw_nodes)
+        if node.node_type_id == NODE_TYPES.id("reference_plane")
+    )
+    authoritative_position = _one_plane_position(example)
+    category_id = raw.raw_nodes[position].categorical_ids[3]
+    predicted = REFERENCE_PLANES.tokens[category_id]
+    authoritative = example.nodes[authoritative_position].reference_plane
+    if position == authoritative_position and predicted == authoritative:
+        return "match"
+    return "mismatch"
 
 
 def _one_plane_position(example):
@@ -1215,12 +1645,22 @@ def _classification_rules():
     return {
         "material_validity_improvement": MATERIAL_VALIDITY_IMPROVEMENT,
         "high_validity": HIGH_VALIDITY,
-        "h1_immediate_blocker": "H0 == 0 and H1 >= high_validity",
-        "h2_additional_geometry": "H2 - H1 >= material improvement",
-        "h3_projection_viable": "H1 high and H3 within material improvement of H1",
-        "h3_accuracy_problem": "H1 high and H3 materially below H1",
-        "h2_profile_support": "H2 >= high_validity",
-        "reaudit": "H1 == 0 and H2 == 0",
+        "evidence_score": "max(CAD validity, controlled-plane pass rate)",
+        "origin_primary": "H1a high and H1b low",
+        "basis_primary": "H1b high and H1a low",
+        "both_contribute": "H1c materially exceeds H1a and H1b",
+        "general_projection_sufficient": (
+            "H3c approaches a high H1c evidence score"
+        ),
+        "exact_canonicalization_required": (
+            "H3c remains materially below a high H1c evidence score"
+        ),
+        "autonomous_canonicalization_viable": (
+            "H6 CAD validity materially exceeds fully autonomous Arm A"
+        ),
+        "routing_or_contract_mismatch": (
+            "H1c CAD validity and controlled-plane pass rate both remain zero"
+        ),
     }
 
 

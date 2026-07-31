@@ -704,15 +704,20 @@ python -m prototype.flat_baseline.diagnose_reference_plane_geometry \
   --device cpu
 ```
 
-H0 exactly reproduces Stage 2G Arm E. H1 replaces only reference-plane
-geometry, H2 replaces all non-profile continuous geometry, H3 applies a
-target-free zero-origin and Gram-Schmidt projection, and H5 replaces only
-compact profile parameters. H4 is explicitly inapplicable: after the
-categorical orientation is canonicalized, the controlled origin is fixed at
-zero and no separate continuous plane scalar remains. All arms are diagnostic
-oracle interventions except that H3 uses no target geometry. The workflow
-does not train, create an optimizer, mutate VQ state, or access systematic or
-held-out test partitions. Its authoritative CPU wrapper is
+H0 exactly reproduces Stage 2G Arm E. H1a replaces only the authoritative
+origin, H1b only the authoritative basis, and H1c the complete authoritative
+plane. H2 replaces all non-profile continuous geometry. Target-free H3a zeros
+only the origin, H3b Gram-Schmidt-projects only the predicted basis, and H3c
+combines both operations. These H3 geometry interventions read no target
+geometry but remain oracle diagnostic arms because they start from H0's
+authoritative discrete structure. H5 replaces only compact profile parameters. H6
+starts from fully autonomous Stage 2G Arm A and constructs an exact controlled
+frame solely from each generated node's predicted plane category; missing or
+invalid categories are never replaced from targets. H4 is explicitly
+inapplicable because no independent bounded plane scalar remains after the
+categorical orientation is fixed. The workflow does not train, create an
+optimizer, mutate VQ state, or access systematic or held-out test partitions.
+Its authoritative CPU wrapper is
 `adroit/constrained_v2_reference_plane_diagnostic_cpu.slurm`.
 
 ## Related evidence

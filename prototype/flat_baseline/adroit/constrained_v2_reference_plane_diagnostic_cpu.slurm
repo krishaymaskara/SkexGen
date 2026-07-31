@@ -24,7 +24,7 @@ CORPUS="/scratch/network/km6349/controlled_corpora/b0-pilot-680-seed2026"
 PILOT_RUN="/scratch/network/km6349/constrained_v2_runs/iid-pilot-9e662310b41b3750a49547b95fa6af7a9235a8b4-3333190"
 CHECKPOINT="${PILOT_RUN}/epoch-0002.pt"
 EXPECTED_CHECKPOINT_SHA256="516c480ad7477bd93d14ece7247057a831760a7399552845def2ac2846eb85b7"
-DIAGNOSTIC_SOURCE_BASE="3ff09fdcb3749a53bd99d9b9b3ad3999c31ebdd3"
+DIAGNOSTIC_SOURCE_BASE="d62889b241b2a07876e2fe5f3c82c82bce7851c9"
 RUN_ROOT="/scratch/network/km6349/constrained_v2_reference_plane_diagnostics"
 CONTAINER="/scratch/network/km6349/skexgen.sif"
 PYTHON="/root/miniconda3/bin/python3.8"
@@ -85,7 +85,9 @@ suite = unittest.defaultTestLoader.loadTestsFromName(
 )
 result = unittest.TextTestRunner(verbosity=1).run(suite)
 assert result.wasSuccessful()
+assert result.testsRun == 13, result.testsRun
 assert len(result.skipped) == 0, result.skipped
+print("focused_test_count=13")
 print("focused_skipped_count=0")
 PY
 
@@ -112,6 +114,8 @@ h0 = [item for item in records if item.get("event") == "reference_plane_arm_summ
 assert len(h0) == 1
 assert h0[0]["summary"]["valid_count"] == 0
 assert h0[0]["summary"]["failure_reason_histogram"] == {"invalid_reference_plane_geometry": 68}
+arms = [item["arm"] for item in records if item.get("event") == "reference_plane_arm_summary"]
+assert arms == ["H0", "H1a", "H1b", "H1c", "H2", "H3a", "H3b", "H3c", "H4", "H5", "H6"]
 print("reference_plane_metrics_contract=ok")
 PY
 printf '{"event":"slurm_terminal_success","commit":"%s","job_id":"%s","checkpoint_sha256":"%s","training_occurred":false,"systematic_partition_accessed":false,"test_partition_accessed":false}\n' \
