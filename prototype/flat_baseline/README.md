@@ -654,6 +654,37 @@ V1-versus-V2 scientific comparison. The authoritative CPU wrapper is
 setting `REVIEWED_COMMIT` to the reviewed clean Stage 2F commit. No pilot
 success is claimed until that Slurm job completes.
 
+## Frozen V2 IID-pilot diagnostic
+
+Stage 2G is a read-only diagnostic for the frozen Stage 2F epoch-2 checkpoint.
+It evaluates only the complete training and ordinary IID-validation
+partitions, never trains, and verifies that model state, VQ state, RNG state,
+and checkpoint bytes remain unchanged:
+
+```bash
+python -m prototype.flat_baseline.diagnose_constrained_v2_pilot \
+  --corpus-dir /path/to/controlled-corpus \
+  --checkpoint /path/to/frozen/epoch-0002.pt \
+  --epoch1-checkpoint /path/to/frozen/epoch-0001.pt \
+  --output-dir /new/immutable/path/v2-iid-diagnostic \
+  --device cpu
+```
+
+The diagnostic reports encoder/prequantized and codebook/EMA collapse
+evidence, teacher-forced and autonomous family-head behavior, strict failure
+localization, and six frozen replay arms. Arm A is fully autonomous; Arm B
+uses teacher-forced history with predicted current outputs; Arms C-E apply
+increasingly complete, explicitly labeled oracle discrete interventions; and
+Arm F changes only the profile family and its deterministic canonical
+consequences within generated history. Metrics from oracle arms are never
+reported as autonomous performance.
+
+The diagnostic emits evidence-based bottleneck classifications under
+predeclared thresholds. It neither prescribes nor applies a production fix.
+The authoritative wrapper is
+`adroit/constrained_v2_pilot_diagnostic_cpu.slurm`; it uses a new diagnostic
+directory and never writes into the Stage 2F pilot run.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
