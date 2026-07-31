@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import replace
 import ast
 import json
@@ -278,6 +280,46 @@ class ConstrainedV2PilotTensorTests(unittest.TestCase):
         )
 
     def test_teacher_forced_complete_multibatch_metrics_and_no_mutation(self):
+        expected_mapping = {
+            "a": torch.tensor([1.0, 2.0], dtype=torch.float32),
+            "b": torch.tensor([3.0], dtype=torch.float32),
+        }
+        identical_mapping = OrderedDict((
+            ("a", expected_mapping["a"].clone()),
+            ("b", expected_mapping["b"].clone()),
+        ))
+        _assert_state_equal(self, expected_mapping, identical_mapping)
+        unequal_mappings = (
+            OrderedDict((("a", identical_mapping["a"]),)),
+            OrderedDict((
+                ("a", identical_mapping["a"]),
+                ("b", identical_mapping["b"]),
+                ("c", torch.tensor([4.0])),
+            )),
+            OrderedDict((
+                ("b", identical_mapping["b"]),
+                ("a", identical_mapping["a"]),
+            )),
+            OrderedDict((
+                ("a", torch.tensor([1.0, 9.0])),
+                ("b", identical_mapping["b"]),
+            )),
+            OrderedDict((
+                ("a", identical_mapping["a"].to(torch.float64)),
+                ("b", identical_mapping["b"]),
+            )),
+            OrderedDict((
+                ("a", identical_mapping["a"].reshape(1, 2)),
+                ("b", identical_mapping["b"]),
+            )),
+        )
+        for actual_mapping in unequal_mappings:
+            with self.subTest(actual_mapping=actual_mapping):
+                with self.assertRaises(AssertionError):
+                    _assert_state_equal(
+                        self, expected_mapping, actual_mapping
+                    )
+
         state_before = _clone_state(self.model.state_dict())
         optimizer_before = _clone_state(self.optimizer.state_dict())
         python_rng = random.getstate()
@@ -517,18 +559,24 @@ def _clone_state(value):
 
 
 def _assert_state_equal(test, expected, actual):
-    test.assertEqual(type(expected), type(actual))
     if torch.is_tensor(expected):
+        test.assertTrue(torch.is_tensor(actual))
+        test.assertEqual(expected.dtype, actual.dtype)
+        test.assertEqual(expected.shape, actual.shape)
+        test.assertEqual(expected.device, actual.device)
         test.assertTrue(torch.equal(expected, actual))
-    elif isinstance(expected, dict):
-        test.assertEqual(set(expected), set(actual))
+    elif isinstance(expected, Mapping):
+        test.assertIsInstance(actual, Mapping)
+        test.assertEqual(list(expected.keys()), list(actual.keys()))
         for name in expected:
             _assert_state_equal(test, expected[name], actual[name])
     elif isinstance(expected, (list, tuple)):
+        test.assertEqual(type(expected), type(actual))
         test.assertEqual(len(expected), len(actual))
         for first, second in zip(expected, actual):
             _assert_state_equal(test, first, second)
     else:
+        test.assertEqual(type(expected), type(actual))
         test.assertEqual(expected, actual)
 
 
