@@ -720,6 +720,41 @@ optimizer, mutate VQ state, or access systematic or held-out test partitions.
 Its authoritative CPU wrapper is
 `adroit/constrained_v2_reference_plane_diagnostic_cpu.slurm`.
 
+## Constrained-profile V3 canonical-plane decoder
+
+V3 is an additive production contract motivated by the frozen Stage 2H
+finding that controlled reference-plane channels have no independent
+continuous freedom. V1 and the immutable V2 baseline remain available under
+their original entry points, output contracts, checkpoints, pilots, and
+diagnostics. V3 has the distinct identity
+`B0-FLAT-CONSTRAINED-PROFILE-CANONICAL-PLANE-v3` and uses checkpoint,
+configuration, and decoder-contract version 3.
+
+The serialized geometry remains width 39. Channels 0-8 are now constructed
+deterministically from the predicted `XY`, `XZ`, or `YZ` category; channels
+9-32 retain the existing category-conditioned compact-profile reconstruction;
+and channels 33-38 retain the unchanged learned axis/operation geometry. Thus
+the V3 continuous head has width 6, reduced from V2's width 15, in the exact
+serialized order `(33, 34, 35, 36, 37, 38)`. A predicted reference-plane node
+with a sentinel, missing, malformed, or out-of-range plane category fails with
+`invalid_predicted_reference_plane_category`; it is never repaired from an
+authoritative category or a default frame.
+
+V3 removes channels 0-8 from continuous regression while preserving the
+reference-plane categorical objective. Teacher-forced reporting constructs
+the current plane from the predicted current category, and autonomous
+feedback uses generated categories and accepts no targets. Axis channels
+33-38 are intentionally unchanged and axis redesign is outside this revision.
+
+The fresh V3 IID engineering pilot uses seed 2026, the 544-example train
+partition, the 68-example ordinary IID-validation partition, two epochs,
+batch size 8, 136 optimizer steps, and CPU execution. It starts from a fresh
+V3 initialization, writes to a new immutable V3 run directory, and uses only
+positive engineering acceptance predicates. Systematic and held-out test
+partitions are prohibited. This section describes the prepared protocol, not
+a scientific-success result; no such claim is made before its authoritative
+Slurm run completes.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
