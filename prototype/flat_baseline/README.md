@@ -755,6 +755,40 @@ partitions are prohibited. This section describes the prepared protocol, not
 a scientific-success result; no such claim is made before its authoritative
 Slurm run completes.
 
+## Constrained-profile V4 node-conditioned categories
+
+The immutable V3 engineering pilot completed its two-epoch protocol but
+produced `0/68` autonomous valid reconstructions. All 68 generated planes and
+profiles were canonical; the first failures were instead 56
+`categorical_pad_sentinel` and 12 `node_category_applicability` failures. V4
+therefore leaves V3 geometry, model capacity, logits, losses, encoder, VQ,
+relations, and continuous heads unchanged and introduces only an additive
+prediction-selection contract.
+
+For each predicted node, V4 preserves the raw argmax for the retained fields
+`operation_type`, `boolean_mode`, `direction`, `reference_plane`, and
+`loop_role`. It then derives applicability solely from the predicted node
+type. Applicable fields select the highest-logit valid real class after
+excluding `<pad>`, `<none>`, reserved classes, and node-incompatible classes;
+inapplicable fields deterministically receive `<none>`. Predicted padding rows
+receive `<none>` in every retained field. The constrained IDs alone enter the
+serialized record, canonical-plane construction, strict conversion, and
+autonomous feedback. Raw IDs remain read-only reporting evidence, accompanied
+by an exact correction mask.
+
+This is not an oracle repair: V4 never reads an authoritative current node
+type, category, applicability mask, or geometry during selection. A
+structurally admissible but wrong category remains a categorical prediction
+error. Strict V4 conversion independently verifies the node-conditioned
+contract and never repairs externally supplied records.
+
+The fresh V4 pilot retains seed 2026, 544 training examples, 68 ordinary IID
+validation examples, two epochs, batch size 8, 136 optimizer steps, 1,088
+example presentations, normal VQ behavior, and CPU execution. It writes to a
+new immutable V4 output root and prohibits systematic and held-out test
+access. V4 may still produce zero CAD validity; no scientific-success claim is
+made before the authoritative pilot runs.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
