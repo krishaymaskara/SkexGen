@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from prototype.model_data.vocab import (
     BOOLEAN_MODES,
@@ -16,6 +17,13 @@ from prototype.model_data.vocab import (
 
 V4_CATEGORICAL_CONTRACT_ID = "controlled-node-conditioned-categories-v4"
 V4_CATEGORICAL_CONTRACT_VERSION = 4
+ALL_VALID_NODE_TYPE_IDS = tuple(range(len(NODE_TYPES.tokens)))
+NODE_TYPE_ID_TO_SEMANTIC_NAME = MappingProxyType({
+    index: name for index, name in enumerate(NODE_TYPES.tokens)
+})
+SEMANTIC_NAME_TO_NODE_TYPE_ID = MappingProxyType({
+    name: index for index, name in NODE_TYPE_ID_TO_SEMANTIC_NAME.items()
+})
 
 
 class NodeConditionedCategoricalError(ValueError):
@@ -124,6 +132,17 @@ V4_RETAINED_CATEGORICAL_FIELD_ORDER = tuple(
 V4_RETAINED_CATEGORICAL_TARGET_INDICES = tuple(
     field.target_position for field in V4_RETAINED_CATEGORICAL_FIELDS
 )
+V4_NODE_TYPE_APPLICABILITY = tuple(
+    (
+        node_name,
+        tuple(
+            field.name
+            for field in V4_RETAINED_CATEGORICAL_FIELDS
+            if field.valid_ids(node_name)
+        ),
+    )
+    for node_name in NODE_TYPES.tokens
+)
 
 if V4_RETAINED_CATEGORICAL_FIELD_ORDER != (
     "operation_type", "boolean_mode", "direction", "reference_plane", "loop_role"
@@ -152,14 +171,15 @@ def validate_node_conditioned_categorical_row(node_type_id, categorical_ids):
         raise NodeConditionedCategoricalError(
             "invalid_predicted_node_type", repr(node_type_id)
         )
-    node_type = NODE_TYPES.tokens[node_type_id]
+    node_type = NODE_TYPE_ID_TO_SEMANTIC_NAME[node_type_id]
     if node_type in ("<pad>", "<none>"):
-        if node_type == "<pad>" and tuple(categorical_ids) == tuple(
+        if tuple(categorical_ids) == tuple(
             field.sentinel_id for field in V4_RETAINED_CATEGORICAL_FIELDS
         ):
             return
         raise NodeConditionedCategoricalError(
-            "invalid_predicted_node_type", node_type
+            "invalid_node_conditioned_categorical_selection",
+            "{} rows require categorical sentinels".format(node_type),
         )
     if len(categorical_ids) != len(V4_RETAINED_CATEGORICAL_FIELDS):
         raise NodeConditionedCategoricalError(

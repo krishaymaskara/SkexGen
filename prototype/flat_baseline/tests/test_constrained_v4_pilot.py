@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
 try:
@@ -86,3 +87,38 @@ class V4PilotTensorTests(unittest.TestCase):
         self.assertIn("base_geometry_contract_id", PILOT_CHECKPOINT_FIELDS)
         self.assertIn("categorical_selection_contract_id", PILOT_CHECKPOINT_FIELDS)
         self.assertIn("categorical_selection_contract", PILOT_CHECKPOINT_FIELDS)
+
+    def test_job_3334551_no_training_pilot_selector_smoke(self):
+        from prototype.controlled_data.builders import build_history
+        from prototype.controlled_data.factors import PrimitiveFamily
+        from prototype.flat_baseline.constrained_v4 import ConstrainedProfileV4Model
+        from prototype.flat_baseline.constrained_v4_config import ConstrainedProfileV4Config
+        from prototype.flat_baseline.constrained_v4_pilot import teacher_forced_validation
+        from prototype.model_data.adapters import adapt_flat_mixed
+        from prototype.model_data.canonical import canonical_nodes_and_edges, reconstruction_target
+        from prototype.model_data.tests.fixtures import source
+        from prototype.representation.model import GeometryEncoding
+        history = build_history(
+            source("E", PrimitiveFamily.CIRCLE, extents=(1.0,)),
+            GeometryEncoding.CONTINUOUS,
+        )
+        nodes, edges = canonical_nodes_and_edges(history)
+        target = reconstruction_target(nodes, edges, history.structure.operation_sequence)
+        example = adapt_flat_mixed(SimpleNamespace(
+            physical_family_id="job-3334551-smoke", nodes=nodes, target=target
+        ))
+        config = ConstrainedProfileV4Config()
+        model = ConstrainedProfileV4Model(config)
+        with torch.no_grad():
+            model.node_type_head.weight.zero_()
+            model.node_type_head.bias.fill_(-10.0)
+            model.node_type_head.bias[1] = 10.0
+        summary = teacher_forced_validation(
+            model,
+            SimpleNamespace(flat_examples=(example,)),
+            config,
+            1,
+            torch.device("cpu"),
+        )
+        self.assertEqual(summary["example_count"], 1)
+        self.assertGreaterEqual(summary["examples_with_categorical_correction"], 1)

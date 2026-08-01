@@ -8,6 +8,7 @@ import torch
 
 from prototype.model_data.vocab import NODE_TYPES
 from prototype.node_conditioned_categories import (
+    ALL_VALID_NODE_TYPE_IDS,
     NodeConditionedCategoricalError,
     V4_RETAINED_CATEGORICAL_FIELDS,
 )
@@ -44,12 +45,10 @@ def select_node_conditioned_categorical_ids(
     selected = torch.empty_like(raw)
     applicable = torch.zeros_like(raw, dtype=torch.bool)
     pad_node_id = NODE_TYPES.pad_id
-    none_node_id = NODE_TYPES.id(None)
-    invalid_node = padding_mask & (
-        (predicted_node_type_ids < 0)
-        | (predicted_node_type_ids >= len(NODE_TYPES.tokens))
-        | (predicted_node_type_ids == none_node_id)
-    )
+    valid_node = torch.zeros_like(predicted_node_type_ids, dtype=torch.bool)
+    for node_id in ALL_VALID_NODE_TYPE_IDS:
+        valid_node = valid_node | (predicted_node_type_ids == node_id)
+    invalid_node = ~valid_node
     if invalid_node.any():
         raise NodeConditionedCategoricalError(
             "invalid_predicted_node_type",

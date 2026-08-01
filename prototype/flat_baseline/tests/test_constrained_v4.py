@@ -25,10 +25,14 @@ from prototype.model_data.vocab import (
     OPERATION_TYPES, REFERENCE_PLANES,
 )
 from prototype.node_conditioned_categories import (
+    ALL_VALID_NODE_TYPE_IDS,
+    NODE_TYPE_ID_TO_SEMANTIC_NAME,
+    SEMANTIC_NAME_TO_NODE_TYPE_ID,
     NodeConditionedCategoricalError,
     V4_CATEGORICAL_CONTRACT_ID,
     V4_RETAINED_CATEGORICAL_FIELD_ORDER,
     V4_RETAINED_CATEGORICAL_FIELDS,
+    V4_NODE_TYPE_APPLICABILITY,
     validate_node_conditioned_categorical_row,
     v4_categorical_contract_metadata,
 )
@@ -119,8 +123,18 @@ class V4CategoricalStaticTests(unittest.TestCase):
         )
 
     def test_every_supported_node_has_complete_selection(self):
+        authoritative_ids = set(range(len(NODE_TYPES.tokens)))
+        self.assertEqual(set(ALL_VALID_NODE_TYPE_IDS), authoritative_ids)
+        self.assertEqual(set(NODE_TYPE_ID_TO_SEMANTIC_NAME), authoritative_ids)
+        self.assertEqual(
+            set(SEMANTIC_NAME_TO_NODE_TYPE_ID), set(NODE_TYPES.tokens)
+        )
+        self.assertEqual(
+            tuple(name for name, unused in V4_NODE_TYPE_APPLICABILITY),
+            NODE_TYPES.tokens,
+        )
         sentinel = tuple(field.sentinel_id for field in V4_RETAINED_CATEGORICAL_FIELDS)
-        for node in NODE_TYPES.tokens[2:]:
+        for node in NODE_TYPES.tokens:
             row = list(sentinel)
             for index, field in enumerate(V4_RETAINED_CATEGORICAL_FIELDS):
                 valid = field.valid_ids(node)
@@ -213,9 +227,45 @@ class V4CategoricalTensorTests(unittest.TestCase):
         with self.assertRaises(NodeConditionedCategoricalError) as caught:
             select_node_conditioned_categorical_ids(tuple(logits), torch.tensor([[2]]))
         self.assertEqual(caught.exception.code, "invalid_v4_categorical_logits")
-        with self.assertRaises(NodeConditionedCategoricalError) as caught:
-            select_node_conditioned_categorical_ids(self._logits((1, 1)), torch.tensor([[999]]))
-        self.assertEqual(caught.exception.code, "invalid_predicted_node_type")
+        for invalid_id in (-1, len(NODE_TYPES.tokens), len(NODE_TYPES.tokens) + 1):
+            with self.subTest(invalid_id=invalid_id):
+                with self.assertRaises(NodeConditionedCategoricalError) as caught:
+                    select_node_conditioned_categorical_ids(
+                        self._logits((1, 1)), torch.tensor([[invalid_id]])
+                    )
+                self.assertEqual(caught.exception.code, "invalid_predicted_node_type")
+
+    def test_job_3334551_node_type_id_1_regression(self):
+        from prototype.node_conditioned_categories_torch import select_node_conditioned_categorical_ids
+        self.assertEqual(NODE_TYPES.tokens[1], "<none>")
+        nodes = torch.full((16,), 1, dtype=torch.long)
+        logits = []
+        for field in V4_RETAINED_CATEGORICAL_FIELDS:
+            values = torch.zeros(16, len(field.class_order))
+            favored = len(field.class_order) - 1
+            values[:, favored] = 9.0
+            logits.append(values)
+        result = select_node_conditioned_categorical_ids(tuple(logits), nodes)
+        expected = torch.ones(16, 5, dtype=torch.long)
+        self.assertTrue(torch.equal(result.node_conditioned_categorical_ids, expected))
+        self.assertEqual(result.node_conditioned_categorical_ids.shape, (16, 5))
+        self.assertTrue(result.correction_mask.all())
+        for row in result.node_conditioned_categorical_ids.tolist():
+            validate_node_conditioned_categorical_row(1, row)
+
+    def test_every_authoritative_node_id_selects_complete_row(self):
+        from prototype.node_conditioned_categories_torch import select_node_conditioned_categorical_ids
+        nodes = torch.tensor([list(ALL_VALID_NODE_TYPE_IDS)], dtype=torch.long)
+        logits = []
+        for field in V4_RETAINED_CATEGORICAL_FIELDS:
+            values = torch.zeros(1, len(ALL_VALID_NODE_TYPE_IDS), len(field.class_order))
+            values[..., field.padding_id] = 20.0
+            values[..., field.sentinel_id] = 19.0
+            values[..., -1] = 18.0
+            logits.append(values)
+        result = select_node_conditioned_categorical_ids(tuple(logits), nodes)
+        for node_id, row in zip(nodes[0].tolist(), result.node_conditioned_categorical_ids[0].tolist()):
+            validate_node_conditioned_categorical_row(node_id, row)
 
     def test_v3_v4_parameter_count_and_loss_equivalence(self):
         from prototype.constrained_profile_decoder import profile_targets_for_loss
@@ -259,3 +309,45 @@ class V4CategoricalTensorTests(unittest.TestCase):
         from prototype.flat_baseline.constrained_v4_autonomous import greedy_decode_v4, greedy_decode_v4_from_memory
         self.assertNotIn("target", inspect.signature(greedy_decode_v4).parameters)
         self.assertNotIn("target", inspect.signature(greedy_decode_v4_from_memory).parameters)
+
+    def test_real_model_argmax_id_1_reaches_selector_and_construction(self):
+        from prototype.constrained_profile_decoder import profile_targets_for_loss
+        from prototype.flat_baseline.constrained_v4 import ConstrainedProfileV4Model
+        from prototype.flat_baseline.constrained_v4_conversion import (
+            construct_v4_predicted_node_tensors,
+        )
+        batch = _batch()
+        inputs = batch.to_torch(torch)
+        target = batch.target.to_torch(torch)
+        profiles = profile_targets_for_loss(batch.target, inputs["geometry"])
+        model = ConstrainedProfileV4Model(ConstrainedProfileV4Config())
+        model.eval()
+        with torch.no_grad():
+            model.node_type_head.weight.zero_()
+            model.node_type_head.bias.fill_(-10.0)
+            model.node_type_head.bias[1] = 10.0
+            output = model(target=target, profile_targets=profiles, **inputs)
+            predicted = output.node_type_logits.argmax(dim=-1)
+            self.assertTrue(torch.equal(predicted, torch.ones_like(predicted)))
+            records = construct_v4_predicted_node_tensors(
+                predicted,
+                output.categorical_logits,
+                output.profile_family_logits,
+                output.raw_profile_parameters,
+                output.remaining_geometry,
+                target["node_mask"],
+            )
+        self.assertEqual(records.node_conditioned_categorical_ids.shape, predicted.shape + (5,))
+        self.assertEqual(records.node_conditioned_categorical_ids.device, predicted.device)
+        selected = records.node_conditioned_categorical_ids[target["node_mask"]]
+        self.assertTrue(torch.equal(selected, torch.ones_like(selected)))
+
+    def test_autonomous_first_step_id_1_has_no_target_dependency(self):
+        from prototype.flat_baseline.constrained_v4_conversion import construct_v4_predicted_node_tensors
+        logits = self._logits((1,))
+        records = construct_v4_predicted_node_tensors(
+            torch.tensor([1]), logits, torch.zeros(1, 3),
+            torch.zeros(1, 3), torch.zeros(1, 6),
+        )
+        self.assertEqual(records.node_conditioned_categorical_ids.tolist(), [[1, 1, 1, 1, 1]])
+        self.assertFalse(records.geometry_mask.any())
