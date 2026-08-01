@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 import ast
+import inspect
+import json
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 
 try:
@@ -122,3 +125,86 @@ class V4PilotTensorTests(unittest.TestCase):
         )
         self.assertEqual(summary["example_count"], 1)
         self.assertGreaterEqual(summary["examples_with_categorical_correction"], 1)
+
+    def test_job_3336430_no_training_autonomous_pilot_smoke(self):
+        from prototype.controlled_data.builders import build_history
+        from prototype.controlled_data.factors import PrimitiveFamily
+        from prototype.controlled_data.identity import source_family_id
+        from prototype.flat_baseline.constrained_v4 import ConstrainedProfileV4Model
+        from prototype.flat_baseline.constrained_v4_autonomous import greedy_decode_v4
+        from prototype.flat_baseline.constrained_v4_config import ConstrainedProfileV4Config
+        from prototype.flat_baseline.constrained_v4_pilot import (
+            _pilot_partition,
+            _require_finite_json,
+            autonomous_validation,
+            teacher_forced_validation,
+        )
+        from prototype.model_data.loader import load_partition_physical_examples
+        from prototype.model_data.tests.fixtures import source, write_physical_corpus
+        from prototype.model_data.vocab import NODE_TYPES
+        from prototype.representation.model import GeometryEncoding
+
+        pilot_config = ConstrainedV4PilotConfig()
+        validate_pilot_partition_authorization(pilot_config)
+        sources = (
+            source("E", PrimitiveFamily.CIRCLE, extents=(1.0,)),
+            source("R", PrimitiveFamily.RECTANGLE_LINES, extents=(1.0,)),
+            source("ER", PrimitiveFamily.CAPSULE_LINE_ARC, extents=(1.0, 2.0)),
+            source("EE", PrimitiveFamily.CIRCLE, extents=(2.0, 3.0)),
+            source("R", PrimitiveFamily.RECTANGLE_LINES, extents=(3.0,)),
+            source("E", PrimitiveFamily.CAPSULE_LINE_ARC, extents=(2.0,)),
+            source("R", PrimitiveFamily.CIRCLE, extents=(2.0,)),
+            source("E", PrimitiveFamily.RECTANGLE_LINES, extents=(1.0,)),
+        )
+        family_ids = tuple(
+            source_family_id(build_history(item, GeometryEncoding.CONTINUOUS))
+            for item in sources
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            write_physical_corpus(
+                temporary,
+                sources,
+                partitions={family_id: "validation" for family_id in family_ids},
+            )
+            physical = load_partition_physical_examples(
+                temporary, "iid", "validation"
+            )
+            partition = _pilot_partition(
+                physical,
+                tuple(item.physical_family_id for item in physical),
+                "validation",
+                "iid_validation",
+            )
+
+            model_config = ConstrainedProfileV4Config()
+            model = ConstrainedProfileV4Model(model_config)
+            with torch.no_grad():
+                model.node_type_head.weight.zero_()
+                model.node_type_head.bias.fill_(-10.0)
+                model.node_type_head.bias[NODE_TYPES.id(None)] = 10.0
+            self.assertNotIn("target", inspect.signature(greedy_decode_v4).parameters)
+            teacher = teacher_forced_validation(
+                model, partition, model_config, 8, torch.device("cpu")
+            )
+            autonomous = autonomous_validation(
+                model, partition, model_config, 8, torch.device("cpu")
+            )
+
+        self.assertEqual(teacher["example_count"], 8)
+        self.assertEqual(autonomous["example_count"], 8)
+        self.assertEqual(len(autonomous["outcomes"]), 8)
+        for outcome in autonomous["outcomes"]:
+            self.assertEqual(
+                outcome["requested_node_count"], outcome["generated_node_count"]
+            )
+            self.assertEqual(
+                outcome["node_count_source"], "authorized_validation_length"
+            )
+        self.assertIn("categorical_selection_metrics", autonomous)
+        self.assertIn("raw_failure_reason_histogram", autonomous)
+        _require_finite_json({"teacher": teacher, "autonomous": autonomous})
+        json.dumps(
+            {"teacher": teacher, "autonomous": autonomous},
+            sort_keys=True,
+            allow_nan=False,
+        )

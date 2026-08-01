@@ -38,8 +38,10 @@ from prototype.node_conditioned_categories_torch import (
 from .checkpointing import capture_rng_state
 from .constrained_v4 import ConstrainedProfileV4Model
 from .constrained_v4_autonomous import (
+    V4AutonomousEvaluationError,
     greedy_decode_v4,
     validate_and_convert_v4_autonomous_prediction,
+    validate_v4_autonomous_evaluation_result,
 )
 from .constrained_v4_conversion import raw_argmax_prediction_for_reporting
 from .conversion import validate_and_convert_raw_prediction
@@ -529,7 +531,10 @@ def autonomous_validation(
             raw_predictions = _decode_validation_examples(
                 model, inputs, node_counts
             )
-            for example, raw in zip(physical, raw_predictions):
+            for local_index, (example, raw) in enumerate(
+                zip(physical, raw_predictions)
+            ):
+                requested_node_count = int(node_counts[local_index].item())
                 if isinstance(raw, ReferencePlaneGeometryError):
                     code = raw.code
                     failure_histogram[code] = failure_histogram.get(code, 0) + 1
@@ -560,12 +565,27 @@ def autonomous_validation(
                         "finite": True,
                         "canonical_profiles": False,
                         "failure_code": code,
+                        "requested_node_count": requested_node_count,
+                        "generated_node_count": 0,
+                        "node_count_source": "authorized_validation_length",
                     })
                     continue
+                validate_v4_autonomous_evaluation_result(
+                    raw,
+                    requested_node_count=requested_node_count,
+                    max_nodes=model_config.max_nodes,
+                )
                 result = validate_and_convert_v4_autonomous_prediction(
                     raw, max_operations=model_config.max_operations
                 )
                 raw_arm = raw_argmax_prediction_for_reporting(raw)
+                if (
+                    raw_arm.node_count != raw.node_count
+                    or raw_arm.node_count_source != raw.node_count_source
+                ):
+                    raise V4AutonomousEvaluationError(
+                        "raw and constrained request contexts disagree"
+                    )
                 raw_result = validate_and_convert_raw_prediction(
                     raw_arm, max_operations=model_config.max_operations
                 )
@@ -692,6 +712,9 @@ def autonomous_validation(
                     "selection_changed_complete_validity": (
                         bool(raw_result.controlled_domain.valid) != valid
                     ),
+                    "requested_node_count": requested_node_count,
+                    "generated_node_count": raw.node_count,
+                    "node_count_source": raw.node_count_source,
                 })
     finally:
         model.train(was_training)

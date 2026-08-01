@@ -34,6 +34,7 @@ from .constrained_v4 import (
     ConstrainedProfileV4PrefixOutput,
 )
 from .constrained_v4_conversion import (
+    V4PredictionContractError,
     V4TeacherForcedRawPrediction,
     _validate_v4_raw_contract,
     construct_v4_predicted_node_tensors,
@@ -73,6 +74,15 @@ class V4AutonomousRawPrediction(V4TeacherForcedRawPrediction):
     """Autonomous raw evidence with explicit encoded-memory provenance."""
 
     encoded_memory_source: str
+
+
+class V4AutonomousEvaluationError(RuntimeError):
+    """Autonomous output disagrees with its generation request."""
+
+    def __init__(self, detail):
+        self.code = "invalid_v4_autonomous_evaluation_result"
+        self.detail = detail
+        super().__init__("{}: {}".format(self.code, detail))
 
 
 def encode_v4_to_memory(
@@ -120,9 +130,10 @@ def greedy_decode_v4_from_memory(
         memory.memory.device,
     )
     _validate_node_count_source(node_count_source)
+    results = []
     with _evaluation_mode(model):
-        return tuple(
-            _decode_one(
+        for index, count in enumerate(counts):
+            prediction = _decode_one(
                 model,
                 memory.memory[index : index + 1],
                 memory.code_indices[index],
@@ -130,8 +141,13 @@ def greedy_decode_v4_from_memory(
                 node_count_source,
                 memory.encoding_source,
             )
-            for index, count in enumerate(counts)
-        )
+            validate_v4_autonomous_evaluation_result(
+                prediction,
+                requested_node_count=count,
+                max_nodes=model.config.max_nodes,
+            )
+            results.append(prediction)
+    return tuple(results)
 
 
 def greedy_decode_v4(
@@ -172,6 +188,54 @@ def validate_and_convert_v4_autonomous_prediction(
     return validate_and_convert_raw_prediction(
         compatible, max_operations=max_operations
     )
+
+
+def validate_v4_autonomous_evaluation_result(
+    prediction,
+    *,
+    requested_node_count=None,
+    max_nodes=None,
+):
+    """Validate one result against the invocation that owns its request."""
+
+    if not isinstance(prediction, V4AutonomousRawPrediction):
+        raise V4AutonomousEvaluationError(
+            "prediction must be V4AutonomousRawPrediction"
+        )
+    for name, value in (
+        ("requested_node_count", requested_node_count),
+        ("max_nodes", max_nodes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise V4AutonomousEvaluationError(
+                "{} must be an integer".format(name)
+            )
+    if max_nodes <= 0 or not 1 <= requested_node_count <= max_nodes:
+        raise V4AutonomousEvaluationError(
+            "requested_node_count is outside configured limits"
+        )
+    if (
+        isinstance(prediction.node_count, bool)
+        or not isinstance(prediction.node_count, int)
+        or prediction.node_count != requested_node_count
+    ):
+        raise V4AutonomousEvaluationError(
+            "prediction node_count disagrees with generation request"
+        )
+    if len(prediction.raw_nodes) != requested_node_count:
+        raise V4AutonomousEvaluationError(
+            "generated node count disagrees with generation request"
+        )
+    if (
+        not isinstance(prediction.node_count_source, str)
+        or not prediction.node_count_source
+    ):
+        raise V4AutonomousEvaluationError("node_count_source is missing")
+    try:
+        _validate_v4_raw_contract(prediction)
+    except V4PredictionContractError as exc:
+        raise V4AutonomousEvaluationError(exc.detail) from exc
+    return prediction
 
 
 def _decode_one(

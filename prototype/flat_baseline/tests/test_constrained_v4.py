@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 import ast
 import inspect
 from pathlib import Path
@@ -177,6 +177,56 @@ class V4CategoricalStaticTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, TORCH_REASON)
 class V4CategoricalTensorTests(unittest.TestCase):
+    def _autonomous_prediction(self, node_count=1, corrected=False):
+        from prototype.flat_baseline.autonomous import (
+            REQUESTED_LENGTH_TERMINATION,
+            RawDecodedNode,
+        )
+        from prototype.flat_baseline.constrained_v4_autonomous import (
+            V4_AUTONOMOUS_PREFIX_FEEDBACK,
+            V4_ENCODED_MEMORY_SOURCE,
+            V4AutonomousRawPrediction,
+        )
+        conditioned = (1, 1, 1, 1, 1)
+        raw = (
+            tuple(len(field.class_order) - 1 for field in V4_RETAINED_CATEGORICAL_FIELDS)
+            if corrected else conditioned
+        )
+        correction = tuple(a != b for a, b in zip(raw, conditioned))
+        nodes = tuple(
+            RawDecodedNode(
+                index,
+                NODE_TYPES.id(None),
+                (1,) * 9,
+                (0.0,) * 39,
+                (False,) * 39,
+            )
+            for index in range(node_count)
+        )
+        return V4AutonomousRawPrediction(
+            latent_indices=(0, 1),
+            node_count=node_count,
+            node_count_source="authorized_validation_length",
+            termination_reason=REQUESTED_LENGTH_TERMINATION,
+            termination_is_learned=False,
+            prefix_feedback=V4_AUTONOMOUS_PREFIX_FEEDBACK,
+            raw_nodes=nodes,
+            raw_edges=(),
+            predicted_operation_node_indices=(),
+            predicted_operation_count=0,
+            operation_count_exceeds_limit=False,
+            raw_operation_pointers=(),
+            profile_family_logits=((0.0, 0.0, 0.0),) * node_count,
+            predicted_profile_family_ids=(-1,) * node_count,
+            raw_profile_parameters=((0.0, 0.0, 0.0),) * node_count,
+            constrained_profile_parameters=((0.0, 0.0, 0.0),) * node_count,
+            raw_categorical_argmax_ids=(raw,) * node_count,
+            node_conditioned_categorical_ids=(conditioned,) * node_count,
+            categorical_correction_mask=(correction,) * node_count,
+            categorical_contract_id=V4_CATEGORICAL_CONTRACT_ID,
+            encoded_memory_source=V4_ENCODED_MEMORY_SOURCE,
+        )
+
     def _logits(self, shape=(1, 6)):
         result = []
         for field in V4_RETAINED_CATEGORICAL_FIELDS:
@@ -351,3 +401,125 @@ class V4CategoricalTensorTests(unittest.TestCase):
         )
         self.assertEqual(records.node_conditioned_categorical_ids.tolist(), [[1, 1, 1, 1, 1]])
         self.assertFalse(records.geometry_mask.any())
+
+    def test_job_3336430_raw_prediction_node_count_regression(self):
+        from prototype.flat_baseline.constrained_v4_autonomous import (
+            validate_and_convert_v4_autonomous_prediction,
+            validate_v4_autonomous_evaluation_result,
+        )
+        from prototype.flat_baseline.constrained_v4_conversion import (
+            raw_argmax_prediction_for_reporting,
+        )
+        from prototype.flat_baseline.conversion import (
+            validate_and_convert_raw_prediction,
+        )
+        prediction = self._autonomous_prediction(corrected=True)
+        validated = validate_v4_autonomous_evaluation_result(
+            prediction, requested_node_count=1, max_nodes=16
+        )
+        result = validate_and_convert_v4_autonomous_prediction(
+            validated, max_operations=2
+        )
+        raw_arm = raw_argmax_prediction_for_reporting(validated)
+        raw_result = validate_and_convert_raw_prediction(
+            raw_arm, max_operations=2
+        )
+        self.assertIsNotNone(result)
+        self.assertIsNotNone(raw_result)
+        self.assertFalse(hasattr(prediction, "requested_node_count"))
+        self.assertEqual(raw_arm.node_count, prediction.node_count)
+        self.assertEqual(raw_arm.node_count_source, prediction.node_count_source)
+
+    def test_autonomous_result_type_contract_and_request_validation(self):
+        from prototype.flat_baseline.constrained_v4_autonomous import (
+            V4AutonomousEvaluationError,
+            V4EncodedMemory,
+            V4AutonomousRawPrediction,
+            validate_v4_autonomous_evaluation_result,
+        )
+        expected_fields = (
+            "latent_indices", "node_count", "node_count_source",
+            "termination_reason", "termination_is_learned", "prefix_feedback",
+            "raw_nodes", "raw_edges", "predicted_operation_node_indices",
+            "predicted_operation_count", "operation_count_exceeds_limit",
+            "raw_operation_pointers", "profile_family_logits",
+            "predicted_profile_family_ids", "raw_profile_parameters",
+            "constrained_profile_parameters", "raw_categorical_argmax_ids",
+            "node_conditioned_categorical_ids", "categorical_correction_mask",
+            "categorical_contract_id", "encoded_memory_source",
+        )
+        self.assertEqual(
+            tuple(field.name for field in fields(V4AutonomousRawPrediction)),
+            expected_fields,
+        )
+        self.assertEqual(
+            tuple(field.name for field in fields(V4EncodedMemory)),
+            ("memory", "code_indices", "encoding_source", "model_name"),
+        )
+        memory = V4EncodedMemory(
+            torch.zeros(1, 1, 1),
+            torch.zeros(1, 1, dtype=torch.long),
+            "source",
+            "model",
+        )
+        self.assertEqual(
+            tuple(vars(memory)),
+            ("memory", "code_indices", "encoding_source", "model_name"),
+        )
+        prediction = self._autonomous_prediction(2)
+        with self.assertRaises(V4AutonomousEvaluationError) as caught:
+            validate_v4_autonomous_evaluation_result(prediction, max_nodes=16)
+        self.assertEqual(
+            caught.exception.code,
+            "invalid_v4_autonomous_evaluation_result",
+        )
+        self.assertEqual(tuple(vars(prediction)), expected_fields)
+        for requested, maximum in ((None, 16), ("2", 16), (True, 16), (0, 16), (17, 16)):
+            with self.subTest(requested=requested, maximum=maximum):
+                with self.assertRaises(V4AutonomousEvaluationError) as caught:
+                    validate_v4_autonomous_evaluation_result(
+                        prediction,
+                        requested_node_count=requested,
+                        max_nodes=maximum,
+                    )
+                self.assertEqual(
+                    caught.exception.code,
+                    "invalid_v4_autonomous_evaluation_result",
+                )
+        for malformed in (
+            SimpleNamespace(),
+            replace(prediction, node_count=1),
+            replace(prediction, node_count=True),
+            replace(
+                prediction,
+                raw_categorical_argmax_ids=(
+                    prediction.raw_categorical_argmax_ids[:1]
+                ),
+            ),
+        ):
+            with self.subTest(malformed=type(malformed).__name__):
+                with self.assertRaises(V4AutonomousEvaluationError) as caught:
+                    validate_v4_autonomous_evaluation_result(
+                        malformed, requested_node_count=2, max_nodes=16
+                    )
+                self.assertEqual(
+                    caught.exception.code,
+                    "invalid_v4_autonomous_evaluation_result",
+                )
+
+    def test_single_batch_and_mixed_autonomous_request_contexts(self):
+        from prototype.flat_baseline.constrained_v4_autonomous import (
+            validate_v4_autonomous_evaluation_result,
+        )
+        for counts in ((1,), (2, 2, 2), (1, 3, 2)):
+            predictions = tuple(
+                self._autonomous_prediction(count, corrected=index % 2 == 0)
+                for index, count in enumerate(counts)
+            )
+            for prediction, count in zip(predictions, counts):
+                self.assertIs(
+                    validate_v4_autonomous_evaluation_result(
+                        prediction, requested_node_count=count, max_nodes=16
+                    ),
+                    prediction,
+                )

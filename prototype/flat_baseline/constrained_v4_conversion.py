@@ -66,6 +66,15 @@ _RETAINED_ATTRIBUTE_VOCABULARIES = (
 )
 
 
+class V4PredictionContractError(ValueError):
+    """V4 prediction evidence is missing or internally inconsistent."""
+
+    def __init__(self, detail):
+        self.code = "invalid_v4_autonomous_evaluation_result"
+        self.detail = detail
+        super().__init__("{}: {}".format(self.code, detail))
+
+
 @dataclass(frozen=True)
 class V4PredictedProfileTensors:
     """Predicted-family-routed compact and canonical profile tensors."""
@@ -465,16 +474,27 @@ def _prediction_row(
 
 
 def _validate_v4_raw_contract(prediction):
+    if not hasattr(prediction, "categorical_contract_id"):
+        raise V4PredictionContractError("categorical contract metadata is missing")
     if prediction.categorical_contract_id != V4_CATEGORICAL_CONTRACT_ID:
-        raise ValueError("V4 categorical contract metadata is missing or wrong")
-    count = prediction.requested_node_count
+        raise V4PredictionContractError("categorical contract metadata is wrong")
+    if (
+        not hasattr(prediction, "node_count")
+        or isinstance(prediction.node_count, bool)
+        or not isinstance(prediction.node_count, int)
+        or prediction.node_count <= 0
+    ):
+        raise V4PredictionContractError("node_count must be a positive integer")
+    count = prediction.node_count
     evidence = (
         prediction.raw_categorical_argmax_ids,
         prediction.node_conditioned_categorical_ids,
         prediction.categorical_correction_mask,
     )
+    if not hasattr(prediction, "raw_nodes") or len(prediction.raw_nodes) != count:
+        raise V4PredictionContractError("generated nodes disagree with node_count")
     if any(len(value) != count for value in evidence):
-        raise ValueError("V4 categorical evidence is misaligned")
+        raise V4PredictionContractError("categorical evidence is misaligned")
     for index, node in enumerate(prediction.raw_nodes):
         retained = (
             node.categorical_ids[0], node.categorical_ids[1],
@@ -483,14 +503,18 @@ def _validate_v4_raw_contract(prediction):
         )
         constrained = prediction.node_conditioned_categorical_ids[index]
         if retained != constrained:
-            raise ValueError("raw node does not contain constrained categories")
+            raise V4PredictionContractError(
+                "raw node does not contain constrained categories"
+            )
         validate_node_conditioned_categorical_row(node.node_type_id, retained)
         raw = prediction.raw_categorical_argmax_ids[index]
         corrections = prediction.categorical_correction_mask[index]
         if len(raw) != 5 or len(constrained) != 5 or len(corrections) != 5:
-            raise ValueError("V4 categorical evidence width differs")
+            raise V4PredictionContractError("categorical evidence width differs")
         if tuple(a != b for a, b in zip(raw, constrained)) != tuple(corrections):
-            raise ValueError("V4 categorical correction evidence differs")
+            raise V4PredictionContractError(
+                "categorical correction evidence differs"
+            )
 
 
 def _validate_predicted_node_inputs(
