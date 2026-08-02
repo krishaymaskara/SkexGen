@@ -782,12 +782,46 @@ structurally admissible but wrong category remains a categorical prediction
 error. Strict V4 conversion independently verifies the node-conditioned
 contract and never repairs externally supplied records.
 
-The fresh V4 pilot retains seed 2026, 544 training examples, 68 ordinary IID
+The immutable V4 pilot completed that protocol. Constrained conversion
+succeeded for `68/68` IID-validation examples, versus `22/68` for the raw
+categorical arm, while complete CAD validity remained `0/68`. Sentinel and
+categorical-applicability failures were eliminated. The remaining first
+failures were 45 `invalid_node_grammar` and 23 `unexpected_edge` results.
+
+## Constrained-profile V5 prefix node grammar
+
+V5 is the additive production response to the frozen V4 node-grammar result.
+It retains the V4 architecture, parameter count, raw logits, all losses,
+categorical selector, geometry construction, VQ behavior, relation heads, and
+edge decoding. Its only scientific change is the deterministic selection of
+predicted node IDs under the frozen controlled prefix grammar:
+
+```text
+E:  reference_plane, sketch, profile, extrude
+R:  reference_plane, sketch, profile, axis, revolve
+EE: reference_plane, sketch, profile, extrude, sketch, profile, extrude
+ER: reference_plane, sketch, profile, extrude, sketch, profile, axis, revolve
+RE: reference_plane, sketch, profile, axis, revolve, sketch, profile, extrude
+RR: reference_plane, sketch, profile, axis, revolve, sketch, profile, axis, revolve
+```
+
+The legal requested lengths are exactly 4, 5, 7, 8, and 9. At each active
+position V5 exhaustively enumerates the tiny immutable grammar and masks any
+candidate that cannot complete to the authorized exact length. This uses only
+the constrained prefix and authorized length; it never reads the current or
+future target, target operation family, categories, or geometry. The raw node
+argmax remains same-history shadow evidence. Only the constrained node ID
+controls V4 categorical applicability, plane/profile/axis construction,
+operation counting, pointers, and autonomous feedback. The raw shadow is not
+an independent rollout and never changes future logits.
+
+The fresh V5 pilot retains seed 2026, 544 training examples, 68 ordinary IID
 validation examples, two epochs, batch size 8, 136 optimizer steps, 1,088
-example presentations, normal VQ behavior, and CPU execution. It writes to a
-new immutable V4 output root and prohibits systematic and held-out test
-access. V4 may still produce zero CAD validity; no scientific-success claim is
-made before the authoritative pilot runs.
+example presentations, normal VQ behavior, and CPU execution. It uses a new
+immutable V5 output root. Systematic and held-out test access is prohibited.
+The edge decoder is deliberately unchanged, so V5 may still have zero complete
+CAD validity; pilot completion is an engineering gate, not a scientific-success
+claim.
 
 ## Related evidence
 
