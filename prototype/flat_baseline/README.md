@@ -832,6 +832,50 @@ provenance stores `git_status_porcelain` as the sorted list emitted by
 `source_state()`; checkpoint construction and strict reload validate that same
 representation.
 
+The corrected immutable V5 pilot then completed with zero constrained-grammar
+failures and `68/68` constrained conversions, but `0/68` complete CAD-valid
+histories. Its first failures partitioned exactly by operation family: all 45
+revolve-containing examples failed with `invalid_axis_geometry`, while all 23
+extrude-only examples advanced to `unexpected_edge`. This establishes the
+prefix grammar as effective and the learned axis row as the immediate
+deterministic blocker for every revolve-containing example.
+
+## Constrained-profile V6 canonical revolve axis
+
+V6 is the final planned flat-model revision. It retains the complete V5
+architecture, state-dictionary shapes, logits, losses, VQ/EMA behavior,
+prefix grammar, categorical/profile/plane construction, relations, pointers,
+and edge decoder. It changes only prediction construction for a
+grammar-constrained `axis` node.
+
+The controlled builder, representation schema, model-data tensorizer, and
+strict converter all define one universal sketch-local 2D revolve axis:
+point `(0, 0)` and unit direction `(0, 1)`. In the serialized normalized
+geometry row, channels 33--36 are therefore exactly `(0, 0, 0, 1)` with those
+four mask entries true. Channels 33--34 are point coordinates with physical
+scale 4; channels 35--36 are unscaled direction components. Channels 37 and
+38 are not axis fields: they are extrude distance and revolve angle and remain
+masked off on an axis node. This convention is identical for XY, XZ, and YZ
+reference planes, every controlled profile family, and every operation
+direction.
+
+V6 preserves the learned channels 33--38 as `raw_axis_geometry` reporting
+evidence, records the deterministic values as `constrained_axis_geometry`, and
+reports an `axis_geometry_correction_mask`. Only constrained geometry enters
+the generated node record, strict conversion, or autonomous history. Axis
+applicability comes exclusively from the V5 grammar-constrained node ID; raw
+node argmax and all authoritative targets are excluded from construction.
+Strict conversion independently rejects malformed values, masks, or non-axis
+leakage and never repairs supplied records.
+
+The fresh V6 pilot keeps the frozen seed-2026 two-epoch, batch-size-8,
+544-train/68-IID-validation protocol and unchanged edge decoder. It adds a
+positive acceptance predicate requiring every generated axis to satisfy the
+canonical contract, but does not require nonzero complete validity. After
+this pilot the flat decoder is frozen: any remaining edge or later-stage
+failures are carried into the flat-versus-graph comparison rather than
+prompting another flat-model revision.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation

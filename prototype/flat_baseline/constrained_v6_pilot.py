@@ -1,0 +1,2028 @@
+"""Bounded V6 train-and-ordinary-IID-validation engineering pilot."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+from pathlib import Path
+
+import torch
+from torch.nn import functional as F
+
+from prototype.constrained_profile_decoder import profile_targets_for_loss
+from prototype.controlled_data.factors import OperationTemplate
+from prototype.model_data.adapters import adapt_flat_mixed
+from prototype.model_data.batching import collate_flat
+from prototype.model_data.loader import load_partition_physical_examples
+from prototype.model_data.vocab import NODE_TYPES, REFERENCE_PLANES
+from prototype.node_grammar import (
+    NodeGrammarError,
+    validate_complete_node_sequence,
+)
+from prototype.reference_plane_geometry_torch import (
+    VALID_REFERENCE_PLANE_IDS,
+    VALID_REFERENCE_PLANE_NAMES,
+)
+from prototype.profile_geometry import (
+    PROFILE_FAMILIES,
+    canonical_primitive_type_ids_from_family_id,
+    construct_profile_geometry,
+    profile_family_from_id,
+)
+from prototype.reference_plane_geometry import ReferencePlaneGeometryError
+from prototype.node_conditioned_categories import (
+    V4_RETAINED_CATEGORICAL_FIELDS,
+)
+from .checkpointing import capture_rng_state
+from .constrained_v6 import ConstrainedProfileV6Model
+from .constrained_v6_checkpoint import (
+    V6CheckpointValidationError,
+    V6_PILOT_CHECKPOINT_FIELDS,
+    v6_model_metadata,
+    validate_v6_checkpoint_payload,
+    validate_v6_pilot_checkpoint_state,
+)
+from .constrained_v6_autonomous import (
+    V6AutonomousEvaluationError,
+    greedy_decode_v6,
+    validate_and_convert_v6_autonomous_prediction,
+    validate_v6_autonomous_evaluation_result,
+)
+from .constrained_v6_conversion import (
+    same_history_raw_shadow_for_reporting,
+    v6_teacher_forced_predictions,
+)
+from .conversion import validate_and_convert_raw_prediction
+from .constrained_v6_config import ConstrainedProfileV6Config
+from .constrained_v6_losses import constrained_profile_v6_loss
+from .constrained_v6_training import (
+    V6_TRAINING_LOSS_FIELDS,
+    build_v6_optimizer,
+    constrained_v6_training_step,
+    save_v6_checkpoint,
+)
+from .constrained_v6_training_config import ConstrainedV6TrainingConfig
+from .constrained_v6_pilot_config import (
+    PILOT_EXPECTED_TRAIN_EXAMPLES,
+    PILOT_EXPECTED_VALIDATION_EXAMPLES,
+    ConstrainedV6PilotConfig,
+    ConstrainedV6PilotError,
+    validate_pilot_partition_authorization,
+)
+from .data import make_data_loader
+from .provenance import source_state
+from .run_logging import JsonlLogger
+from .training import resolve_device, seed_everything
+
+
+PILOT_CHECKPOINT_FIELDS = V6_PILOT_CHECKPOINT_FIELDS
+
+
+@dataclass(frozen=True)
+class PilotPartition:
+    physical_examples: tuple
+    flat_examples: tuple
+    family_ids: tuple
+    fingerprint: str
+    partition: str
+    identity: str
+
+    def metadata(self):
+        return {
+            "split_name": "iid",
+            "partition": self.partition,
+            "partition_identity": self.identity,
+            "family_count": len(self.family_ids),
+            "family_ids": list(self.family_ids),
+            "corpus_fingerprint": self.fingerprint,
+        }
+
+
+@dataclass(frozen=True)
+class PilotData:
+    train: PilotPartition
+    validation: PilotPartition
+
+
+@dataclass(frozen=True)
+class PilotResult:
+    output_dir: str
+    metrics_path: str
+    final_checkpoint: str
+    selected_checkpoint: str
+    completed_epochs: int
+    global_step: int
+    examples_processed: int
+    terminal_summary: dict
+
+
+def load_pilot_data(corpus_dir, config):
+    validate_pilot_partition_authorization(config)
+    train = load_partition_physical_examples(
+        corpus_dir, config.split_name, config.training_partition
+    )
+    validation = load_partition_physical_examples(
+        corpus_dir, config.split_name, config.validation_partition
+    )
+    if len(train) != PILOT_EXPECTED_TRAIN_EXAMPLES or len(
+        validation
+    ) != PILOT_EXPECTED_VALIDATION_EXAMPLES:
+        raise ConstrainedV6PilotError(
+            "controlled_corpus_identity_mismatch",
+            "expected 544 train and 68 IID-validation examples",
+        )
+    train_ids = tuple(item.physical_family_id for item in train)
+    validation_ids = tuple(item.physical_family_id for item in validation)
+    if set(train_ids) & set(validation_ids):
+        raise ConstrainedV6PilotError(
+            "partition_overlap", "train and validation families overlap"
+        )
+    return PilotData(
+        _pilot_partition(
+            train, train_ids, "train", "train"
+        ),
+        _pilot_partition(
+            validation,
+            validation_ids,
+            "validation",
+            "iid_validation",
+        ),
+    )
+
+
+def _pilot_partition(physical, family_ids, partition, identity):
+    if not physical:
+        raise ConstrainedV6PilotError(
+            "empty_partition", "{} is empty".format(identity)
+        )
+    digest = hashlib.sha256()
+    for item in physical:
+        encoded_id = item.physical_family_id.encode("utf-8")
+        encoded_record = item.canonical_reconstruction_json.encode("utf-8")
+        digest.update(len(encoded_id).to_bytes(8, "big"))
+        digest.update(encoded_id)
+        digest.update(len(encoded_record).to_bytes(8, "big"))
+        digest.update(encoded_record)
+    return PilotPartition(
+        tuple(physical),
+        tuple(adapt_flat_mixed(item) for item in physical),
+        tuple(family_ids),
+        digest.hexdigest(),
+        partition,
+        identity,
+    )
+
+
+def pilot_optimization_config(config, configured_maximum_steps):
+    config.validate()
+    return ConstrainedV6TrainingConfig(
+        seed=config.seed,
+        device=config.device,
+        batch_size=config.batch_size,
+        maximum_steps=configured_maximum_steps,
+        output_dir=config.output_dir,
+        require_clean_source=config.require_clean_source,
+    )
+
+
+def pilot_optimization_metadata(config):
+    values = config.to_dict()
+    names = (
+        "model_name",
+        "model_config_version",
+        "decoder_contract_version",
+        "checkpoint_version",
+        "seed",
+        "device",
+        "dtype",
+        "batch_size",
+        "learning_rate",
+        "weight_decay",
+        "gradient_clip_norm",
+        "maximum_steps",
+        "extent_min",
+        "extent_max",
+        "profile_family_order",
+        "node_type_loss_weight",
+        "categorical_loss_weight",
+        "remaining_geometry_loss_weight",
+        "profile_family_loss_weight",
+        "profile_parameter_loss_weight",
+        "edge_presence_loss_weight",
+        "edge_type_loss_weight",
+        "operation_pointer_loss_weight",
+        "vq_loss_weight",
+        "vq_initialization",
+    )
+    return {name: values[name] for name in names}
+
+
+def deterministic_epoch_family_ids(examples, batch_size, seed, epoch):
+    generator = torch.Generator()
+    generator.manual_seed(seed + epoch)
+    order = torch.randperm(len(examples), generator=generator).tolist()
+    return tuple(
+        tuple(
+            examples[index].physical_family_id
+            for index in order[start:start + batch_size]
+        )
+        for start in range(0, len(order), batch_size)
+    )
+
+
+def teacher_forced_validation(
+    model,
+    partition,
+    model_config,
+    batch_size,
+    device,
+):
+    was_training = model.training
+    vq_before = {
+        name: value.detach().clone()
+        for name, value in model.vq.state_dict().items()
+    }
+    loss_sums = {name: 0.0 for name in V6_TRAINING_LOSS_FIELDS}
+    family_confusion = [
+        [0 for _ in PROFILE_FAMILIES] for _ in PROFILE_FAMILIES
+    ]
+    plane_confusion = [
+        [0 for _ in VALID_REFERENCE_PLANE_IDS]
+        for _ in VALID_REFERENCE_PLANE_IDS
+    ]
+    family_absolute = [0.0 for _ in PROFILE_FAMILIES]
+    family_smooth_l1 = [0.0 for _ in PROFILE_FAMILIES]
+    family_parameter_values = [0 for _ in PROFILE_FAMILIES]
+    family_applicable = [0 for _ in PROFILE_FAMILIES]
+    code_counts = torch.zeros(model_config.codebook_size, dtype=torch.long)
+    categorical_stats = _new_categorical_stats()
+    node_grammar_stats = _new_node_grammar_stats()
+    axis_stats = _new_axis_geometry_stats()
+    corrected_examples = 0
+    example_count = 0
+    try:
+        model.eval()
+        with torch.no_grad():
+            for start in range(0, len(partition.flat_examples), batch_size):
+                batch = collate_flat(
+                    partition.flat_examples[start:start + batch_size]
+                )
+                inputs = {
+                    name: value.to(device)
+                    for name, value in batch.to_torch(torch).items()
+                }
+                target = {
+                    name: value.to(device)
+                    for name, value in batch.target.to_torch(torch).items()
+                }
+                profiles = profile_targets_for_loss(
+                    batch.target, inputs["geometry"]
+                )
+                output = model(
+                    target=target, profile_targets=profiles, **inputs
+                )
+                grammar_predictions = v6_teacher_forced_predictions(
+                    output,
+                    node_mask=target["node_mask"],
+                    node_count_source="teacher_forced_authorized_length",
+                )
+                corrected_examples += int(
+                    sum(any(any(row) for row in item.categorical_correction_mask)
+                        for item in grammar_predictions)
+                )
+                _update_categorical_stats(
+                    categorical_stats,
+                    [list(item.grammar_constrained_node_type_ids)
+                     for item in grammar_predictions],
+                    [list(item.raw_categorical_argmax_ids)
+                     for item in grammar_predictions],
+                    [list(item.node_conditioned_categorical_ids)
+                     for item in grammar_predictions],
+                    target["categorical_attributes"][
+                        ..., (0, 1, 2, 3, 8)
+                    ].detach().cpu().tolist(),
+                    target["node_mask"].detach().cpu().tolist(),
+                )
+                _update_node_grammar_stats(
+                    node_grammar_stats,
+                    grammar_predictions,
+                    target["node_type_ids"].detach().cpu().tolist(),
+                )
+                physical = partition.physical_examples[
+                    start:start + len(grammar_predictions)
+                ]
+                _update_axis_geometry_stats(
+                    axis_stats,
+                    grammar_predictions,
+                    target["geometry"].detach().cpu().tolist(),
+                    target["geometry_mask"].detach().cpu().tolist(),
+                    [item.metadata.reference_plane for item in physical],
+                    [item.metadata.operation_template for item in physical],
+                )
+                losses = constrained_profile_v6_loss(
+                    output, target, profiles, model_config
+                )
+                current = len(batch.family_ids)
+                for name, values in losses.per_example.items():
+                    metric = (
+                        "remaining_categorical_loss"
+                        if name == "categorical_attributes"
+                        else "{}_loss".format(name)
+                    )
+                    if metric not in loss_sums:
+                        continue
+                    loss_sums[metric] += float(values.double().sum().item())
+                selected = profiles.sketch_mask
+                target_ids = profiles.family_ids[selected]
+                predicted_ids = output.profile_family_logits[selected].argmax(-1)
+                for target_id, predicted_id in zip(
+                    target_ids.cpu().tolist(),
+                    predicted_ids.cpu().tolist(),
+                ):
+                    family_confusion[target_id][predicted_id] += 1
+                    family_applicable[target_id] += 1
+                plane_selected = (
+                    target["node_mask"]
+                    & (target["node_type_ids"] == NODE_TYPES.id("reference_plane"))
+                )
+                plane_targets = target["categorical_attributes"][..., 3][
+                    plane_selected
+                ]
+                plane_predictions = output.categorical_logits[3][
+                    plane_selected
+                ].argmax(-1)
+                id_to_class = {
+                    value: index
+                    for index, value in enumerate(VALID_REFERENCE_PLANE_IDS)
+                }
+                for target_id, predicted_id in zip(
+                    plane_targets.cpu().tolist(),
+                    plane_predictions.cpu().tolist(),
+                ):
+                    if target_id in id_to_class and predicted_id in id_to_class:
+                        plane_confusion[id_to_class[target_id]][
+                            id_to_class[predicted_id]
+                        ] += 1
+                differences = (
+                    output.constrained_profile_parameters
+                    - profiles.parameters
+                )
+                for class_id, _ in enumerate(PROFILE_FAMILIES):
+                    class_mask = selected & (profiles.family_ids == class_id)
+                    if class_mask.any():
+                        values = differences[class_mask]
+                        family_absolute[class_id] += float(
+                            values.abs().double().sum().item()
+                        )
+                        family_smooth_l1[class_id] += float(
+                            F.smooth_l1_loss(
+                                output.constrained_profile_parameters[class_mask],
+                                profiles.parameters[class_mask],
+                                reduction="sum",
+                            ).double().item()
+                        )
+                        family_parameter_values[class_id] += values.numel()
+                code_counts.add_(
+                    torch.bincount(
+                        output.code_indices.detach().cpu().reshape(-1),
+                        minlength=model_config.codebook_size,
+                    )
+                )
+                example_count += current
+    finally:
+        model.train(was_training)
+    _assert_vq_unchanged(model, vq_before)
+    losses = {
+        name: value / float(example_count)
+        for name, value in loss_sums.items()
+    }
+    probabilities = code_counts.double() / max(int(code_counts.sum()), 1)
+    nonzero = probabilities > 0
+    perplexity = float(torch.exp(
+        -(probabilities[nonzero] * torch.log(probabilities[nonzero])).sum()
+    ).item())
+    per_family_accuracy = {}
+    compact_parameters = {}
+    for class_id, family in enumerate(PROFILE_FAMILIES):
+        row = family_confusion[class_id]
+        count = sum(row)
+        per_family_accuracy[family.value] = (
+            float(row[class_id]) / float(count) if count else 0.0
+        )
+        denominator = family_parameter_values[class_id]
+        compact_parameters[family.value] = {
+            "applicable_sketch_count": family_applicable[class_id],
+            "parameter_value_count": denominator,
+            "mae": (
+                family_absolute[class_id] / float(denominator)
+                if denominator else 0.0
+            ),
+            "smooth_l1": (
+                family_smooth_l1[class_id] / float(denominator)
+                if denominator else 0.0
+            ),
+        }
+    correct = sum(
+        family_confusion[index][index]
+        for index in range(len(PROFILE_FAMILIES))
+    )
+    total_family = sum(sum(row) for row in family_confusion)
+    total_planes = sum(sum(row) for row in plane_confusion)
+    correct_planes = sum(
+        plane_confusion[index][index]
+        for index in range(len(plane_confusion))
+    )
+    summary = {
+        "example_count": example_count,
+        **losses,
+        "profile_family_count": total_family,
+        "profile_parameter_count": total_family * 3,
+        "family_accuracy": (
+            float(correct) / float(total_family)
+            if total_family else 0.0
+        ),
+        "family_confusion_matrix": family_confusion,
+        "family_accuracy_per_class": per_family_accuracy,
+        "reference_plane_category_count": total_planes,
+        "reference_plane_category_accuracy": (
+            float(correct_planes) / float(total_planes)
+            if total_planes else 0.0
+        ),
+        "reference_plane_category_order": list(VALID_REFERENCE_PLANE_NAMES),
+        "reference_plane_category_confusion_matrix": plane_confusion,
+        "compact_parameter_metrics": compact_parameters,
+        "active_vq_code_count": int((code_counts > 0).sum().item()),
+        "vq_perplexity": perplexity,
+        "categorical_selection_metrics": _finish_categorical_stats(
+            categorical_stats
+        ),
+        "examples_with_categorical_correction": corrected_examples,
+        "node_grammar_selection_metrics": _finish_node_grammar_stats(
+            node_grammar_stats
+        ),
+        "axis_geometry_metrics": _finish_axis_geometry_stats(axis_stats),
+    }
+    _require_finite_json(summary)
+    return summary
+
+
+def autonomous_validation(
+    model,
+    partition,
+    model_config,
+    batch_size,
+    device,
+):
+    was_training = model.training
+    vq_before = {
+        name: value.detach().clone()
+        for name, value in model.vq.state_dict().items()
+    }
+    failure_histogram = {}
+    failure_stage_histogram = {}
+    valid_count = 0
+    finite_count = 0
+    canonical_count = 0
+    conversion_count = 0
+    generated_plane_count = 0
+    canonical_plane_count = 0
+    invalid_plane_category_count = 0
+    plane_category_agreement_count = 0
+    plane_category_histogram = {
+        name: 0 for name in VALID_REFERENCE_PLANE_NAMES
+    }
+    family_totals = {}
+    family_valid = {}
+    node_totals = {}
+    node_valid = {}
+    operation_family_totals = {}
+    operation_family_valid = {}
+    operation_count_totals = {}
+    operation_count_valid = {}
+    family_confusion = [
+        [0 for _ in range(len(PROFILE_FAMILIES) + 1)]
+        for _ in PROFILE_FAMILIES
+    ]
+    outcomes = []
+    categorical_stats = _new_categorical_stats()
+    node_grammar_stats = _new_node_grammar_stats()
+    axis_stats = _new_axis_geometry_stats()
+    corrected_examples = 0
+    raw_conversion_count = 0
+    raw_valid_count = 0
+    raw_failure_histogram = {}
+    node_type_histogram = {}
+    try:
+        model.eval()
+        for start in range(0, len(partition.flat_examples), batch_size):
+            flat = partition.flat_examples[start:start + batch_size]
+            physical = partition.physical_examples[start:start + batch_size]
+            batch = collate_flat(flat)
+            inputs = {
+                name: value.to(device)
+                for name, value in batch.to_torch(torch).items()
+            }
+            node_counts = torch.tensor(
+                [
+                    sum(row)
+                    for row in batch.target.node_mask
+                ],
+                dtype=torch.long,
+                device=device,
+            )
+            raw_predictions = _decode_validation_examples(
+                model, inputs, node_counts
+            )
+            for local_index, (example, raw) in enumerate(
+                zip(physical, raw_predictions)
+            ):
+                requested_node_count = int(node_counts[local_index].item())
+                if isinstance(raw, ReferencePlaneGeometryError):
+                    code = raw.code
+                    failure_histogram[code] = failure_histogram.get(code, 0) + 1
+                    failure_stage_histogram["predicted_geometry_construction"] = (
+                        failure_stage_histogram.get(
+                            "predicted_geometry_construction", 0
+                        ) + 1
+                    )
+                    invalid_plane_category_count += 1
+                    generated_plane_count += 1
+                    finite_count += 1
+                    family = example.metadata.primitive_family
+                    _increment(family_totals, family)
+                    _increment(node_totals, str(len(example.nodes)))
+                    template = OperationTemplate(example.metadata.operation_template)
+                    _increment(
+                        operation_family_totals,
+                        "+".join(template.operations),
+                    )
+                    _increment(
+                        operation_count_totals,
+                        str(len(example.operation_sequence)),
+                    )
+                    outcomes.append({
+                        "physical_family_id": example.physical_family_id,
+                        "valid": False,
+                        "conversion_success": False,
+                        "finite": True,
+                        "canonical_profiles": False,
+                        "failure_code": code,
+                        "requested_node_count": requested_node_count,
+                        "generated_node_count": 0,
+                        "node_count_source": "authorized_validation_length",
+                    })
+                    continue
+                validate_v6_autonomous_evaluation_result(
+                    raw,
+                    requested_node_count=requested_node_count,
+                    max_nodes=model_config.max_nodes,
+                )
+                result = validate_and_convert_v6_autonomous_prediction(
+                    raw, max_operations=model_config.max_operations
+                )
+                _update_node_grammar_stats(
+                    node_grammar_stats,
+                    (raw,),
+                    [list(example.target.node_type_ids)],
+                )
+                _update_axis_geometry_stats(
+                    axis_stats,
+                    (raw,),
+                    [list(example.target.geometry)],
+                    [list(example.target.geometry_mask)],
+                    [example.metadata.reference_plane],
+                    [example.metadata.operation_template],
+                )
+                raw_arm = same_history_raw_shadow_for_reporting(raw)
+                if (
+                    raw_arm.node_count != raw.node_count
+                    or raw_arm.node_count_source != raw.node_count_source
+                ):
+                    raise V6AutonomousEvaluationError(
+                        "raw and constrained request contexts disagree"
+                    )
+                raw_result = validate_and_convert_raw_prediction(
+                    raw_arm, max_operations=model_config.max_operations
+                )
+                raw_conversion_count += int(raw_result.reconstruction_target.valid)
+                raw_valid_count += int(raw_result.controlled_domain.valid)
+                raw_code = (
+                    "valid" if raw_result.primary_failure is None
+                    else raw_result.primary_failure.code
+                )
+                raw_failure_histogram[raw_code] = (
+                    raw_failure_histogram.get(raw_code, 0) + 1
+                )
+                corrected_examples += int(any(
+                    any(row) for row in raw.categorical_correction_mask
+                ))
+                target_retained = [
+                    [row[index] for index in (0, 1, 2, 3, 8)]
+                    for row in example.target.categorical_attributes
+                ]
+                _update_categorical_stats(
+                    categorical_stats,
+                    [[node.node_type_id for node in raw.raw_nodes]],
+                    [list(raw.raw_categorical_argmax_ids)],
+                    [list(raw.node_conditioned_categorical_ids)],
+                    [target_retained],
+                    [[True] * len(raw.raw_nodes)],
+                )
+                for node in raw.raw_nodes:
+                    token = NODE_TYPES.tokens[node.node_type_id]
+                    node_type_histogram[token] = node_type_histogram.get(token, 0) + 1
+                valid = bool(result.controlled_domain.valid)
+                converted = bool(result.reconstruction_target.valid)
+                finite = _raw_prediction_is_finite(raw)
+                canonical = _raw_profile_records_are_canonical(raw)
+                code = (
+                    "valid"
+                    if result.primary_failure is None
+                    else result.primary_failure.code
+                )
+                if result.primary_failure is not None:
+                    failure_histogram[code] = (
+                        failure_histogram.get(code, 0) + 1
+                    )
+                    stage = result.primary_failure.stage
+                    failure_stage_histogram[stage] = (
+                        failure_stage_histogram.get(stage, 0) + 1
+                    )
+                valid_count += int(valid)
+                conversion_count += int(converted)
+                finite_count += int(finite)
+                canonical_count += int(canonical)
+                authoritative_plane_id = REFERENCE_PLANES.id(
+                    example.metadata.reference_plane
+                )
+                for node in raw.raw_nodes:
+                    if node.node_type_id != NODE_TYPES.id("reference_plane"):
+                        continue
+                    generated_plane_count += 1
+                    predicted_plane_id = node.categorical_ids[3]
+                    if predicted_plane_id in VALID_REFERENCE_PLANE_IDS:
+                        plane_index = VALID_REFERENCE_PLANE_IDS.index(
+                            predicted_plane_id
+                        )
+                        plane_category_histogram[
+                            VALID_REFERENCE_PLANE_NAMES[plane_index]
+                        ] += 1
+                        canonical_plane_count += 1
+                        plane_category_agreement_count += int(
+                            predicted_plane_id == authoritative_plane_id
+                        )
+                    else:
+                        invalid_plane_category_count += 1
+                family = example.metadata.primitive_family
+                node_bucket = str(len(example.nodes))
+                operation_template = OperationTemplate(
+                    example.metadata.operation_template
+                )
+                operation_families = "+".join(
+                    operation_template.operations
+                )
+                operation_count = str(len(example.operation_sequence))
+                _increment(family_totals, family)
+                _increment(node_totals, node_bucket)
+                _increment(operation_family_totals, operation_families)
+                _increment(operation_count_totals, operation_count)
+                if valid:
+                    _increment(family_valid, family)
+                    _increment(node_valid, node_bucket)
+                    _increment(operation_family_valid, operation_families)
+                    _increment(operation_count_valid, operation_count)
+                true_id = tuple(
+                    item.value for item in PROFILE_FAMILIES
+                ).index(family)
+                for position, node in enumerate(example.nodes):
+                    if node.node_type != "sketch":
+                        continue
+                    predicted_id = (
+                        raw.predicted_profile_family_ids[position]
+                        if position < len(raw.predicted_profile_family_ids)
+                        else -1
+                    )
+                    column_id = (
+                        predicted_id
+                        if 0 <= predicted_id < len(PROFILE_FAMILIES)
+                        else len(PROFILE_FAMILIES)
+                    )
+                    family_confusion[true_id][column_id] += 1
+                outcomes.append({
+                    "physical_family_id": example.physical_family_id,
+                    "valid": valid,
+                    "conversion_success": converted,
+                    "finite": finite,
+                    "canonical_profiles": canonical,
+                    "failure_code": code,
+                    "raw_failure_code": raw_code,
+                    "raw_conversion_success": bool(
+                        raw_result.reconstruction_target.valid
+                    ),
+                    "raw_valid": bool(raw_result.controlled_domain.valid),
+                    "selection_changed_conversion_success": (
+                        bool(raw_result.reconstruction_target.valid) != converted
+                    ),
+                    "selection_changed_first_failure": raw_code != code,
+                    "selection_changed_complete_validity": (
+                        bool(raw_result.controlled_domain.valid) != valid
+                    ),
+                    "requested_node_count": requested_node_count,
+                    "generated_node_count": raw.node_count,
+                    "node_count_source": raw.node_count_source,
+                })
+    finally:
+        model.train(was_training)
+    _assert_vq_unchanged(model, vq_before)
+    total = len(partition.physical_examples)
+    node_grammar_metrics = _finish_node_grammar_stats(node_grammar_stats)
+    summary = {
+        "example_count": total,
+        "total_count": total,
+        "valid_count": valid_count,
+        "overall_autonomous_validity": valid_count / float(total),
+        "validity_by_profile_family": _rates(family_totals, family_valid),
+        "validity_by_node_count_bucket": _rates(node_totals, node_valid),
+        "validity_by_operation_family": _rates(
+            operation_family_totals, operation_family_valid
+        ),
+        "validity_by_operation_count": _rates(
+            operation_count_totals, operation_count_valid
+        ),
+        "failure_reason_histogram": failure_histogram,
+        "first_failure_stage_histogram": failure_stage_histogram,
+        "predicted_family_confusion_matrix": family_confusion,
+        "finite_prediction_rate": finite_count / float(total),
+        "canonical_profile_rate": canonical_count / float(total),
+        "conversion_success_rate": conversion_count / float(total),
+        "raw_conversion_success_rate": raw_conversion_count / float(total),
+        "raw_complete_validity": raw_valid_count / float(total),
+        "raw_failure_reason_histogram": raw_failure_histogram,
+        "raw_shadow_grammar_valid_sequence_count": node_grammar_metrics[
+            "raw_shadow_grammar_valid_sequence_count"
+        ],
+        "constrained_grammar_valid_sequence_count": node_grammar_metrics[
+            "constrained_grammar_valid_sequence_count"
+        ],
+        "raw_shadow_conversion_success_count": raw_conversion_count,
+        "constrained_conversion_success_count": conversion_count,
+        "raw_shadow_complete_validity_count": raw_valid_count,
+        "constrained_complete_validity_count": valid_count,
+        "raw_shadow_first_failure_histogram": raw_failure_histogram,
+        "constrained_first_failure_histogram": failure_histogram,
+        "selection_changed_conversion_success_count": sum(
+            int(item.get("selection_changed_conversion_success", False))
+            for item in outcomes
+        ),
+        "selection_changed_first_failure_count": sum(
+            int(item.get("selection_changed_first_failure", False))
+            for item in outcomes
+        ),
+        "selection_changed_complete_validity_count": sum(
+            int(item.get("selection_changed_complete_validity", False))
+            for item in outcomes
+        ),
+        "generated_reference_plane_count": generated_plane_count,
+        "canonical_plane_construction_count": canonical_plane_count,
+        "invalid_predicted_plane_category_count": invalid_plane_category_count,
+        "predicted_reference_plane_histogram": plane_category_histogram,
+        "reference_plane_category_agreement_count": (
+            plane_category_agreement_count
+        ),
+        "reference_plane_category_agreement": (
+            plane_category_agreement_count / float(generated_plane_count)
+            if generated_plane_count else 0.0
+        ),
+        "axis_geometry_failure_count": failure_histogram.get(
+            "invalid_axis_geometry", 0
+        ),
+        "unexpected_edge_count": failure_histogram.get("unexpected_edge", 0),
+        "grammar_failure_count": sum(
+            value for key, value in failure_stage_histogram.items()
+            if key == "controlled_node_grammar"
+        ),
+        "applicability_failure_count": sum(
+            failure_histogram.get(key, 0)
+            for key in ("node_category_applicability", "geometry_mask_applicability")
+        ),
+        "categorical_sentinel_failure_count": failure_histogram.get(
+            "categorical_pad_sentinel", 0
+        ),
+        "predicted_node_type_histogram": node_type_histogram,
+        "categorical_selection_metrics": _finish_categorical_stats(
+            categorical_stats
+        ),
+        "node_grammar_selection_metrics": node_grammar_metrics,
+        "axis_geometry_metrics": _finish_axis_geometry_stats(axis_stats),
+        "examples_with_categorical_correction": corrected_examples,
+        "outcomes": outcomes,
+    }
+    _require_finite_json(summary)
+    return summary
+
+
+def _decode_validation_examples(model, inputs, node_counts):
+    """Decode independently so a structured invalid category is classified."""
+
+    results = []
+    for index in range(node_counts.numel()):
+        source = {
+            name: value[index:index + 1]
+            for name, value in inputs.items()
+        }
+        try:
+            results.append(greedy_decode_v6(
+                model,
+                source,
+                node_counts=node_counts[index:index + 1],
+                node_count_source="authorized_validation_length",
+            )[0])
+        except ReferencePlaneGeometryError as exc:
+            if exc.code != "invalid_predicted_reference_plane_category":
+                raise
+            results.append(exc)
+    return tuple(results)
+
+
+def _new_node_grammar_stats():
+    return {
+        "raw_node_type_histogram": {},
+        "constrained_node_type_histogram": {},
+        "authoritative_target_histogram": {},
+        "raw_correct": 0,
+        "constrained_correct": 0,
+        "scored_count": 0,
+        "raw_active_sentinel_count": 0,
+        "constrained_active_sentinel_count": 0,
+        "raw_grammar_violation_count": 0,
+        "constrained_grammar_violation_count": 0,
+        "correction_count": 0,
+        "example_count": 0,
+        "examples_with_node_correction": 0,
+        "corrections_by_position": {},
+        "corrections_by_raw_node_type": {},
+        "corrections_by_grammar_state": {},
+        "corrections_by_requested_node_count": {},
+        "legal_mask_cardinality_histogram": {},
+        "raw_shadow_grammar_valid_sequence_count": 0,
+        "constrained_grammar_valid_sequence_count": 0,
+    }
+
+
+def _new_axis_geometry_stats():
+    return {
+        "applicable_axis_node_count": 0,
+        "raw_valid_axis_count": 0,
+        "constrained_valid_axis_count": 0,
+        "raw_invalid_axis_count": 0,
+        "constrained_invalid_axis_count": 0,
+        "axis_correction_count": 0,
+        "examples_with_axis_correction": 0,
+        "raw_finite_axis_count": 0,
+        "constrained_finite_axis_count": 0,
+        "raw_absolute_error": 0.0,
+        "constrained_absolute_error": 0.0,
+        "scored_axis_value_count": 0,
+        "raw_failure_histogram": {},
+        "constrained_failure_histogram": {},
+        "raw_validity_by_reference_plane": {},
+        "constrained_validity_by_reference_plane": {},
+        "raw_validity_by_operation_family": {},
+        "constrained_validity_by_operation_family": {},
+    }
+
+
+def _update_axis_geometry_stats(
+    stats,
+    predictions,
+    target_geometry,
+    target_geometry_mask,
+    reference_planes,
+    operation_families,
+):
+    axis_id = NODE_TYPES.id("axis")
+    canonical = (0.0, 0.0, 0.0, 1.0)
+    for prediction, targets, target_masks, plane, operation_family in zip(
+        predictions,
+        target_geometry,
+        target_geometry_mask,
+        reference_planes,
+        operation_families,
+    ):
+        example_corrected = False
+        operation_key = "+".join(
+            OperationTemplate(operation_family).operations
+        )
+        target_axes = [
+            row[33:37]
+            for row, mask in zip(targets, target_masks)
+            if all(mask[33:37])
+        ]
+        axis_ordinal = 0
+        for position, node_id in enumerate(
+            prediction.grammar_constrained_node_type_ids
+        ):
+            if node_id != axis_id:
+                continue
+            stats["applicable_axis_node_count"] += 1
+            raw = prediction.raw_axis_geometry[position][:4]
+            constrained = prediction.constrained_axis_geometry[position][:4]
+            correction = prediction.axis_geometry_correction_mask[position]
+            raw_finite = all(math.isfinite(float(value)) for value in raw)
+            constrained_finite = all(
+                math.isfinite(float(value)) for value in constrained
+            )
+            raw_physical = (
+                raw[0] * 4.0, raw[1] * 4.0, raw[2], raw[3]
+            ) if raw_finite else ()
+            constrained_physical = (
+                constrained[0] * 4.0,
+                constrained[1] * 4.0,
+                constrained[2],
+                constrained[3],
+            ) if constrained_finite else ()
+            raw_valid = raw_finite and all(
+                math.isclose(value, expected, rel_tol=0.0, abs_tol=1e-6)
+                for value, expected in zip(raw_physical, canonical)
+            )
+            constrained_valid = constrained_finite and all(
+                value == expected
+                for value, expected in zip(constrained_physical, canonical)
+            )
+            stats["raw_finite_axis_count"] += int(raw_finite)
+            stats["constrained_finite_axis_count"] += int(constrained_finite)
+            stats["raw_valid_axis_count"] += int(raw_valid)
+            stats["constrained_valid_axis_count"] += int(constrained_valid)
+            stats["raw_invalid_axis_count"] += int(not raw_valid)
+            stats["constrained_invalid_axis_count"] += int(not constrained_valid)
+            corrected = any(correction)
+            stats["axis_correction_count"] += int(corrected)
+            example_corrected = example_corrected or corrected
+            _increment(
+                stats["raw_failure_histogram"],
+                "valid" if raw_valid else (
+                    "invalid_axis_geometry" if raw_finite
+                    else "nonfinite_axis_geometry"
+                ),
+            )
+            _increment(
+                stats["constrained_failure_histogram"],
+                "valid" if constrained_valid else (
+                    "invalid_axis_geometry" if constrained_finite
+                    else "nonfinite_axis_geometry"
+                ),
+            )
+            _update_axis_group(
+                stats["raw_validity_by_reference_plane"], plane, raw_valid
+            )
+            _update_axis_group(
+                stats["constrained_validity_by_reference_plane"],
+                plane,
+                constrained_valid,
+            )
+            _update_axis_group(
+                stats["raw_validity_by_operation_family"],
+                operation_key,
+                raw_valid,
+            )
+            _update_axis_group(
+                stats["constrained_validity_by_operation_family"],
+                operation_key,
+                constrained_valid,
+            )
+            if axis_ordinal < len(target_axes):
+                target = target_axes[axis_ordinal]
+                stats["raw_absolute_error"] += sum(
+                    abs(float(value) - float(expected))
+                    for value, expected in zip(raw, target)
+                )
+                stats["constrained_absolute_error"] += sum(
+                    abs(float(value) - float(expected))
+                    for value, expected in zip(constrained, target)
+                )
+                stats["scored_axis_value_count"] += 4
+            axis_ordinal += 1
+        stats["examples_with_axis_correction"] += int(example_corrected)
+
+
+def _update_axis_group(groups, name, valid):
+    key = str(name)
+    row = groups.setdefault(key, {"count": 0, "valid_count": 0})
+    row["count"] += 1
+    row["valid_count"] += int(valid)
+
+
+def _finish_axis_geometry_stats(stats):
+    result = dict(stats)
+    denominator = stats["scored_axis_value_count"]
+    result["raw_axis_geometry_mae"] = (
+        stats["raw_absolute_error"] / float(denominator)
+        if denominator else 0.0
+    )
+    result["constrained_axis_geometry_mae"] = (
+        stats["constrained_absolute_error"] / float(denominator)
+        if denominator else 0.0
+    )
+    applicable = stats["applicable_axis_node_count"]
+    result["raw_finite_axis_rate"] = (
+        stats["raw_finite_axis_count"] / float(applicable)
+        if applicable else 1.0
+    )
+    result["constrained_finite_axis_rate"] = (
+        stats["constrained_finite_axis_count"] / float(applicable)
+        if applicable else 1.0
+    )
+    for name in (
+        "raw_validity_by_reference_plane",
+        "constrained_validity_by_reference_plane",
+        "raw_validity_by_operation_family",
+        "constrained_validity_by_operation_family",
+    ):
+        result[name] = {
+            key: {
+                **row,
+                "valid_rate": row["valid_count"] / float(row["count"]),
+            }
+            for key, row in stats[name].items()
+        }
+    if result["constrained_invalid_axis_count"] != 0:
+        raise ConstrainedV6PilotError(
+            "constrained_axis_geometry_violation",
+            "V6 constructed an invalid constrained axis",
+        )
+    return result
+
+
+def _update_node_grammar_stats(stats, predictions, target_node_ids):
+    for prediction, targets in zip(predictions, target_node_ids):
+        stats["example_count"] += 1
+        corrected_example = False
+        for position, (
+            raw_id,
+            constrained_id,
+            corrected,
+            legal_mask,
+            evidence,
+            target_id,
+        ) in enumerate(zip(
+            prediction.raw_node_type_argmax_ids,
+            prediction.grammar_constrained_node_type_ids,
+            prediction.node_type_correction_mask,
+            prediction.legal_node_type_masks,
+            prediction.grammar_state_evidence,
+            targets,
+        )):
+            raw_name = NODE_TYPES.tokens[raw_id]
+            constrained_name = NODE_TYPES.tokens[constrained_id]
+            target_name = NODE_TYPES.tokens[target_id]
+            _increment(stats["raw_node_type_histogram"], raw_name)
+            _increment(
+                stats["constrained_node_type_histogram"], constrained_name
+            )
+            _increment(stats["authoritative_target_histogram"], target_name)
+            stats["scored_count"] += 1
+            stats["raw_correct"] += int(raw_id == target_id)
+            stats["constrained_correct"] += int(constrained_id == target_id)
+            sentinels = (NODE_TYPES.pad_id, NODE_TYPES.id(None))
+            stats["raw_active_sentinel_count"] += int(raw_id in sentinels)
+            stats["constrained_active_sentinel_count"] += int(
+                constrained_id in sentinels
+            )
+            stats["raw_grammar_violation_count"] += int(
+                not legal_mask[raw_id]
+            )
+            stats["constrained_grammar_violation_count"] += int(
+                not legal_mask[constrained_id]
+            )
+            cardinality = str(sum(legal_mask))
+            _increment(stats["legal_mask_cardinality_histogram"], cardinality)
+            if corrected:
+                corrected_example = True
+                stats["correction_count"] += 1
+                _increment(stats["corrections_by_position"], str(position))
+                _increment(
+                    stats["corrections_by_raw_node_type"], raw_name
+                )
+                _increment(
+                    stats["corrections_by_grammar_state"], evidence["state"]
+                )
+                _increment(
+                    stats["corrections_by_requested_node_count"],
+                    str(prediction.node_count),
+                )
+        stats["examples_with_node_correction"] += int(corrected_example)
+        try:
+            validate_complete_node_sequence(
+                prediction.raw_node_type_argmax_ids, prediction.node_count
+            )
+        except NodeGrammarError:
+            pass
+        else:
+            stats["raw_shadow_grammar_valid_sequence_count"] += 1
+        try:
+            validate_complete_node_sequence(
+                prediction.grammar_constrained_node_type_ids,
+                prediction.node_count,
+            )
+        except NodeGrammarError:
+            pass
+        else:
+            stats["constrained_grammar_valid_sequence_count"] += 1
+
+
+def _finish_node_grammar_stats(stats):
+    count = stats["scored_count"]
+    result = dict(stats)
+    result["raw_node_accuracy"] = (
+        stats["raw_correct"] / float(count) if count else 0.0
+    )
+    result["constrained_node_accuracy"] = (
+        stats["constrained_correct"] / float(count) if count else 0.0
+    )
+    result["correction_rate"] = (
+        stats["correction_count"] / float(count) if count else 0.0
+    )
+    if result["constrained_grammar_violation_count"] != 0:
+        raise ConstrainedV6PilotError(
+            "constrained_node_grammar_violation",
+            "V6 selected an illegal node type",
+        )
+    return result
+
+
+def _new_categorical_stats():
+    return {
+        field.name: {
+            "raw_argmax_histogram": {},
+            "constrained_selected_histogram": {},
+            "authoritative_target_histogram": {},
+            "raw_correct": 0,
+            "constrained_correct": 0,
+            "scored_count": 0,
+            "raw_sentinel_on_applicable_count": 0,
+            "constrained_sentinel_on_applicable_count": 0,
+            "raw_real_on_inapplicable_count": 0,
+            "constrained_real_on_inapplicable_count": 0,
+            "raw_padding_class_count": 0,
+            "constrained_padding_class_count": 0,
+            "correction_count": 0,
+            "corrections_by_predicted_node_type": {},
+        }
+        for field in V4_RETAINED_CATEGORICAL_FIELDS
+    }
+
+
+def _update_categorical_stats(
+    stats, node_rows, raw_rows, selected_rows, target_rows, real_rows
+):
+    for nodes, raw_batch, selected_batch, targets, reals in zip(
+        node_rows, raw_rows, selected_rows, target_rows, real_rows
+    ):
+        for node_id, raw, selected, target, real in zip(
+            nodes, raw_batch, selected_batch, targets, reals
+        ):
+            if not real:
+                continue
+            node_type = NODE_TYPES.tokens[node_id]
+            for index, field in enumerate(V4_RETAINED_CATEGORICAL_FIELDS):
+                values = stats[field.name]
+                raw_id = raw[index]
+                selected_id = selected[index]
+                target_id = target[index]
+                _increment(values["raw_argmax_histogram"], str(raw_id))
+                _increment(values["constrained_selected_histogram"], str(selected_id))
+                _increment(values["authoritative_target_histogram"], str(target_id))
+                values["scored_count"] += 1
+                values["raw_correct"] += int(raw_id == target_id)
+                values["constrained_correct"] += int(selected_id == target_id)
+                applicable = bool(field.valid_ids(node_type))
+                values["raw_sentinel_on_applicable_count"] += int(
+                    applicable and raw_id == field.sentinel_id
+                )
+                values["constrained_sentinel_on_applicable_count"] += int(
+                    applicable and selected_id == field.sentinel_id
+                )
+                values["raw_real_on_inapplicable_count"] += int(
+                    not applicable and raw_id >= 2
+                )
+                values["constrained_real_on_inapplicable_count"] += int(
+                    not applicable and selected_id >= 2
+                )
+                values["raw_padding_class_count"] += int(
+                    raw_id == field.padding_id
+                )
+                values["constrained_padding_class_count"] += int(
+                    selected_id == field.padding_id
+                )
+                if raw_id != selected_id:
+                    values["correction_count"] += 1
+                    _increment(
+                        values["corrections_by_predicted_node_type"], node_type
+                    )
+
+
+def _finish_categorical_stats(stats):
+    result = {}
+    for name, values in stats.items():
+        count = values["scored_count"]
+        result[name] = {
+            **values,
+            "raw_accuracy": values["raw_correct"] / float(count) if count else 0.0,
+            "constrained_accuracy": (
+                values["constrained_correct"] / float(count) if count else 0.0
+            ),
+            "correction_rate": (
+                values["correction_count"] / float(count) if count else 0.0
+            ),
+        }
+    result["aggregate"] = {
+        "total_raw_categorical_applicability_violations": sum(
+            values["raw_sentinel_on_applicable_count"]
+            + values["raw_real_on_inapplicable_count"]
+            + values["raw_padding_class_count"]
+            for values in stats.values()
+        ),
+        "total_constrained_categorical_applicability_violations": sum(
+            values["constrained_sentinel_on_applicable_count"]
+            + values["constrained_real_on_inapplicable_count"]
+            + values["constrained_padding_class_count"]
+            for values in stats.values()
+        ),
+    }
+    return result
+
+
+def _increment(values, key):
+    values[key] = values.get(key, 0) + 1
+
+
+def _rates(totals, successes):
+    return {
+        key: {
+            "count": totals[key],
+            "valid_count": successes.get(key, 0),
+            "validity": successes.get(key, 0) / float(totals[key]),
+        }
+        for key in sorted(totals)
+    }
+
+
+def _raw_prediction_is_finite(raw):
+    values = []
+    for node in raw.raw_nodes:
+        values.extend(node.normalized_geometry)
+    for edge in raw.raw_edges:
+        values.append(edge.presence_logit)
+    for pointer in raw.raw_operation_pointers:
+        values.append(pointer.selected_logit)
+    for row in raw.profile_family_logits:
+        values.extend(row)
+    for row in raw.raw_profile_parameters:
+        values.extend(row)
+    for row in raw.constrained_profile_parameters:
+        values.extend(row)
+    return all(math.isfinite(float(value)) for value in values)
+
+
+def _raw_profile_records_are_canonical(raw):
+    if (
+        len(raw.raw_nodes) != len(raw.predicted_profile_family_ids)
+        or len(raw.raw_nodes) != len(raw.constrained_profile_parameters)
+    ):
+        return False
+    sketch_id = NODE_TYPES.id("sketch")
+    for node, family_id, parameters in zip(
+        raw.raw_nodes,
+        raw.predicted_profile_family_ids,
+        raw.constrained_profile_parameters,
+    ):
+        if node.node_type_id == sketch_id:
+            if not 0 <= family_id < len(PROFILE_FAMILIES):
+                return False
+            if (
+                tuple(node.categorical_ids[4:8])
+                != canonical_primitive_type_ids_from_family_id(family_id)
+                or len(parameters) != 3
+            ):
+                return False
+            try:
+                geometry, mask = construct_profile_geometry(
+                    profile_family_from_id(family_id), *parameters
+                )
+            except (TypeError, ValueError):
+                return False
+            if tuple(node.derived_geometry_mask[9:33]) != mask[9:33]:
+                return False
+            if any(
+                not math.isclose(
+                    node.normalized_geometry[index],
+                    geometry[index],
+                    rel_tol=1e-5,
+                    abs_tol=2e-7,
+                )
+                for index in range(9, 33)
+            ):
+                return False
+        elif family_id != -1:
+            return False
+    return True
+
+
+def _assert_vq_unchanged(model, before):
+    for name, expected in before.items():
+        if not torch.equal(expected, model.vq.state_dict()[name]):
+            raise ConstrainedV6PilotError(
+                "validation_mutated_vq",
+                "validation changed VQ state {!r}".format(name),
+            )
+
+
+def _require_finite_json(value, path="$"):
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return
+    if isinstance(value, (int, float)):
+        if not math.isfinite(float(value)):
+            raise ConstrainedV6PilotError(
+                "nonfinite_json", "{} is nonfinite".format(path)
+            )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _require_finite_json(item, "{}[{}]".format(path, index))
+        return
+    if isinstance(value, dict):
+        for name, item in value.items():
+            _require_finite_json(item, "{}.{}".format(path, name))
+        return
+    raise ConstrainedV6PilotError(
+        "invalid_json_value", "{} has unsupported type".format(path)
+    )
+
+
+def pilot_checkpoint_payload(
+    model,
+    optimizer,
+    model_config,
+    optimization_config,
+    pilot_config,
+    data,
+    *,
+    epoch,
+    global_step,
+    examples_processed,
+    configured_maximum_steps,
+    teacher_summary,
+    autonomous_summary,
+    source_provenance,
+):
+    payload = {
+        **v6_model_metadata(model_config),
+        "checkpoint_kind": "pilot_fixed_epoch",
+        "pilot_identity": pilot_config.pilot_identity,
+        "pilot_config": pilot_config.to_dict(),
+        "optimization_config": pilot_optimization_metadata(
+            optimization_config
+        ),
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+        "vq_state": dict(model.vq.state_dict()),
+        "epoch": epoch,
+        "global_step": global_step,
+        "examples_processed": examples_processed,
+        "configured_maximum_steps": configured_maximum_steps,
+        "completed_epochs": epoch,
+        "training_partition_state": data.train.metadata(),
+        "validation_partition_state": data.validation.metadata(),
+        "training_sampler_state": {
+            "base_seed": pilot_config.seed,
+            "completed_epoch": epoch,
+            "next_epoch_seed": pilot_config.seed + epoch + 1,
+        },
+        "validation_cadence": pilot_config.validation_interval,
+        "validation_summaries": {
+            "teacher_forced": teacher_summary,
+            "autonomous": autonomous_summary,
+        },
+        "rng_state": capture_rng_state(torch),
+        "source_provenance": source_provenance,
+        "systematic_partition_accessed": False,
+        "test_partition_accessed": False,
+    }
+    try:
+        validate_v6_checkpoint_payload(
+            payload,
+            "pilot_fixed_epoch",
+            model_config,
+            torch_module=torch,
+        )
+        validate_v6_pilot_checkpoint_state(
+            payload, pilot_config, len(data.train.flat_examples)
+        )
+    except V6CheckpointValidationError as exc:
+        raise ConstrainedV6PilotError(exc.code, exc.detail) from exc
+    return payload
+
+
+def load_pilot_checkpoint(
+    path,
+    model,
+    optimizer,
+    model_config,
+    optimization_config,
+    pilot_config,
+    data,
+    *,
+    map_location,
+):
+    try:
+        checkpoint = torch.load(str(path), map_location="cpu")
+    except Exception as exc:
+        raise ConstrainedV6PilotError(
+            "malformed_checkpoint", "checkpoint could not be deserialized"
+        ) from exc
+    try:
+        validate_v6_checkpoint_payload(
+            checkpoint,
+            "pilot_fixed_epoch",
+            model_config,
+            torch_module=torch,
+        )
+        validate_v6_pilot_checkpoint_state(
+            checkpoint, pilot_config, len(data.train.flat_examples)
+        )
+    except V6CheckpointValidationError as exc:
+        raise ConstrainedV6PilotError(exc.code, exc.detail) from exc
+    expected = (
+        ("checkpoint_kind", "pilot_fixed_epoch"),
+        ("pilot_identity", pilot_config.pilot_identity),
+        ("pilot_config", pilot_config.to_dict()),
+        ("model_config", model_config.to_dict()),
+        (
+            "optimization_config",
+            pilot_optimization_metadata(optimization_config),
+        ),
+        ("training_partition_state", data.train.metadata()),
+        ("validation_partition_state", data.validation.metadata()),
+        ("validation_cadence", pilot_config.validation_interval),
+        ("systematic_partition_accessed", False),
+        ("test_partition_accessed", False),
+    )
+    for name, value in expected:
+        if checkpoint[name] != value:
+            raise ConstrainedV6PilotError(
+                "malformed_checkpoint",
+                "checkpoint field {} differs from the requested pilot".format(name),
+            )
+    _require_finite_json(checkpoint["validation_summaries"])
+    try:
+        model.load_state_dict(checkpoint["model_state"], strict=True)
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+    except Exception as exc:
+        raise ConstrainedV6PilotError(
+            "malformed_checkpoint",
+            "checkpoint model or optimizer state is incompatible",
+        ) from exc
+    for state in optimizer.state.values():
+        for name, value in tuple(state.items()):
+            if torch.is_tensor(value):
+                state[name] = value.to(map_location)
+    return checkpoint
+
+
+def run_constrained_v6_pilot(
+    corpus_dir,
+    pilot_config=None,
+    model_config=None,
+):
+    config = pilot_config or ConstrainedV6PilotConfig()
+    try:
+        return _run_constrained_v6_pilot(
+            corpus_dir, config, model_config
+        )
+    except Exception as exc:
+        _append_terminal_failure_if_possible(config, exc)
+        raise
+
+
+def _run_constrained_v6_pilot(
+    corpus_dir,
+    pilot_config=None,
+    model_config=None,
+):
+    pilot_config = pilot_config or ConstrainedV6PilotConfig()
+    model_config = model_config or ConstrainedProfileV6Config()
+    validate_pilot_partition_authorization(pilot_config)
+    model_config.validate()
+    provenance = source_state()
+    if pilot_config.require_clean_source and (
+        provenance["git_dirty"] is not False
+        or provenance["git_commit"] is None
+    ):
+        raise ConstrainedV6PilotError(
+            "dirty_source", "pilot requires clean committed source"
+        )
+    output_dir = Path(pilot_config.output_dir)
+    if output_dir.exists() or output_dir.is_symlink():
+        raise ConstrainedV6PilotError(
+            "output_collision", "pilot output already exists"
+        )
+    data = load_pilot_data(corpus_dir, pilot_config)
+    configured_maximum_steps = pilot_config.epochs * int(math.ceil(
+        len(data.train.flat_examples) / float(pilot_config.batch_size)
+    ))
+    output_dir.mkdir(parents=True)
+    logger = JsonlLogger(output_dir / "metrics.jsonl")
+    optimization = pilot_optimization_config(
+        pilot_config, configured_maximum_steps
+    )
+    seed_everything(pilot_config.seed, torch)
+    device = resolve_device(pilot_config.device, torch)
+    model = ConstrainedProfileV6Model(model_config).to(device)
+    optimizer = build_v6_optimizer(model, optimization)
+    logger.write({
+        "event": "run_metadata",
+        "pilot_config": pilot_config.to_dict(),
+        "model_config": model_config.to_dict(),
+        "optimization_config": pilot_optimization_metadata(optimization),
+        "configured_maximum_steps": configured_maximum_steps,
+        "training_partition": data.train.metadata(),
+        "validation_partition": data.validation.metadata(),
+        "systematic_partition_accessed": False,
+        "test_partition_accessed": False,
+        "source_provenance": provenance,
+        "initialization": {
+            "source": "fresh_v6",
+            "vq_initialization": "normal",
+            "seed": pilot_config.seed,
+        },
+    })
+    initial_train = teacher_forced_validation(
+        model,
+        data.train,
+        model_config,
+        pilot_config.batch_size,
+        device,
+    )
+    global_step = 0
+    examples_processed = 0
+    validations = {}
+    checkpoint_paths = {}
+    for epoch in range(1, pilot_config.epochs + 1):
+        loader = make_data_loader(
+            data.train.flat_examples,
+            pilot_config.batch_size,
+            0,
+            pilot_config.seed + epoch,
+            True,
+            torch,
+        )
+        for batch in loader:
+            global_step += 1
+            current = len(batch.family_ids)
+            examples_processed += current
+            result = constrained_v6_training_step(
+                model,
+                optimizer,
+                batch,
+                model_config,
+                optimization,
+                device,
+                global_step=global_step,
+                examples_processed=examples_processed,
+            )
+            logger.write({
+                "event": "training_step",
+                "epoch": epoch,
+                **result.metrics,
+                "systematic_partition_accessed": False,
+                "test_partition_accessed": False,
+            })
+        logger.write({
+            "event": "training_epoch_complete",
+            "epoch": epoch,
+            "global_step": global_step,
+            "examples_processed": examples_processed,
+            "sampler_seed": pilot_config.seed + epoch,
+            "systematic_partition_accessed": False,
+            "test_partition_accessed": False,
+        })
+        teacher = teacher_forced_validation(
+            model,
+            data.validation,
+            model_config,
+            pilot_config.batch_size,
+            device,
+        )
+        autonomous = autonomous_validation(
+            model,
+            data.validation,
+            model_config,
+            pilot_config.batch_size,
+            device,
+        )
+        validations[epoch] = {
+            "teacher_forced": teacher,
+            "autonomous": autonomous,
+        }
+        identity = "epoch-{:04d}".format(epoch)
+        common = {
+            "global_step": global_step,
+            "epoch": epoch,
+            "examples_processed": examples_processed,
+            "checkpoint_identity": identity,
+            "partition_identity": "iid_validation",
+            "systematic_partition_accessed": False,
+            "test_partition_accessed": False,
+        }
+        logger.write({
+            "event": "validation_teacher_forced",
+            **common,
+            "summary": teacher,
+        })
+        logger.write({
+            "event": "validation_autonomous",
+            **common,
+            "summary": autonomous,
+        })
+        checkpoint = output_dir / "{}.pt".format(identity)
+        payload = pilot_checkpoint_payload(
+            model,
+            optimizer,
+            model_config,
+            optimization,
+            pilot_config,
+            data,
+            epoch=epoch,
+            global_step=global_step,
+            examples_processed=examples_processed,
+            configured_maximum_steps=configured_maximum_steps,
+            teacher_summary=teacher,
+            autonomous_summary=autonomous,
+            source_provenance=provenance,
+        )
+        save_v6_checkpoint(checkpoint, payload)
+        checkpoint_paths[epoch] = checkpoint
+        logger.write({
+            "event": "checkpoint_saved",
+            **common,
+            "path": str(checkpoint),
+            "checkpoint_kind": "pilot_fixed_epoch",
+        })
+    final_train = teacher_forced_validation(
+        model,
+        data.train,
+        model_config,
+        pilot_config.batch_size,
+        device,
+    )
+    selected_epoch = min(
+        validations,
+        key=lambda epoch: (
+            validations[epoch]["teacher_forced"]["total_loss"],
+            epoch,
+        ),
+    )
+    selected_path = checkpoint_paths[selected_epoch]
+    selected_checkpoint_hash = _file_sha256(selected_path)
+    reloaded = ConstrainedProfileV6Model(model_config).to(device)
+    reloaded_optimizer = build_v6_optimizer(reloaded, optimization)
+    checkpoint = load_pilot_checkpoint(
+        selected_path,
+        reloaded,
+        reloaded_optimizer,
+        model_config,
+        optimization,
+        pilot_config,
+        data,
+        map_location=device,
+    )
+    vq_before = {
+        name: value.detach().clone()
+        for name, value in reloaded.vq.state_dict().items()
+    }
+    reproduced_teacher = teacher_forced_validation(
+        reloaded,
+        data.validation,
+        model_config,
+        pilot_config.batch_size,
+        device,
+    )
+    reproduced_autonomous = autonomous_validation(
+        reloaded,
+        data.validation,
+        model_config,
+        pilot_config.batch_size,
+        device,
+    )
+    _assert_nested_close(
+        checkpoint["validation_summaries"]["teacher_forced"],
+        reproduced_teacher,
+    )
+    _assert_nested_close(
+        checkpoint["validation_summaries"]["autonomous"],
+        reproduced_autonomous,
+    )
+    _assert_vq_unchanged(reloaded, vq_before)
+    if _file_sha256(selected_path) != selected_checkpoint_hash:
+        raise ConstrainedV6PilotError(
+            "checkpoint_mutated_during_reload", "selected checkpoint changed"
+        )
+    logger.write({
+        "event": "checkpoint_reload_validation",
+        "epoch": selected_epoch,
+        "global_step": checkpoint["global_step"],
+        "examples_processed": checkpoint["examples_processed"],
+        "checkpoint_identity": "epoch-{:04d}".format(selected_epoch),
+        "partition_identity": "iid_validation",
+        "teacher_forced_reproduced": True,
+        "autonomous_reproduced": True,
+        "vq_ema_unchanged": True,
+        "reload_role": (
+            "selected_and_final"
+            if selected_epoch == pilot_config.epochs
+            else "selected"
+        ),
+        "systematic_partition_accessed": False,
+        "test_partition_accessed": False,
+    })
+    final_path = checkpoint_paths[pilot_config.epochs]
+    final_checkpoint_hash = _file_sha256(final_path)
+    if final_path == selected_path:
+        final_reload_reproduced = True
+    else:
+        final_reloaded = ConstrainedProfileV6Model(model_config).to(device)
+        final_optimizer = build_v6_optimizer(
+            final_reloaded, optimization
+        )
+        final_checkpoint = load_pilot_checkpoint(
+            final_path,
+            final_reloaded,
+            final_optimizer,
+            model_config,
+            optimization,
+            pilot_config,
+            data,
+            map_location=device,
+        )
+        final_vq_before = {
+            name: value.detach().clone()
+            for name, value in final_reloaded.vq.state_dict().items()
+        }
+        final_reproduced_teacher = teacher_forced_validation(
+            final_reloaded,
+            data.validation,
+            model_config,
+            pilot_config.batch_size,
+            device,
+        )
+        final_reproduced_autonomous = autonomous_validation(
+            final_reloaded,
+            data.validation,
+            model_config,
+            pilot_config.batch_size,
+            device,
+        )
+        _assert_nested_close(
+            final_checkpoint["validation_summaries"][
+                "teacher_forced"
+            ],
+            final_reproduced_teacher,
+        )
+        _assert_nested_close(
+            final_checkpoint["validation_summaries"]["autonomous"],
+            final_reproduced_autonomous,
+        )
+        _assert_vq_unchanged(final_reloaded, final_vq_before)
+        if _file_sha256(final_path) != final_checkpoint_hash:
+            raise ConstrainedV6PilotError(
+                "checkpoint_mutated_during_reload", "final checkpoint changed"
+            )
+        final_reload_reproduced = True
+        logger.write({
+            "event": "checkpoint_reload_validation",
+            "epoch": pilot_config.epochs,
+            "global_step": final_checkpoint["global_step"],
+            "examples_processed": final_checkpoint[
+                "examples_processed"
+            ],
+            "checkpoint_identity": "epoch-{:04d}".format(
+                pilot_config.epochs
+            ),
+            "partition_identity": "iid_validation",
+            "teacher_forced_reproduced": True,
+            "autonomous_reproduced": True,
+            "vq_ema_unchanged": True,
+            "reload_role": "final",
+            "systematic_partition_accessed": False,
+            "test_partition_accessed": False,
+        })
+    scientific_acceptance = {
+        "configured_budget_completed": (
+            global_step == configured_maximum_steps
+            and examples_processed
+            == len(data.train.flat_examples) * pilot_config.epochs
+        ),
+        "train_total_loss_decreased": (
+            final_train["total_loss"] < initial_train["total_loss"]
+        ),
+        "validation_losses_finite": all(
+            math.isfinite(
+                validations[pilot_config.epochs]["teacher_forced"][name]
+            )
+            for name in V6_TRAINING_LOSS_FIELDS
+        ),
+        "all_validation_families_present": all(
+            metrics["applicable_sketch_count"] > 0
+            for metrics in validations[pilot_config.epochs][
+                "teacher_forced"
+            ]["compact_parameter_metrics"].values()
+        ),
+        "autonomous_completed": (
+            len(validations[pilot_config.epochs]["autonomous"]["outcomes"])
+            == len(data.validation.flat_examples)
+        ),
+        "autonomous_outcomes_classified": (
+            validations[pilot_config.epochs]["autonomous"]["valid_count"]
+            + sum(validations[pilot_config.epochs]["autonomous"][
+                    "failure_reason_histogram"
+                ].values())
+            == len(data.validation.flat_examples)
+        ),
+        "strict_selected_reload_reproduced": True,
+        "strict_final_reload_reproduced": final_reload_reproduced,
+        "constrained_categorical_contract_satisfied": (
+            validations[pilot_config.epochs]["autonomous"]
+            ["categorical_selection_metrics"]["aggregate"]
+            ["total_constrained_categorical_applicability_violations"] == 0
+        ),
+        "constrained_node_grammar_contract_satisfied": (
+            validations[pilot_config.epochs]["autonomous"]
+            ["node_grammar_selection_metrics"]
+            ["constrained_grammar_violation_count"] == 0
+            and validations[pilot_config.epochs]["autonomous"]
+            ["constrained_grammar_valid_sequence_count"]
+            == len(data.validation.flat_examples)
+        ),
+        "constrained_axis_geometry_contract_satisfied": (
+            validations[pilot_config.epochs]["autonomous"]
+            ["axis_geometry_metrics"]["constrained_invalid_axis_count"] == 0
+            and validations[pilot_config.epochs]["autonomous"]
+            ["axis_geometry_metrics"]["constrained_valid_axis_count"]
+            == validations[pilot_config.epochs]["autonomous"]
+            ["axis_geometry_metrics"]["applicable_axis_node_count"]
+            and validations[pilot_config.epochs]["autonomous"]
+            ["axis_geometry_metrics"]["applicable_axis_node_count"]
+            == sum(
+                node.node_type == "axis"
+                for example in data.validation.physical_examples
+                for node in example.nodes
+            )
+        ),
+    }
+    acceptance = _require_pilot_acceptance(
+        scientific_acceptance,
+        {
+            "systematic_partition_accessed": (
+                pilot_config.systematic_partition_accessed
+            ),
+            "test_partition_accessed": (
+                pilot_config.test_partition_accessed
+            ),
+        },
+    )
+    terminal = {
+        "acceptance": acceptance,
+        "configured_maximum_steps": configured_maximum_steps,
+        "completed_epochs": pilot_config.epochs,
+        "global_step": global_step,
+        "examples_processed": examples_processed,
+        "diagnostic_selected_epoch": selected_epoch,
+        "diagnostic_selection_metric": "ordinary_validation_total_loss",
+        "selected_checkpoint_sha256": selected_checkpoint_hash,
+        "final_checkpoint_sha256": final_checkpoint_hash,
+        "final_validation_teacher_forced": validations[
+            pilot_config.epochs
+        ]["teacher_forced"],
+        "final_validation_autonomous": validations[
+            pilot_config.epochs
+        ]["autonomous"],
+    }
+    _write_terminal_success(logger, terminal)
+    return PilotResult(
+        str(output_dir),
+        str(logger.path),
+        str(checkpoint_paths[pilot_config.epochs]),
+        str(selected_path),
+        pilot_config.epochs,
+        global_step,
+        examples_processed,
+        terminal,
+    )
+
+
+def _append_terminal_failure_if_possible(config, exc):
+    if getattr(exc, "code", None) == "output_collision":
+        return
+    output_dir = Path(config.output_dir)
+    metrics_path = output_dir / "metrics.jsonl"
+    if not output_dir.is_dir() or not metrics_path.exists():
+        return
+    last_event = None
+    try:
+        lines = metrics_path.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            return
+        first = json.loads(lines[0])
+        if (
+            first.get("event") != "run_metadata"
+            or first.get("pilot_config", {}).get("pilot_identity")
+            != config.pilot_identity
+        ):
+            return
+        last_event = json.loads(lines[-1]).get("event")
+    except (OSError, ValueError, TypeError):
+        last_event = None
+    if last_event in ("terminal_success", "terminal_failure"):
+        return
+    JsonlLogger(metrics_path).write({
+        "event": "terminal_failure",
+        "error_code": getattr(exc, "code", "pilot_failure"),
+        "error_type": type(exc).__name__,
+        "detail": str(exc),
+        "systematic_partition_accessed": False,
+        "test_partition_accessed": False,
+    })
+
+
+def _file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _write_terminal_success(logger, terminal):
+    _require_finite_json(terminal)
+    logger.write({
+        "event": "terminal_success",
+        **terminal,
+        "systematic_partition_accessed": False,
+        "test_partition_accessed": False,
+    })
+
+
+def _require_pilot_acceptance(scientific_criteria, access_state):
+    criteria = dict(scientific_criteria)
+    access = access_state if isinstance(access_state, dict) else {}
+    criteria["systematic_partition_not_accessed"] = (
+        access.get("systematic_partition_accessed") is False
+    )
+    criteria["test_partition_not_accessed"] = (
+        access.get("test_partition_accessed") is False
+    )
+    unmet = tuple(
+        name for name, value in criteria.items() if value is not True
+    )
+    if unmet:
+        raise ConstrainedV6PilotError(
+            "pilot_acceptance_failed",
+            repr({"criteria": criteria, "unmet": unmet}),
+        )
+    return criteria
+
+
+def _assert_nested_close(expected, actual, path="$"):
+    if type(expected) is not type(actual):
+        raise ConstrainedV6PilotError(
+            "reload_mismatch", "{} type differs".format(path)
+        )
+    if isinstance(expected, dict):
+        if set(expected) != set(actual):
+            raise ConstrainedV6PilotError(
+                "reload_mismatch", "{} keys differ".format(path)
+            )
+        for name in expected:
+            _assert_nested_close(
+                expected[name], actual[name], "{}.{}".format(path, name)
+            )
+    elif isinstance(expected, list):
+        if len(expected) != len(actual):
+            raise ConstrainedV6PilotError(
+                "reload_mismatch", "{} length differs".format(path)
+            )
+        for index, value in enumerate(expected):
+            _assert_nested_close(
+                value, actual[index], "{}[{}]".format(path, index)
+            )
+    elif isinstance(expected, float):
+        if not math.isclose(expected, actual, rel_tol=1e-5, abs_tol=2e-7):
+            raise ConstrainedV6PilotError(
+                "reload_mismatch", "{} differs".format(path)
+            )
+    elif expected != actual:
+        raise ConstrainedV6PilotError(
+            "reload_mismatch", "{} differs".format(path)
+        )
