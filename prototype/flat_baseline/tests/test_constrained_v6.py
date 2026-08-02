@@ -722,8 +722,19 @@ class V6GrammarTensorTests(unittest.TestCase):
             geometry[1:2],
             mask[1:2],
         )
+        expected_no_axis = torch.zeros_like(geometry[1:2])
+        expected_no_axis[0, 37] = raw[1, 4]
         torch.testing.assert_close(
-            no_axis.geometry, geometry[1:2], rtol=0, atol=0
+            no_axis.geometry, expected_no_axis, rtol=0, atol=0
+        )
+        self.assertEqual(
+            torch.nonzero(
+                no_axis.geometry[0] != geometry[1], as_tuple=False
+            ).flatten().tolist(),
+            [33, 34, 35, 36, 38],
+        )
+        torch.testing.assert_close(
+            no_axis.raw_axis_geometry, raw[1:2], rtol=0, atol=0
         )
         self.assertFalse(no_axis.axis_node_mask.any())
         self.assertFalse(no_axis.axis_geometry_correction_mask.any())
@@ -749,6 +760,72 @@ class V6GrammarTensorTests(unittest.TestCase):
         )
         self.assertEqual(double_result.geometry.dtype, torch.float64)
         self.assertEqual(double_result.raw_axis_geometry.dtype, torch.float64)
+
+    def test_axis_construction_changes_only_axis_rows_from_v5_records(self):
+        from prototype.flat_baseline.constrained_v4_conversion import (
+            construct_v4_predicted_node_tensors,
+        )
+        from prototype.flat_baseline.constrained_v6_conversion import (
+            constrain_v6_node_records,
+        )
+        from prototype.node_conditioned_categories import (
+            V4_RETAINED_CATEGORICAL_FIELDS,
+        )
+        node_names = (
+            "reference_plane", "sketch", "profile", "extrude", "revolve", "axis"
+        )
+        node_ids = torch.tensor(
+            [NODE_TYPES.id(name) for name in node_names], dtype=torch.long
+        )
+        raw = torch.tensor(
+            [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]] * len(node_names),
+            dtype=torch.float32,
+        )
+        categorical = tuple(
+            torch.zeros(len(node_names), len(field.class_order))
+            for field in V4_RETAINED_CATEGORICAL_FIELDS
+        )
+        v5_records = construct_v4_predicted_node_tensors(
+            node_ids,
+            categorical,
+            torch.zeros(len(node_names), 3),
+            torch.zeros(len(node_names), 3),
+            raw,
+        )
+        v6_records, evidence = constrain_v6_node_records(
+            v5_records, raw, torch.ones(len(node_names), dtype=torch.bool)
+        )
+        for index, name in enumerate(node_names[:-1]):
+            with self.subTest(node_type=name):
+                torch.testing.assert_close(
+                    v6_records.geometry[index],
+                    v5_records.geometry[index],
+                    rtol=0,
+                    atol=0,
+                )
+                self.assertTrue(torch.equal(
+                    v6_records.geometry_mask[index],
+                    v5_records.geometry_mask[index],
+                ))
+                self.assertFalse(evidence.axis_node_mask[index].item())
+                self.assertFalse(
+                    v6_records.geometry_mask[index, 33:37].any().item()
+                )
+        axis_index = len(node_names) - 1
+        torch.testing.assert_close(
+            v6_records.geometry[axis_index, 33:39],
+            torch.tensor(CANONICAL_AXIS_CHANNELS),
+            rtol=0,
+            atol=0,
+        )
+        self.assertEqual(
+            tuple(v6_records.geometry_mask[axis_index, 33:39].tolist()),
+            CANONICAL_AXIS_MASK,
+        )
+        self.assertEqual(
+            tuple(v6_records.geometry[axis_index, 37:39].tolist()),
+            (0.0, 0.0),
+        )
 
     def test_v5_grammar_controls_axis_applicability_not_raw_argmax(self):
         from prototype.flat_baseline.constrained_v6_conversion import (

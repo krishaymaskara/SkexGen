@@ -228,11 +228,15 @@ class V6PilotTensorTests(unittest.TestCase):
             })
 
     def test_job_3338085_no_training_production_shaped_v6_pilot_smoke(self):
+        from prototype.constrained_profile_decoder import profile_targets_for_loss
         from prototype.controlled_data.builders import build_history
         from prototype.controlled_data.factors import PrimitiveFamily
         from prototype.controlled_data.identity import source_family_id
         from prototype.flat_baseline.constrained_v6 import ConstrainedProfileV6Model
         from prototype.flat_baseline.constrained_v6_config import ConstrainedProfileV6Config
+        from prototype.flat_baseline.constrained_v6_conversion import (
+            v6_teacher_forced_predictions,
+        )
         from prototype.flat_baseline.constrained_v6_pilot import (
             _pilot_partition,
             _require_finite_json,
@@ -240,8 +244,10 @@ class V6PilotTensorTests(unittest.TestCase):
             teacher_forced_validation,
         )
         from prototype.model_data.loader import load_partition_physical_examples
+        from prototype.model_data.batching import collate_flat
         from prototype.model_data.tests.fixtures import source, write_physical_corpus
         from prototype.model_data.vocab import NODE_TYPES
+        from prototype.node_grammar import legal_next_node_ids
         from prototype.representation.model import GeometryEncoding
 
         validate_pilot_partition_authorization(ConstrainedV6PilotConfig())
@@ -280,6 +286,70 @@ class V6PilotTensorTests(unittest.TestCase):
                 model.node_type_head.weight.zero_()
                 model.node_type_head.bias.zero_()
                 model.node_type_head.bias[NODE_TYPES.id(None)] = 10.0
+                batch = collate_flat(partition.flat_examples)
+                inputs = batch.to_torch(torch)
+                target = batch.target.to_torch(torch)
+                profiles = profile_targets_for_loss(
+                    batch.target, inputs["geometry"]
+                )
+                output = model(
+                    target=target, profile_targets=profiles, **inputs
+                )
+                teacher_predictions = v6_teacher_forced_predictions(
+                    output,
+                    node_mask=target["node_mask"],
+                    node_count_source="independent_smoke_enumeration",
+                )
+            axis_id = NODE_TYPES.id("axis")
+            none_id = NODE_TYPES.id(None)
+            independent_teacher_axis_count = 0
+            independent_autonomous_axis_count = 0
+            enumeration = []
+            for example_index, prediction in enumerate(teacher_predictions):
+                count = int(target["node_mask"][example_index].sum().item())
+                authoritative = tuple(
+                    int(value) for value in target["node_type_ids"][
+                        example_index, :count
+                    ].tolist()
+                )
+                independently_selected = []
+                for position in range(count):
+                    prefix = authoritative[:position]
+                    legal = legal_next_node_ids(prefix, count)
+                    selected = min(legal)
+                    independently_selected.append(selected)
+                    enumeration.append({
+                        "example_index": example_index,
+                        "requested_node_count": count,
+                        "authoritative_shifted_prefix": prefix,
+                        "raw_current_node_argmax": none_id,
+                        "grammar_constrained_current_node": selected,
+                        "axis_applicable": selected == axis_id,
+                    })
+                self.assertEqual(
+                    prediction.raw_node_type_argmax_ids,
+                    (none_id,) * count,
+                )
+                self.assertEqual(
+                    prediction.grammar_constrained_node_type_ids,
+                    tuple(independently_selected),
+                )
+                independent_teacher_axis_count += sum(
+                    selected == axis_id for selected in independently_selected
+                )
+
+                generated_prefix = []
+                for _ in range(count):
+                    selected = min(legal_next_node_ids(
+                        tuple(generated_prefix), count
+                    ))
+                    generated_prefix.append(selected)
+                independent_autonomous_axis_count += sum(
+                    selected == axis_id for selected in generated_prefix
+                )
+            self.assertEqual(len(enumeration), sum(
+                int(row.sum().item()) for row in target["node_mask"]
+            ))
             teacher = teacher_forced_validation(
                 model, partition, model_config, 8, torch.device("cpu")
             )
@@ -294,8 +364,16 @@ class V6PilotTensorTests(unittest.TestCase):
         self.assertEqual(len(autonomous["outcomes"]), 8)
         teacher_axes = teacher["axis_geometry_metrics"]
         autonomous_axes = autonomous["axis_geometry_metrics"]
-        self.assertEqual(teacher_axes["applicable_axis_node_count"], 6)
-        self.assertEqual(autonomous_axes["applicable_axis_node_count"], 6)
+        self.assertEqual(independent_teacher_axis_count, 7)
+        self.assertEqual(independent_autonomous_axis_count, 6)
+        self.assertEqual(
+            teacher_axes["applicable_axis_node_count"],
+            independent_teacher_axis_count,
+        )
+        self.assertEqual(
+            autonomous_axes["applicable_axis_node_count"],
+            independent_autonomous_axis_count,
+        )
         self.assertEqual(teacher_axes["constrained_invalid_axis_count"], 0)
         self.assertEqual(autonomous_axes["constrained_invalid_axis_count"], 0)
         self.assertEqual(
