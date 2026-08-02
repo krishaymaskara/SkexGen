@@ -1,0 +1,144 @@
+"""Single strict graph-v1 pilot checkpoint schema."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+from prototype.axis_geometry import axis_geometry_metadata
+from prototype.flat_baseline.constrained_v6_checkpoint import canonical_grammar_metadata
+from prototype.model_data.vocab import NODE_TYPES
+from prototype.node_conditioned_categories import v4_categorical_contract_metadata
+
+from .config import GraphV1Config
+from .graph_contract import graph_contract_metadata
+from .model import graph_decoder_parameter_count
+
+
+GRAPH_CHECKPOINT_FIELDS = frozenset({
+    "checkpoint_version", "checkpoint_kind", "model_name",
+    "model_config_version", "decoder_contract_version",
+    "graph_contract_version", "graph_contract", "graph_vocabulary",
+    "graph_direction_convention", "active_pair_construction",
+    "minimal_mask_contract", "pair_feature_contract",
+    "pair_decoder_architecture", "loss_normalization",
+    "inherited_node_path", "node_grammar_contract",
+    "categorical_selection_contract", "axis_geometry_contract",
+    "node_vocabulary", "model_config", "parameter_counts",
+    "pilot_config", "training_config", "model_state", "optimizer_state",
+    "vq_state", "rng_state", "epoch", "global_step",
+    "examples_processed", "configured_maximum_steps", "completed_epochs",
+    "training_partition_state", "validation_partition_state",
+    "validation_summaries", "source_provenance",
+    "systematic_partition_accessed", "test_partition_accessed",
+})
+
+
+class GraphCheckpointError(ValueError):
+    def __init__(self, detail):
+        self.code = "malformed_graph_checkpoint"
+        self.detail = detail
+        super().__init__("{}: {}".format(self.code, detail))
+
+
+def graph_model_metadata(model, config):
+    config.validate()
+    graph = graph_contract_metadata()
+    total = sum(parameter.numel() for parameter in model.parameters())
+    decoder = graph_decoder_parameter_count(model)
+    return {
+        "checkpoint_version": 1,
+        "model_name": config.model_name,
+        "model_config_version": 1,
+        "decoder_contract_version": 1,
+        "graph_contract_version": 1,
+        "graph_contract": graph,
+        "graph_vocabulary": graph["edge_vocabulary"],
+        "graph_direction_convention": graph["direction_convention"],
+        "active_pair_construction": graph["active_pair_construction"],
+        "minimal_mask_contract": graph["minimal_mask_contract"],
+        "pair_feature_contract": list(config.pair_feature_order),
+        "pair_decoder_architecture": {
+            "kind": "shared_ordered_pair_mlp",
+            "input_width": 7 * config.model_dim + 1,
+            "hidden_width": config.pair_hidden_dim,
+            "output_width": len(graph["edge_vocabulary"]),
+            "activation": "gelu",
+        },
+        "loss_normalization": config.graph_loss_normalization,
+        "inherited_node_path": config.inherited_node_path_id,
+        "node_grammar_contract": canonical_grammar_metadata(),
+        "categorical_selection_contract": v4_categorical_contract_metadata(),
+        "axis_geometry_contract": axis_geometry_metadata(),
+        "node_vocabulary": list(NODE_TYPES.tokens),
+        "model_config": config.to_dict(),
+        "parameter_counts": {
+            "graph_model_total": total,
+            "graph_edge_decoder": decoder,
+            "frozen_v6_structural_heads": 3496,
+            "frozen_v6_total": total + 10,
+            "absolute_total_difference": 10,
+        },
+    }
+
+
+def validate_graph_checkpoint(payload, model, model_config, pilot_config, training_config, torch_module):
+    if not isinstance(payload, Mapping):
+        raise GraphCheckpointError("payload must be a mapping")
+    missing = GRAPH_CHECKPOINT_FIELDS - set(payload)
+    extra = set(payload) - GRAPH_CHECKPOINT_FIELDS
+    if missing or extra:
+        raise GraphCheckpointError("field mismatch missing={} extra={}".format(
+            sorted(missing), sorted(extra)
+        ))
+    expected = graph_model_metadata(model, model_config)
+    for name, value in expected.items():
+        if payload[name] != value:
+            raise GraphCheckpointError("metadata field {} differs".format(name))
+    if payload["checkpoint_kind"] != "pilot_fixed_epoch":
+        raise GraphCheckpointError("checkpoint kind differs")
+    if payload["pilot_config"] != pilot_config.to_dict():
+        raise GraphCheckpointError("pilot config differs")
+    if payload["training_config"] != training_config.to_dict():
+        raise GraphCheckpointError("training config differs")
+    for name in ("model_state", "optimizer_state", "vq_state", "rng_state"):
+        if not isinstance(payload[name], Mapping):
+            raise GraphCheckpointError("{} must be a mapping".format(name))
+    expected_state_keys = list(model.state_dict().keys())
+    if list(payload["model_state"].keys()) != expected_state_keys:
+        raise GraphCheckpointError("model state keys or ordering differ")
+    for name in ("epoch", "global_step", "examples_processed", "configured_maximum_steps", "completed_epochs"):
+        value = payload[name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise GraphCheckpointError("{} must be nonnegative integer".format(name))
+    for name in ("systematic_partition_accessed", "test_partition_accessed"):
+        if payload[name] is not False:
+            raise GraphCheckpointError("{} must be exactly false".format(name))
+    provenance = payload["source_provenance"]
+    if (
+        not isinstance(provenance, Mapping)
+        or provenance.get("git_dirty") is not False
+        or not isinstance(provenance.get("git_commit"), str)
+        or len(provenance["git_commit"]) != 40
+        or provenance.get("git_branch") != "graph-profile-decoder"
+        or provenance.get("git_status_porcelain") != []
+        or not isinstance(provenance.get("source_tree_sha256"), str)
+        or len(provenance["source_tree_sha256"]) != 64
+    ):
+        raise GraphCheckpointError("source provenance must be clean")
+    for name, value in payload["model_state"].items():
+        if not isinstance(name, str) or not torch_module.is_tensor(value):
+            raise GraphCheckpointError("model state is malformed")
+    expected_vq_keys = list(model.vq.state_dict().keys())
+    if list(payload["vq_state"].keys()) != expected_vq_keys:
+        raise GraphCheckpointError("VQ state keys or ordering differ")
+    for name, value in payload["vq_state"].items():
+        model_value = payload["model_state"].get("vq." + name)
+        if (
+            not torch_module.is_tensor(value)
+            or not torch_module.is_tensor(model_value)
+            or value.dtype != model_value.dtype
+            or tuple(value.shape) != tuple(model_value.shape)
+            or not torch_module.equal(value, model_value)
+        ):
+            raise GraphCheckpointError("VQ state differs from model state")
+    return payload
