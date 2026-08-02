@@ -16,7 +16,7 @@ from prototype.controlled_data.factors import OperationTemplate
 from prototype.model_data.adapters import adapt_flat_mixed
 from prototype.model_data.batching import collate_flat
 from prototype.model_data.loader import load_partition_physical_examples
-from prototype.model_data.vocab import REFERENCE_PLANES
+from prototype.model_data.vocab import NODE_TYPES, REFERENCE_PLANES
 from prototype.node_grammar import (
     NodeGrammarError,
     validate_complete_node_sequence,
