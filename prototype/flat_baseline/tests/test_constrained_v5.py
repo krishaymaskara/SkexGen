@@ -590,7 +590,7 @@ class V5GrammarTensorTests(unittest.TestCase):
             source_provenance={
                 "git_commit": "a" * 40,
                 "git_dirty": False,
-                "git_status_porcelain": "",
+                "git_status_porcelain": [],
                 "source_tree_sha256": "b" * 64,
             },
         )

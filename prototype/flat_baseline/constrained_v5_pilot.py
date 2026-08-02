@@ -16,10 +16,9 @@ from prototype.controlled_data.factors import OperationTemplate
 from prototype.model_data.adapters import adapt_flat_mixed
 from prototype.model_data.batching import collate_flat
 from prototype.model_data.loader import load_partition_physical_examples
-from prototype.model_data.vocab import NODE_TYPES, REFERENCE_PLANES
+from prototype.model_data.vocab import REFERENCE_PLANES
 from prototype.node_grammar import (
     NodeGrammarError,
-    V5_NODE_GRAMMAR,
     validate_complete_node_sequence,
 )
 from prototype.reference_plane_geometry_torch import (
@@ -38,6 +37,13 @@ from prototype.node_conditioned_categories import (
 )
 from .checkpointing import capture_rng_state
 from .constrained_v5 import ConstrainedProfileV5Model
+from .constrained_v5_checkpoint import (
+    V5CheckpointValidationError,
+    V5_PILOT_CHECKPOINT_FIELDS,
+    v5_model_metadata,
+    validate_v5_checkpoint_payload,
+    validate_v5_pilot_checkpoint_state,
+)
 from .constrained_v5_autonomous import (
     V5AutonomousEvaluationError,
     greedy_decode_v5,
@@ -71,45 +77,7 @@ from .run_logging import JsonlLogger
 from .training import resolve_device, seed_everything
 
 
-PILOT_CHECKPOINT_FIELDS = {
-    "checkpoint_version",
-    "checkpoint_kind",
-    "model_name",
-    "model_config_version",
-    "decoder_contract_version",
-    "learned_geometry_channel_indices",
-    "canonical_plane_contract_id",
-    "base_geometry_contract_id",
-    "categorical_selection_contract_id",
-    "categorical_selection_contract",
-    "node_grammar_contract_id",
-    "node_grammar_contract",
-    "node_vocabulary",
-    "valid_requested_node_counts",
-    "operation_limit",
-    "completion_algorithm_id",
-    "pilot_identity",
-    "pilot_config",
-    "model_config",
-    "optimization_config",
-    "model_state",
-    "optimizer_state",
-    "vq_state",
-    "epoch",
-    "global_step",
-    "examples_processed",
-    "configured_maximum_steps",
-    "completed_epochs",
-    "training_partition_state",
-    "validation_partition_state",
-    "training_sampler_state",
-    "validation_cadence",
-    "validation_summaries",
-    "rng_state",
-    "source_provenance",
-    "systematic_partition_accessed",
-    "test_partition_accessed",
-}
+PILOT_CHECKPOINT_FIELDS = V5_PILOT_CHECKPOINT_FIELDS
 
 
 @dataclass(frozen=True)
@@ -1200,32 +1168,11 @@ def pilot_checkpoint_payload(
     autonomous_summary,
     source_provenance,
 ):
-    return {
-        "checkpoint_version": 5,
+    payload = {
+        **v5_model_metadata(model_config),
         "checkpoint_kind": "pilot_fixed_epoch",
-        "model_name": model_config.model_name,
-        "model_config_version": model_config.model_config_version,
-        "decoder_contract_version": model_config.decoder_contract_version,
-        "learned_geometry_channel_indices": list(
-            model_config.learned_geometry_channel_indices
-        ),
-        "canonical_plane_contract_id": model_config.canonical_plane_contract_id,
-        "base_geometry_contract_id": model_config.base_geometry_contract_id,
-        "categorical_selection_contract_id": (
-            model_config.categorical_selection_contract_id
-        ),
-        "categorical_selection_contract": model_config.categorical_selection_contract,
-        "node_grammar_contract_id": model_config.node_grammar_contract_id,
-        "node_grammar_contract": model_config.node_grammar_contract,
-        "node_vocabulary": list(NODE_TYPES.tokens),
-        "valid_requested_node_counts": list(
-            model_config.valid_requested_node_counts
-        ),
-        "operation_limit": model_config.max_operations,
-        "completion_algorithm_id": model_config.completion_algorithm_id,
         "pilot_identity": pilot_config.pilot_identity,
         "pilot_config": pilot_config.to_dict(),
-        "model_config": model_config.to_dict(),
         "optimization_config": pilot_optimization_metadata(
             optimization_config
         ),
@@ -1254,6 +1201,19 @@ def pilot_checkpoint_payload(
         "systematic_partition_accessed": False,
         "test_partition_accessed": False,
     }
+    try:
+        validate_v5_checkpoint_payload(
+            payload,
+            "pilot_fixed_epoch",
+            model_config,
+            torch_module=torch,
+        )
+        validate_v5_pilot_checkpoint_state(
+            payload, pilot_config, len(data.train.flat_examples)
+        )
+    except V5CheckpointValidationError as exc:
+        raise ConstrainedV5PilotError(exc.code, exc.detail) from exc
+    return payload
 
 
 def load_pilot_checkpoint(
@@ -1267,92 +1227,26 @@ def load_pilot_checkpoint(
     *,
     map_location,
 ):
-    checkpoint = torch.load(str(path), map_location="cpu")
-    if (
-        not isinstance(checkpoint, dict)
-        or set(checkpoint) != PILOT_CHECKPOINT_FIELDS
-    ):
+    try:
+        checkpoint = torch.load(str(path), map_location="cpu")
+    except Exception as exc:
         raise ConstrainedV5PilotError(
-            "malformed_checkpoint", "pilot checkpoint fields differ"
+            "malformed_checkpoint", "checkpoint could not be deserialized"
+        ) from exc
+    try:
+        validate_v5_checkpoint_payload(
+            checkpoint,
+            "pilot_fixed_epoch",
+            model_config,
+            torch_module=torch,
         )
-    steps_per_epoch = int(math.ceil(
-        len(data.train.flat_examples) / float(pilot_config.batch_size)
-    ))
-    expected_epoch = checkpoint["epoch"]
-    if (
-        isinstance(expected_epoch, bool)
-        or not isinstance(expected_epoch, int)
-        or not 1 <= expected_epoch <= pilot_config.epochs
-        or checkpoint["completed_epochs"] != expected_epoch
-        or checkpoint["global_step"] != expected_epoch * steps_per_epoch
-        or checkpoint["examples_processed"]
-        != expected_epoch * len(data.train.flat_examples)
-        or checkpoint["configured_maximum_steps"]
-        != pilot_config.epochs * steps_per_epoch
-        or checkpoint["training_sampler_state"] != {
-            "base_seed": pilot_config.seed,
-            "completed_epoch": expected_epoch,
-            "next_epoch_seed": pilot_config.seed + expected_epoch + 1,
-        }
-        or set(checkpoint["validation_summaries"])
-        != {"teacher_forced", "autonomous"}
-        or not isinstance(checkpoint["source_provenance"], dict)
-        or set(checkpoint["source_provenance"])
-        != {
-            "git_commit",
-            "git_dirty",
-            "git_status_porcelain",
-            "source_tree_sha256",
-        }
-        or not isinstance(
-            checkpoint["source_provenance"].get("git_commit"), str
+        validate_v5_pilot_checkpoint_state(
+            checkpoint, pilot_config, len(data.train.flat_examples)
         )
-        or not checkpoint["source_provenance"]["git_commit"]
-        or type(checkpoint["source_provenance"].get("git_dirty")) is not bool
-        or not isinstance(
-            checkpoint["source_provenance"].get("git_status_porcelain"), str
-        )
-        or not isinstance(
-            checkpoint["source_provenance"].get("source_tree_sha256"), str
-        )
-        or not isinstance(checkpoint["rng_state"], dict)
-        or set(checkpoint["rng_state"])
-        != {"python", "torch_cpu", "torch_cuda"}
-        or type(checkpoint["systematic_partition_accessed"]) is not bool
-        or type(checkpoint["test_partition_accessed"]) is not bool
-    ):
-        raise ConstrainedV5PilotError(
-            "malformed_checkpoint", "pilot checkpoint state is invalid"
-        )
+    except V5CheckpointValidationError as exc:
+        raise ConstrainedV5PilotError(exc.code, exc.detail) from exc
     expected = (
-        ("checkpoint_version", 5),
         ("checkpoint_kind", "pilot_fixed_epoch"),
-        ("model_name", model_config.model_name),
-        ("model_config_version", model_config.model_config_version),
-        ("decoder_contract_version", model_config.decoder_contract_version),
-        (
-            "learned_geometry_channel_indices",
-            list(model_config.learned_geometry_channel_indices),
-        ),
-        ("canonical_plane_contract_id", model_config.canonical_plane_contract_id),
-        ("base_geometry_contract_id", model_config.base_geometry_contract_id),
-        (
-            "categorical_selection_contract_id",
-            model_config.categorical_selection_contract_id,
-        ),
-        (
-            "categorical_selection_contract",
-            model_config.categorical_selection_contract,
-        ),
-        ("node_grammar_contract_id", model_config.node_grammar_contract_id),
-        ("node_grammar_contract", V5_NODE_GRAMMAR.to_dict()),
-        ("node_vocabulary", list(NODE_TYPES.tokens)),
-        (
-            "valid_requested_node_counts",
-            list(model_config.valid_requested_node_counts),
-        ),
-        ("operation_limit", model_config.max_operations),
-        ("completion_algorithm_id", model_config.completion_algorithm_id),
         ("pilot_identity", pilot_config.pilot_identity),
         ("pilot_config", pilot_config.to_dict()),
         ("model_config", model_config.to_dict()),
@@ -1369,79 +1263,23 @@ def load_pilot_checkpoint(
     for name, value in expected:
         if checkpoint[name] != value:
             raise ConstrainedV5PilotError(
-                "incompatible_checkpoint", "{} differs".format(name)
+                "malformed_checkpoint",
+                "checkpoint field {} differs from the requested pilot".format(name),
             )
-    vq_state = checkpoint["vq_state"]
-    expected_vq_names = {
-        name[3:]
-        for name in checkpoint["model_state"]
-        if name.startswith("vq.")
-    }
-    if (
-        not isinstance(checkpoint["model_state"], dict)
-        or not isinstance(checkpoint["optimizer_state"], dict)
-        or not isinstance(vq_state, dict)
-        or set(vq_state) != expected_vq_names
-        or any(
-            "vq." + name not in checkpoint["model_state"]
-            or not torch.equal(
-                value, checkpoint["model_state"]["vq." + name]
-            )
-            for name, value in vq_state.items()
-        )
-    ):
+    _require_finite_json(checkpoint["validation_summaries"])
+    try:
+        model.load_state_dict(checkpoint["model_state"], strict=True)
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+    except Exception as exc:
         raise ConstrainedV5PilotError(
             "malformed_checkpoint",
-            "pilot model, optimizer, or explicit VQ state is invalid",
-        )
-    _require_finite_tensor_tree(
-        checkpoint["model_state"], "model_state"
-    )
-    _require_finite_tensor_tree(
-        checkpoint["optimizer_state"], "optimizer_state"
-    )
-    _require_finite_json(checkpoint["validation_summaries"])
-    model.load_state_dict(checkpoint["model_state"], strict=True)
-    optimizer.load_state_dict(checkpoint["optimizer_state"])
+            "checkpoint model or optimizer state is incompatible",
+        ) from exc
     for state in optimizer.state.values():
         for name, value in tuple(state.items()):
             if torch.is_tensor(value):
                 state[name] = value.to(map_location)
     return checkpoint
-
-
-def _require_finite_tensor_tree(value, path):
-    if torch.is_tensor(value):
-        if (
-            value.dtype.is_floating_point
-            and not bool(torch.isfinite(value).all().item())
-        ):
-            raise ConstrainedV5PilotError(
-                "nonfinite_checkpoint", "{} is nonfinite".format(path)
-            )
-        return
-    if isinstance(value, dict):
-        for name, item in value.items():
-            _require_finite_tensor_tree(
-                item, "{}.{}".format(path, name)
-            )
-        return
-    if isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
-            _require_finite_tensor_tree(
-                item, "{}[{}]".format(path, index)
-            )
-        return
-    if value is None or isinstance(value, (bool, int, float, str)):
-        if isinstance(value, float) and not math.isfinite(value):
-            raise ConstrainedV5PilotError(
-                "nonfinite_checkpoint", "{} is nonfinite".format(path)
-            )
-        return
-    raise ConstrainedV5PilotError(
-        "malformed_checkpoint",
-        "{} has unsupported state type".format(path),
-    )
 
 
 def run_constrained_v5_pilot(

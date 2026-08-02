@@ -14,13 +14,18 @@ from prototype.constrained_profile_decoder import profile_targets_for_loss
 from prototype.model_data.adapters import adapt_flat_mixed
 from prototype.model_data.batching import collate_flat
 from prototype.model_data.loader import load_partition_physical_examples
-from prototype.model_data.vocab import NODE_TYPES
-from prototype.node_grammar import V5_NODE_GRAMMAR
 from prototype.profile_geometry import PROFILE_FAMILIES
 from prototype.representation.model import NodeType
 
 from .checkpointing import capture_rng_state, save_checkpoint
 from .constrained_v5 import ConstrainedProfileV5Model
+from .constrained_v5_checkpoint import (
+    V5CheckpointValidationError,
+    V5_TINY_CHECKPOINT_FIELDS,
+    v5_model_metadata,
+    validate_v5_checkpoint_field_set,
+    validate_v5_checkpoint_payload,
+)
 from .constrained_v5_config import ConstrainedProfileV5Config
 from .constrained_v5_losses import constrained_profile_v5_loss
 from .constrained_v5_training_config import (
@@ -53,37 +58,7 @@ V5_TRAINING_LOSS_FIELDS = (
     "vq_commitment_loss",
 )
 V5_TINY_EVALUATION_MILESTONES = (100, 200)
-V5_CHECKPOINT_FIELDS = {
-    "checkpoint_version",
-    "model_name",
-    "model_config_version",
-    "decoder_contract_version",
-    "learned_geometry_channel_indices",
-    "canonical_plane_contract_id",
-    "base_geometry_contract_id",
-    "categorical_selection_contract_id",
-    "categorical_selection_contract",
-    "node_grammar_contract_id",
-    "node_grammar_contract",
-    "node_vocabulary",
-    "valid_requested_node_counts",
-    "operation_limit",
-    "completion_algorithm_id",
-    "model_config",
-    "training_config",
-    "profile_family_order",
-    "extent_bounds",
-    "loss_weights",
-    "model_state",
-    "optimizer_state",
-    "vq_state",
-    "epoch",
-    "global_step",
-    "selected_tiny_overfit_ids",
-    "data_state",
-    "rng_state",
-    "source_provenance",
-}
+V5_CHECKPOINT_FIELDS = V5_TINY_CHECKPOINT_FIELDS
 
 
 class ConstrainedV5TrainingError(RuntimeError):
@@ -520,29 +495,8 @@ def v5_checkpoint_payload(
 
     _validate_model_and_training_config(model_config, training_config)
     data_state = selection.metadata()
-    return {
-        "checkpoint_version": 5,
-        "model_name": model_config.model_name,
-        "model_config_version": model_config.model_config_version,
-        "decoder_contract_version": model_config.decoder_contract_version,
-        "learned_geometry_channel_indices": list(
-            model_config.learned_geometry_channel_indices
-        ),
-        "canonical_plane_contract_id": model_config.canonical_plane_contract_id,
-        "base_geometry_contract_id": model_config.base_geometry_contract_id,
-        "categorical_selection_contract_id": (
-            model_config.categorical_selection_contract_id
-        ),
-        "categorical_selection_contract": model_config.categorical_selection_contract,
-        "node_grammar_contract_id": model_config.node_grammar_contract_id,
-        "node_grammar_contract": model_config.node_grammar_contract,
-        "node_vocabulary": list(NODE_TYPES.tokens),
-        "valid_requested_node_counts": list(
-            model_config.valid_requested_node_counts
-        ),
-        "operation_limit": model_config.max_operations,
-        "completion_algorithm_id": model_config.completion_algorithm_id,
-        "model_config": model_config.to_dict(),
+    payload = {
+        **v5_model_metadata(model_config),
         "training_config": training_config.to_dict(),
         "profile_family_order": list(model_config.profile_family_order),
         "extent_bounds": [
@@ -563,9 +517,28 @@ def v5_checkpoint_payload(
         "rng_state": capture_rng_state(torch_module),
         "source_provenance": source_provenance,
     }
+    try:
+        validate_v5_checkpoint_payload(
+            payload,
+            "tiny_overfit",
+            model_config,
+            torch_module=torch_module,
+        )
+    except V5CheckpointValidationError as exc:
+        raise ConstrainedV5TrainingError(exc.code, exc.detail) from exc
+    return payload
 
 
 def save_v5_checkpoint(path, payload, torch_module=torch):
+    checkpoint_kind = (
+        payload.get("checkpoint_kind")
+        if isinstance(payload, dict) and "checkpoint_kind" in payload
+        else "tiny_overfit"
+    )
+    try:
+        validate_v5_checkpoint_field_set(payload, checkpoint_kind)
+    except V5CheckpointValidationError as exc:
+        raise ConstrainedV5TrainingError(exc.code, exc.detail) from exc
     destination = Path(path)
     if destination.exists() or destination.is_symlink():
         raise ConstrainedV5TrainingError(
@@ -585,12 +558,23 @@ def load_v5_checkpoint(
     map_location,
     torch_module=torch,
 ):
-    checkpoint = torch_module.load(str(path), map_location="cpu")
+    try:
+        checkpoint = torch_module.load(str(path), map_location="cpu")
+    except Exception as exc:
+        raise ConstrainedV5TrainingError(
+            "malformed_checkpoint", "checkpoint could not be deserialized"
+        ) from exc
     _validate_v5_checkpoint(
         checkpoint, model_config, training_config, selection
     )
-    model.load_state_dict(checkpoint["model_state"], strict=True)
-    optimizer.load_state_dict(checkpoint["optimizer_state"])
+    try:
+        model.load_state_dict(checkpoint["model_state"], strict=True)
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+    except Exception as exc:
+        raise ConstrainedV5TrainingError(
+            "malformed_checkpoint",
+            "checkpoint model or optimizer state is incompatible",
+        ) from exc
     for state in optimizer.state.values():
         for name, value in tuple(state.items()):
             if torch_module.is_tensor(value):
@@ -967,44 +951,20 @@ def _aggregate_evaluation_snapshots(
 
 
 def _validate_v5_checkpoint(checkpoint, model_config, training_config, selection):
-    if not isinstance(checkpoint, dict) or set(checkpoint) != V5_CHECKPOINT_FIELDS:
-        raise ConstrainedV5TrainingError(
-            "malformed_checkpoint", "V5 checkpoint fields are invalid"
+    try:
+        validate_v5_checkpoint_payload(
+            checkpoint,
+            "tiny_overfit",
+            model_config,
+            torch_module=torch,
         )
-    if checkpoint["checkpoint_version"] != 5:
-        raise ConstrainedV5TrainingError(
-            "unsupported_checkpoint", "checkpoint_version must be 5"
-        )
+    except V5CheckpointValidationError as exc:
+        raise ConstrainedV5TrainingError(exc.code, exc.detail) from exc
     if (
         checkpoint["epoch"] != 0
-        or isinstance(checkpoint["global_step"], bool)
-        or not isinstance(checkpoint["global_step"], int)
-        or checkpoint["global_step"] < 0
-        or not isinstance(checkpoint["model_state"], dict)
-        or not isinstance(checkpoint["optimizer_state"], dict)
-        or not isinstance(checkpoint["source_provenance"], dict)
-        or set(checkpoint["source_provenance"])
-        != {
-            "git_commit", "git_dirty", "git_status_porcelain",
-            "source_tree_sha256",
-        }
-        or not isinstance(
-            checkpoint["source_provenance"].get("git_commit"), str
-        )
-        or not checkpoint["source_provenance"]["git_commit"]
-        or type(checkpoint["source_provenance"].get("git_dirty")) is not bool
-        or not isinstance(
-            checkpoint["source_provenance"].get("git_status_porcelain"), str
-        )
-        or not isinstance(
-            checkpoint["source_provenance"].get("source_tree_sha256"), str
-        )
-        or not isinstance(checkpoint["rng_state"], dict)
-        or set(checkpoint["rng_state"])
-        != {"python", "torch_cpu", "torch_cuda"}
     ):
         raise ConstrainedV5TrainingError(
-            "malformed_checkpoint", "V5 checkpoint state metadata is invalid"
+            "malformed_checkpoint", "checkpoint field epoch must equal 0"
         )
     expected = (
         ("model_name", model_config.model_name),
@@ -1024,16 +984,6 @@ def _validate_v5_checkpoint(checkpoint, model_config, training_config, selection
             "categorical_selection_contract",
             model_config.categorical_selection_contract,
         ),
-        ("node_grammar_contract_id", model_config.node_grammar_contract_id),
-        ("node_grammar_contract", V5_NODE_GRAMMAR.to_dict()),
-        ("node_vocabulary", list(NODE_TYPES.tokens)),
-        (
-            "valid_requested_node_counts",
-            list(model_config.valid_requested_node_counts),
-        ),
-        ("operation_limit", model_config.max_operations),
-        ("completion_algorithm_id", model_config.completion_algorithm_id),
-        ("model_config", model_config.to_dict()),
         ("training_config", training_config.to_dict()),
         ("profile_family_order", list(model_config.profile_family_order)),
         (
@@ -1050,29 +1000,9 @@ def _validate_v5_checkpoint(checkpoint, model_config, training_config, selection
     for name, value in expected:
         if checkpoint[name] != value:
             raise ConstrainedV5TrainingError(
-                "incompatible_checkpoint",
+                "malformed_checkpoint",
                 "{} differs from the requested V5 run".format(name),
             )
-    vq_state = checkpoint["vq_state"]
-    expected_vq_names = {
-        name[3:]
-        for name in checkpoint["model_state"]
-        if name.startswith("vq.")
-    }
-    if (
-        not isinstance(vq_state, dict)
-        or set(vq_state) != expected_vq_names
-        or any(
-        "vq." + name not in checkpoint["model_state"]
-        or not torch.equal(
-            value, checkpoint["model_state"]["vq." + name]
-        )
-        for name, value in vq_state.items()
-        )
-    ):
-        raise ConstrainedV5TrainingError(
-            "malformed_checkpoint", "explicit VQ state disagrees with model state"
-        )
 
 
 def _tiny_success_criteria(

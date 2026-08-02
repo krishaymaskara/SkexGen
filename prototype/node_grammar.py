@@ -206,7 +206,12 @@ def grammar_state_evidence(prefix, requested_node_count, legal_candidates):
 
 def node_grammar_metadata(contract=V5_NODE_GRAMMAR):
     validate_node_grammar_contract(contract)
-    return contract.to_dict()
+    metadata = contract.to_dict()
+    metadata["canonical_templates"] = [
+        list(sequence)
+        for sequence in enumerate_complete_node_sequences(contract)
+    ]
+    return metadata
 
 
 def _validated_requested_count(value, contract):

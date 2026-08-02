@@ -823,6 +823,15 @@ The edge decoder is deliberately unchanged, so V5 may still have zero complete
 CAD validity; pilot completion is an engineering gate, not a scientific-success
 claim.
 
+All V5 training and pilot checkpoints compose their exact field sets from
+`constrained_v5_checkpoint.py`. The shared schema freezes model metadata,
+training state, pilot-only metadata, and a canonical JSON-compatible grammar
+serialization (ordered vocabulary, transitions, terminal states, valid
+lengths, completion identity, and the six complete templates). Source
+provenance stores `git_status_porcelain` as the sorted list emitted by
+`source_state()`; checkpoint construction and strict reload validate that same
+representation.
+
 ## Related evidence
 
 The [B0 training-infrastructure validation
