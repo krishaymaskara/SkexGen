@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 import inspect
+import json
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -173,6 +176,10 @@ class GraphV1TensorTests(unittest.TestCase):
             oriented.masked_class_ids[0].tolist(),
             oriented.correction_mask[0].tolist(),
         )
+        self.assertIsNot(
+            prediction.raw_graph_edge_predictions,
+            prediction.masked_graph_edge_predictions,
+        )
         self.assertNotIn(
             (2, 4, 1),
             {(edge.source, edge.destination, edge.edge_type_id)
@@ -214,17 +221,31 @@ class GraphV1TensorTests(unittest.TestCase):
             for name in first.state_dict()
         ))
 
-    def test_v6_node_path_capacity_optimizer_and_gradient_equivalence(self):
+    def test_job_3339188_complete_authoritative_node_path_and_capacity(self):
         from prototype.constrained_profile_decoder import profile_targets_for_loss
         from prototype.flat_baseline.constrained_v6 import ConstrainedProfileV6Model
+        from prototype.flat_baseline.constrained_v6_autonomous import greedy_decode_v6
         from prototype.flat_baseline.constrained_v6_config import ConstrainedProfileV6Config
         from prototype.graph_baseline.config import GraphV1Config
         from prototype.graph_baseline.conversion import graph_v1_teacher_forced_predictions
         from prototype.graph_baseline.losses import graph_v1_loss
-        from prototype.graph_baseline.model import GraphV1Model, graph_decoder_parameter_count
+        from prototype.graph_baseline.model import (
+            GraphV1Model,
+            graph_decoder_parameter_count,
+            select_complete_graph_node_sequence,
+        )
         from prototype.graph_baseline.training import build_graph_optimizer
         from prototype.graph_baseline.training_config import GraphTrainingConfig
-        batch = _batch("ER")
+        from prototype.node_grammar import (
+            NodeGrammarError,
+            validate_complete_node_sequence,
+        )
+        templates = ("E", "R", "EE", "ER", "RE", "RR")
+        self.assertEqual(
+            tuple(inspect.signature(select_complete_graph_node_sequence).parameters),
+            ("logits", "node_mask"),
+        )
+        batch = _batch(*templates)
         inputs = batch.to_torch(torch)
         target = batch.target.to_torch(torch)
         profiles = profile_targets_for_loss(batch.target, inputs["geometry"])
@@ -235,6 +256,35 @@ class GraphV1TensorTests(unittest.TestCase):
         flat.eval(); graph.eval()
         flat_output = flat(target=target, profile_targets=profiles, **inputs)
         graph_output = graph(target=target, profile_targets=profiles, **inputs)
+        self.assertEqual(
+            tuple(graph_output.authoritative_graph_node_type_ids.shape),
+            tuple(target["node_mask"].shape),
+        )
+        self.assertEqual(
+            tuple(graph_output.graph_legal_node_type_mask.shape),
+            tuple(target["node_mask"].shape) + (8,),
+        )
+        self.assertEqual(
+            graph_output.authoritative_graph_node_type_ids.dtype, torch.long
+        )
+        self.assertEqual(
+            graph_output.graph_node_type_correction_mask.dtype, torch.bool
+        )
+        self.assertEqual(
+            graph_output.authoritative_graph_node_type_ids.device,
+            graph_output.node_type_logits.device,
+        )
+        self.assertTrue(
+            graph_output.authoritative_graph_node_type_ids.is_contiguous()
+        )
+        self.assertTrue(graph_output.graph_legal_node_type_mask.is_contiguous())
+        self.assertTrue(torch.equal(
+            graph_output.graph_node_type_correction_mask,
+            target["node_mask"] & (
+                graph_output.graph_raw_node_type_argmax_ids
+                != graph_output.authoritative_graph_node_type_ids
+            ),
+        ))
         for name in (
             "decoded_states", "node_type_logits", "profile_family_logits",
             "raw_profile_parameters", "remaining_geometry", "quantized_memory",
@@ -247,12 +297,54 @@ class GraphV1TensorTests(unittest.TestCase):
             node_mask=target["node_mask"],
             node_count_source="job_3338945_regression",
         )
+        expected_by_count = {
+            4: {(5, 7, 4, 3)},
+            5: {(5, 7, 4, 2, 6)},
+            7: {(5, 7, 4, 3, 7, 4, 3)},
+            8: {
+                (5, 7, 4, 3, 7, 4, 2, 6),
+                (5, 7, 4, 2, 6, 7, 4, 3),
+            },
+            9: {(5, 7, 4, 2, 6, 7, 4, 2, 6)},
+        }
         for row, prediction in enumerate(graph_predictions):
             count = prediction.node_prediction.node_count
+            authoritative = tuple(
+                graph_output.authoritative_graph_node_type_ids[
+                    row, :count
+                ].tolist()
+            )
             self.assertEqual(
-                graph_output.graph_constrained_node_type_ids[row, :count].tolist(),
+                list(authoritative),
                 [node.node_type_id for node in prediction.node_prediction.raw_nodes],
             )
+            self.assertIn(authoritative, expected_by_count[count])
+            self.assertNotIn(0, authoritative)
+            self.assertNotIn(1, authoritative)
+            self.assertEqual(prediction.graph.node_type_ids, authoritative)
+        counts = target["node_mask"].long().sum(dim=1)
+        autonomous_graph = greedy_decode_graph_v1(
+            graph, inputs, node_counts=counts,
+            node_count_source="job_3339188_regression",
+        )
+        autonomous_v6 = greedy_decode_v6(
+            graph, inputs, node_counts=counts,
+            node_count_source="job_3339188_regression",
+        )
+        for graph_prediction, v6_prediction in zip(
+            autonomous_graph, autonomous_v6
+        ):
+            expected = tuple(node.node_type_id for node in v6_prediction.raw_nodes)
+            self.assertEqual(graph_prediction.graph.node_type_ids, expected)
+            self.assertEqual(
+                tuple(node.node_type_id for node in graph_prediction.node_prediction.raw_nodes),
+                expected,
+            )
+        with self.assertRaises(NodeGrammarError) as caught:
+            validate_complete_node_sequence(
+                (5, 7, 4, 3, 6, 7, 4, 3), 8
+            )
+        self.assertEqual(caught.exception.code, "invalid_v5_generated_prefix")
         self.assertEqual(
             sum(parameter.numel() for parameter in flat.parameters())
             - sum(parameter.numel() for parameter in graph.parameters()), 10
@@ -344,3 +436,225 @@ class GraphV1TensorTests(unittest.TestCase):
             model, inputs, node_counts=torch.tensor([5]), node_count_source="test"
         )
         self.assertEqual(first, second)
+
+    def test_production_training_step_smoke(self):
+        from prototype.constrained_profile_decoder import profile_targets_for_loss
+        from prototype.flat_baseline.checkpointing import save_checkpoint
+        from prototype.graph_baseline.checkpoint import validate_graph_checkpoint
+        from prototype.graph_baseline.config import GraphV1Config
+        from prototype.graph_baseline.model import GraphV1Model
+        from prototype.graph_baseline.pilot import graph_checkpoint_payload
+        from prototype.graph_baseline.pilot_config import GraphPilotConfig
+        from prototype.graph_baseline.training import (
+            build_graph_optimizer,
+            graph_training_step,
+        )
+        from prototype.graph_baseline.training_config import GraphTrainingConfig
+        batch = _batch("E", "R")
+        inputs = batch.to_torch(torch)
+        target = batch.target.to_torch(torch)
+        profiles = profile_targets_for_loss(batch.target, inputs["geometry"])
+        model_config = GraphV1Config()
+        training_config = GraphTrainingConfig()
+        pilot_config = GraphPilotConfig(require_clean_source=False)
+        model = GraphV1Model(model_config)
+        optimizer = build_graph_optimizer(model, training_config)
+        parameters_before = {
+            name: value.detach().clone()
+            for name, value in model.named_parameters()
+        }
+        vq_before = model.vq.embedding.detach().clone()
+        unused_output, losses = graph_training_step(
+            model, optimizer, inputs, target, profiles,
+            model_config, training_config,
+        )
+        del unused_output
+        self.assertTrue(torch.isfinite(losses.total))
+        self.assertTrue(all(
+            parameter.grad is not None and torch.isfinite(parameter.grad).all()
+            for parameter in model.parameters() if parameter.requires_grad
+        ))
+        self.assertTrue(any(
+            not torch.equal(parameters_before[name], parameter.detach())
+            for name, parameter in model.named_parameters()
+        ))
+        self.assertFalse(torch.equal(vq_before, model.vq.embedding))
+        self.assertTrue(optimizer.state)
+        partition = SimpleNamespace(metadata=lambda: {
+            "identity": "temporary_authorized_ordinary_partition"
+        })
+        data = SimpleNamespace(train=partition, validation=partition)
+        provenance = {
+            "git_commit": "a" * 40,
+            "git_branch": "graph-profile-decoder",
+            "git_dirty": False,
+            "git_status_porcelain": [],
+            "source_tree_sha256": "b" * 64,
+        }
+        payload = graph_checkpoint_payload(
+            model, optimizer, model_config, pilot_config, training_config,
+            data, 1, 1, 2, 1,
+            {"teacher_forced": {}, "autonomous": {}}, provenance,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "one-step.pt"
+            save_checkpoint(path, payload, torch)
+            loaded = torch.load(str(path), map_location="cpu")
+            reloaded = GraphV1Model(model_config)
+            reloaded_optimizer = build_graph_optimizer(
+                reloaded, training_config
+            )
+            validate_graph_checkpoint(
+                loaded, reloaded, model_config, pilot_config,
+                training_config, torch,
+            )
+            reloaded.load_state_dict(loaded["model_state"], strict=True)
+            reloaded_optimizer.load_state_dict(loaded["optimizer_state"])
+            self.assertEqual(
+                set(reloaded_optimizer.state_dict()["state"]),
+                set(optimizer.state_dict()["state"]),
+            )
+        production_training_step_smoke = True
+        scientific_training_run = False
+        self.assertTrue(production_training_step_smoke)
+        self.assertFalse(scientific_training_run)
+
+    def test_tiny_two_epoch_control_flow_dry_run(self):
+        from prototype.constrained_profile_decoder import profile_targets_for_loss
+        from prototype.flat_baseline.checkpointing import save_checkpoint
+        from prototype.flat_baseline.run_logging import JsonlLogger
+        from prototype.graph_baseline.autonomous import greedy_decode_graph_v1
+        from prototype.graph_baseline.checkpoint import validate_graph_checkpoint
+        from prototype.graph_baseline.config import GraphV1Config
+        from prototype.graph_baseline.conversion import (
+            graph_v1_teacher_forced_predictions,
+            validate_and_convert_graph_prediction,
+        )
+        from prototype.graph_baseline.losses import graph_v1_loss
+        from prototype.graph_baseline.model import GraphV1Model
+        from prototype.graph_baseline.pilot import (
+            _require_acceptance,
+            _require_finite_json,
+            graph_checkpoint_payload,
+        )
+        from prototype.graph_baseline.pilot_config import GraphPilotConfig
+        from prototype.graph_baseline.training import (
+            build_graph_optimizer,
+            graph_training_step,
+        )
+        from prototype.graph_baseline.training_config import GraphTrainingConfig
+        batch = _batch("E", "R")
+        inputs = batch.to_torch(torch)
+        target = batch.target.to_torch(torch)
+        profiles = profile_targets_for_loss(batch.target, inputs["geometry"])
+        model_config = GraphV1Config()
+        training_config = GraphTrainingConfig()
+        pilot_config = GraphPilotConfig(require_clean_source=False)
+        model = GraphV1Model(model_config)
+        optimizer = build_graph_optimizer(model, training_config)
+        partition = SimpleNamespace(metadata=lambda: {
+            "identity": "tiny_authorized_ordinary_partition"
+        })
+        data = SimpleNamespace(train=partition, validation=partition)
+        provenance = {
+            "git_commit": "a" * 40,
+            "git_branch": "graph-profile-decoder",
+            "git_dirty": False,
+            "git_status_porcelain": [],
+            "source_tree_sha256": "b" * 64,
+        }
+        validations = {}
+        with tempfile.TemporaryDirectory() as temporary:
+            logger = JsonlLogger(Path(temporary) / "metrics.jsonl")
+            checkpoints = {}
+            for epoch in (1, 2):
+                graph_training_step(
+                    model, optimizer, inputs, target, profiles,
+                    model_config, training_config,
+                )
+                model.eval()
+                with torch.no_grad():
+                    output = model(
+                        target=target, profile_targets=profiles, **inputs
+                    )
+                    losses = graph_v1_loss(
+                        output, target, profiles, model_config
+                    )
+                    predictions = graph_v1_teacher_forced_predictions(
+                        output, node_mask=target["node_mask"],
+                        node_count_source="tiny_two_epoch_dry_run",
+                    )
+                    outcomes = tuple(
+                        validate_and_convert_graph_prediction(item)
+                        for item in predictions
+                    )
+                    autonomous_predictions = greedy_decode_graph_v1(
+                        model,
+                        inputs,
+                        node_counts=target["node_mask"].long().sum(dim=1),
+                        node_count_source="tiny_two_epoch_dry_run",
+                    )
+                    autonomous_outcomes = tuple(
+                        validate_and_convert_graph_prediction(item)
+                        for item in autonomous_predictions
+                    )
+                validations[epoch] = {
+                    "teacher_forced": {
+                        "total_loss": float(losses.total.item()),
+                        "classified_count": len(outcomes),
+                    },
+                    "autonomous": {
+                        "classified_count": len(autonomous_outcomes),
+                    },
+                }
+                payload = graph_checkpoint_payload(
+                    model, optimizer, model_config, pilot_config,
+                    training_config, data, epoch, epoch, 2 * epoch, 2,
+                    validations[epoch],
+                    provenance,
+                )
+                path = Path(temporary) / "epoch-{:04d}.pt".format(epoch)
+                save_checkpoint(path, payload, torch)
+                checkpoints[epoch] = path
+                logger.write({
+                    "event": "epoch_validation", "epoch": epoch,
+                    "validation": validations[epoch],
+                })
+            selected = min(
+                validations,
+                key=lambda item: validations[item]["teacher_forced"]["total_loss"],
+            )
+            for role, epoch in (("selected", selected), ("final", 2)):
+                loaded = torch.load(str(checkpoints[epoch]), map_location="cpu")
+                reloaded = GraphV1Model(model_config)
+                reloaded_optimizer = build_graph_optimizer(
+                    reloaded, training_config
+                )
+                validate_graph_checkpoint(
+                    loaded, reloaded, model_config, pilot_config,
+                    training_config, torch,
+                )
+                reloaded.load_state_dict(loaded["model_state"], strict=True)
+                reloaded_optimizer.load_state_dict(loaded["optimizer_state"])
+                self.assertEqual(loaded["epoch"], epoch, role)
+            acceptance = _require_acceptance(
+                {"tiny_two_epoch_control_flow_completed": True},
+                {"systematic_partition_accessed": False,
+                 "test_partition_accessed": False},
+            )
+            terminal = {
+                "event": "terminal_success", "selected_epoch": selected,
+                "completed_epochs": 2, "global_step": 2,
+                "acceptance": acceptance,
+                "systematic_partition_accessed": False,
+                "test_partition_accessed": False,
+            }
+            _require_finite_json(terminal)
+            logger.write(terminal)
+            rows = [
+                json.loads(line)
+                for line in (Path(temporary) / "metrics.jsonl").read_text().splitlines()
+            ]
+            self.assertEqual([row["event"] for row in rows], [
+                "epoch_validation", "epoch_validation", "terminal_success"
+            ])

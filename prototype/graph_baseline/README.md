@@ -75,3 +75,39 @@ names are still reported so that this fact is visible rather than omitted.
 
 The graph experiment will not be repeatedly revised until it produces valid CAD.
 After the initial pilot, at most one evidence-backed graph correction is permitted.
+
+## Pre-pilot node-sequence audit
+
+Authoritative job `3339188` exposed a teacher-forced container defect before
+the first scientific pilot: independently selected current nodes, each legal
+against a shifted target prefix, did not necessarily concatenate into one
+complete controlled program. Graph V1 now has one explicit production field,
+`authoritative_graph_node_type_ids`. It is a complete grammar-constrained
+rollout selected from raw node logits using only authorized sequence lengths.
+It supplies graph type features, legal edge masks, graph records, V6 contract
+validation, strict conversion, and metrics. `graph_raw_node_type_argmax_ids`
+remains shadow evidence and never enters conversion.
+
+Teacher-forced graph prediction uses decoded teacher-forced neural states but
+rolls node types forward through the V5 grammar without reading target node
+IDs. Autonomous prediction continues to use the exact constrained V6 rollout
+stored in its generated node records. Both paths therefore have one internally
+consistent sequence; target edges remain confined to loss and scoring.
+
+Sequence-like evidence has the following fixed roles:
+
+| Field | Meaning | May enter conversion |
+| --- | --- | --- |
+| `node_type_logits.argmax` | unconstrained raw class evidence | no |
+| `graph_raw_node_type_argmax_ids` | aligned raw graph-node shadow | no |
+| `authoritative_graph_node_type_ids` | complete teacher graph rollout | yes |
+| `teacher_forced_prefix_node_ids` | inherited shifted training prefixes | no |
+| `grammar_constrained_node_type_ids` in the graph prediction | serialized copy of the authoritative rollout | yes |
+| autonomous `raw_nodes` | exact constrained V6 rollout records | yes |
+
+The production-shaped readiness path covers authorization, ordinary train/IID
+loading, graph tensorization, model and node construction, teacher-forced and
+autonomous graph prediction, strict conversion, metrics, checkpoint save and
+reload, finite JSON, and terminal acceptance construction. The first
+scientific graph pilot has not run, so the one permitted evidence-backed
+scientific graph correction remains unused.

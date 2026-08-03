@@ -35,7 +35,20 @@ from .graph_contract import GRAPH_EDGE_CLASS_ORDER
 @dataclass(frozen=True)
 class GraphV1Output(ConstrainedProfileV6Output):
     graph_edge_logits: torch.Tensor
-    graph_constrained_node_type_ids: torch.Tensor
+    graph_raw_node_type_argmax_ids: torch.Tensor
+    authoritative_graph_node_type_ids: torch.Tensor
+    graph_node_type_correction_mask: torch.Tensor
+    graph_legal_node_type_mask: torch.Tensor
+    graph_grammar_state_evidence: tuple
+
+
+@dataclass(frozen=True)
+class GraphNodeSelection:
+    raw_node_type_argmax_ids: torch.Tensor
+    authoritative_node_type_ids: torch.Tensor
+    node_type_correction_mask: torch.Tensor
+    legal_node_type_mask: torch.Tensor
+    grammar_state_evidence: tuple
 
 
 class GraphV1Model(ConstrainedProfileV6Model):
@@ -118,11 +131,12 @@ class GraphV1Model(ConstrainedProfileV6Model):
             | canonical_profile.geometry_mask
             | scattered_mask
         )
-        constrained_ids = _teacher_forced_constrained_node_ids(
-            node_logits, target["node_type_ids"], target["node_mask"]
+        graph_nodes = select_complete_graph_node_sequence(
+            node_logits, target["node_mask"]
         )
         graph_logits = self.decode_graph_edges(
-            states, constrained_ids, encoded.memory, target["node_mask"]
+            states, graph_nodes.authoritative_node_type_ids,
+            encoded.memory, target["node_mask"]
         )
         batch_size, node_count = target["node_mask"].shape
         neutral_presence = states.new_zeros(batch_size, node_count, node_count)
@@ -165,7 +179,11 @@ class GraphV1Model(ConstrainedProfileV6Model):
             encoded.vq.perplexity,
             prefix.contiguous(),
             graph_logits,
-            constrained_ids,
+            graph_nodes.raw_node_type_argmax_ids,
+            graph_nodes.authoritative_node_type_ids,
+            graph_nodes.node_type_correction_mask,
+            graph_nodes.legal_node_type_mask,
+            graph_nodes.grammar_state_evidence,
         )
 
     def decode_graph_edges(self, states, node_type_ids, memory, node_mask):
@@ -211,16 +229,26 @@ class GraphV1Model(ConstrainedProfileV6Model):
         )
 
 
-def _teacher_forced_constrained_node_ids(logits, authoritative_ids, node_mask):
-    """Mirror the frozen V6 current-node selection from shifted prefixes."""
+def select_complete_graph_node_sequence(logits, node_mask):
+    """Roll out one complete constrained sequence from logits and lengths."""
 
     batch_size, count = node_mask.shape
     requested = node_mask.long().sum(dim=1)
-    result = torch.full_like(authoritative_ids, NODE_TYPES.id(None))
+    constrained = torch.full(
+        (batch_size, count), NODE_TYPES.id(None), dtype=torch.long,
+        device=logits.device,
+    )
+    raw = torch.full_like(constrained, NODE_TYPES.id(None))
+    corrections = torch.zeros_like(constrained, dtype=torch.bool)
+    legal_masks = torch.zeros(
+        batch_size, count, len(NODE_TYPES.tokens), dtype=torch.bool,
+        device=logits.device,
+    )
+    evidence = []
     with torch.no_grad():
         for position in range(count):
             prefixes = tuple(
-                tuple(int(value) for value in authoritative_ids[row, :position].tolist())
+                tuple(int(value) for value in constrained[row, :position].tolist())
                 if bool(node_mask[row, position].item()) else ()
                 for row in range(batch_size)
             )
@@ -231,8 +259,15 @@ def _teacher_forced_constrained_node_ids(logits, authoritative_ids, node_mask):
                 ),
                 active_mask=node_mask[:, position],
             )
-            result[:, position] = selected.grammar_constrained_node_type_ids
-    return result.contiguous()
+            raw[:, position] = selected.raw_node_type_argmax_ids
+            constrained[:, position] = selected.grammar_constrained_node_type_ids
+            corrections[:, position] = selected.node_type_correction_mask
+            legal_masks[:, position] = selected.legal_node_type_mask
+            evidence.append(selected.grammar_state_evidence)
+    return GraphNodeSelection(
+        raw.contiguous(), constrained.contiguous(), corrections.contiguous(),
+        legal_masks.contiguous(), tuple(evidence),
+    )
 
 
 def graph_decoder_parameter_count(model):

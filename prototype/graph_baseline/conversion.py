@@ -6,17 +6,24 @@ from dataclasses import dataclass, replace
 
 import torch
 
+from prototype.axis_geometry import AXIS_GEOMETRY_CONTRACT_ID
 from prototype.flat_baseline.autonomous import (
     RAW_PREFIX_FEEDBACK,
     RawDecodedEdge,
     RawDecodedPointer,
 )
 from prototype.flat_baseline.constrained_v6_conversion import (
-    v6_teacher_forced_predictions,
+    V6TeacherForcedRawPrediction,
+    constrain_v6_node_records,
     validate_v6_prediction_contract,
+)
+from prototype.flat_baseline.constrained_v4_conversion import (
+    _prediction_row,
+    construct_v4_predicted_node_tensors,
 )
 from prototype.flat_baseline.conversion import validate_and_convert_raw_prediction
 from prototype.model_data.vocab import EDGE_TYPES, NODE_TYPES
+from prototype.node_grammar import NODE_GRAMMAR_CONTRACT_ID
 
 from .graph_contract import (
     GRAPH_CONTRACT_VERSION,
@@ -48,12 +55,20 @@ class GraphV1Prediction:
 def graph_v1_teacher_forced_predictions(output, *, node_mask, node_count_source):
     if not isinstance(output, GraphV1Output):
         raise TypeError("output must be GraphV1Output")
-    nodes = v6_teacher_forced_predictions(
+    if (
+        not torch.is_tensor(node_mask)
+        or node_mask.dtype != torch.bool
+        or tuple(node_mask.shape) != tuple(output.node_type_logits.shape[:2])
+    ):
+        raise TypeError("node_mask must be a Boolean tensor aligned with node logits")
+    if not isinstance(node_count_source, str) or not node_count_source:
+        raise ValueError("node_count_source must be a nonempty string")
+    nodes = _graph_teacher_forced_node_predictions(
         output, node_mask=node_mask, node_count_source=node_count_source
     )
     masked = mask_graph_edge_logits(
         output.graph_edge_logits,
-        output.graph_constrained_node_type_ids,
+        output.authoritative_graph_node_type_ids,
         node_mask,
     )
     results = []
@@ -83,6 +98,101 @@ def graph_v1_teacher_forced_predictions(output, *, node_mask, node_count_source)
             ),
         ))
     return tuple(results)
+
+
+@torch.no_grad()
+def _graph_teacher_forced_node_predictions(output, *, node_mask, node_count_source):
+    """Build V6-compatible records from the single complete graph sequence."""
+
+    constrained_records = construct_v4_predicted_node_tensors(
+        output.authoritative_graph_node_type_ids,
+        output.categorical_logits,
+        output.profile_family_logits,
+        output.raw_profile_parameters,
+        output.remaining_geometry,
+        node_mask,
+    )
+    constrained_records, axes = constrain_v6_node_records(
+        constrained_records, output.remaining_geometry, node_mask
+    )
+    raw_records = construct_v4_predicted_node_tensors(
+        output.graph_raw_node_type_argmax_ids,
+        output.categorical_logits,
+        output.profile_family_logits,
+        output.raw_profile_parameters,
+        output.remaining_geometry,
+        node_mask,
+    )
+    requested = node_mask.long().sum(dim=1)
+    predictions = []
+    for row in range(node_mask.size(0)):
+        base = _prediction_row(
+            output, constrained_records, node_mask, row, node_count_source
+        )
+        raw_base = _prediction_row(
+            output, raw_records, node_mask, row, node_count_source
+        )
+        count = int(requested[row].item())
+        predictions.append(V6TeacherForcedRawPrediction(
+            **vars(base),
+            raw_node_type_argmax_ids=tuple(
+                int(value) for value in output.graph_raw_node_type_argmax_ids[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            grammar_constrained_node_type_ids=tuple(
+                int(value) for value in output.authoritative_graph_node_type_ids[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            node_type_correction_mask=tuple(
+                bool(value) for value in output.graph_node_type_correction_mask[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            legal_node_type_masks=tuple(
+                tuple(bool(value) for value in mask)
+                for mask in output.graph_legal_node_type_mask[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            grammar_state_evidence=tuple(
+                output.graph_grammar_state_evidence[position][row]
+                for position in range(count)
+            ),
+            same_history_raw_shadow_nodes=raw_base.raw_nodes,
+            same_history_raw_shadow_operation_node_indices=(
+                raw_base.predicted_operation_node_indices
+            ),
+            same_history_raw_shadow_operation_count=(
+                raw_base.predicted_operation_count
+            ),
+            same_history_raw_shadow_operation_count_exceeds_limit=(
+                raw_base.operation_count_exceeds_limit
+            ),
+            same_history_raw_shadow_operation_pointers=(
+                raw_base.raw_operation_pointers
+            ),
+            node_grammar_contract_id=NODE_GRAMMAR_CONTRACT_ID,
+            raw_axis_geometry=tuple(
+                tuple(float(value) for value in axis)
+                for axis in axes.raw_axis_geometry[row, :count].cpu().tolist()
+            ),
+            constrained_axis_geometry=tuple(
+                tuple(float(value) for value in axis)
+                for axis in axes.constrained_axis_geometry[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            axis_geometry_correction_mask=tuple(
+                tuple(bool(value) for value in mask)
+                for mask in axes.axis_geometry_correction_mask[
+                    row, :count
+                ].cpu().tolist()
+            ),
+            axis_geometry_contract_id=AXIS_GEOMETRY_CONTRACT_ID,
+        ))
+    return tuple(predictions)
 
 
 def graph_prediction_from_evidence(
