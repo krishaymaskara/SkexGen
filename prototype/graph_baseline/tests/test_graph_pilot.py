@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -54,9 +55,9 @@ class GraphPilotStaticTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, TORCH_REASON)
 class GraphPilotTensorTests(unittest.TestCase):
-    def test_no_training_production_shaped_graph_smoke_and_checkpoint(self):
+    def test_job_3338803_no_training_production_shaped_graph_smoke_and_checkpoint(self):
         from prototype.controlled_data.builders import build_history
-        from prototype.controlled_data.factors import PrimitiveFamily
+        from prototype.controlled_data.factors import PrimitiveFamily, ReferencePlane
         from prototype.controlled_data.identity import source_family_id
         from prototype.flat_baseline.constrained_v6_pilot import _pilot_partition
         from prototype.flat_baseline.checkpointing import save_checkpoint
@@ -73,24 +74,104 @@ class GraphPilotTensorTests(unittest.TestCase):
         )
         from prototype.graph_baseline.training import build_graph_optimizer
         from prototype.graph_baseline.training_config import GraphTrainingConfig
-        sources = tuple(
-            source(template, tuple(PrimitiveFamily)[index % 3], extents=(1.0,) * len(template))
-            for index, template in enumerate(("E", "R", "EE", "ER", "RE", "RR", "E", "R"))
+        templates = ("E", "R", "EE", "ER", "RE", "RR")
+        train_sources = tuple(
+            source(
+                template, tuple(PrimitiveFamily)[index % 3],
+                plane=ReferencePlane.XY, extents=(1.0,) * len(template),
+            )
+            for index, template in enumerate(templates)
         )
-        ids = tuple(
+        validation_sources = tuple(
+            source(
+                template, tuple(PrimitiveFamily)[index % 3],
+                plane=ReferencePlane.XZ, extents=(1.0,) * len(template),
+            )
+            for index, template in enumerate(templates)
+        )
+        train_ids = tuple(
             source_family_id(build_history(item, GeometryEncoding.CONTINUOUS))
-            for item in sources
+            for item in train_sources
         )
+        validation_ids = tuple(
+            source_family_id(build_history(item, GeometryEncoding.CONTINUOUS))
+            for item in validation_sources
+        )
+        self.assertEqual(len(set(train_ids)), 6)
+        self.assertEqual(len(set(validation_ids)), 6)
+        self.assertTrue(set(train_ids).isdisjoint(validation_ids))
         with tempfile.TemporaryDirectory() as temporary:
             write_physical_corpus(
-                temporary, sources, partitions={item: "validation" for item in ids}
+                temporary,
+                train_sources + validation_sources,
+                partitions={
+                    **{item: "train" for item in train_ids},
+                    **{item: "validation" for item in validation_ids},
+                },
             )
-            physical = load_partition_physical_examples(temporary, "iid", "validation")
+            split = json.loads(
+                (Path(temporary) / "manifests" / "iid.json").read_text()
+            )
+            family_rows = split["families"]
+            assignments = [
+                (row["source_family_id"], row["partition"])
+                for row in family_rows
+            ]
+            self.assertEqual(len(assignments), 12)
+            self.assertEqual(len({family_id for family_id, unused in assignments}), 12)
+            self.assertEqual(
+                {family_id for family_id, partition in assignments if partition == "train"},
+                set(train_ids),
+            )
+            self.assertEqual(
+                {family_id for family_id, partition in assignments
+                 if partition == "validation"},
+                set(validation_ids),
+            )
+            self.assertFalse(any(
+                partition in ("systematic", "test")
+                for unused, partition in assignments
+            ))
+            sample_assignments = {}
+            for row in split["samples"]:
+                sample_assignments.setdefault(row["source_family_id"], set()).add(
+                    row["partition"]
+                )
+            self.assertEqual(set(sample_assignments), set(train_ids) | set(validation_ids))
+            self.assertTrue(all(len(values) == 1 for values in sample_assignments.values()))
+
+            train_physical = load_partition_physical_examples(
+                temporary, "iid", "train"
+            )
+            validation_physical = load_partition_physical_examples(
+                temporary, "iid", "validation"
+            )
+            self.assertEqual(len(train_physical), 6)
+            self.assertEqual(len(validation_physical), 6)
+            self.assertTrue(
+                {item.physical_family_id for item in train_physical}.isdisjoint(
+                    item.physical_family_id for item in validation_physical
+                )
+            )
+            train = _pilot_partition(
+                train_physical,
+                tuple(item.physical_family_id for item in train_physical),
+                "train", "train",
+            )
             validation = _pilot_partition(
-                physical, tuple(item.physical_family_id for item in physical),
+                validation_physical,
+                tuple(item.physical_family_id for item in validation_physical),
                 "validation", "iid_validation",
             )
-            data = type("Data", (), {"train": validation, "validation": validation})()
+            self.assertEqual(
+                {item.metadata.operation_template for item in validation.physical_examples},
+                set(templates),
+            )
+            self.assertEqual(
+                {item.metadata.primitive_family for item in validation.physical_examples},
+                {item.value for item in PrimitiveFamily},
+            )
+            data = type("Data", (), {"train": train, "validation": validation})()
             model_config = GraphV1Config()
             pilot_config = GraphPilotConfig(require_clean_source=False)
             training_config = GraphTrainingConfig()
@@ -102,9 +183,9 @@ class GraphPilotTensorTests(unittest.TestCase):
             autonomous = autonomous_graph_validation(
                 model, validation, model_config, 8, torch.device("cpu")
             )
-            self.assertEqual(teacher["example_count"], 8)
-            self.assertEqual(autonomous["example_count"], 8)
-            self.assertEqual(len(autonomous["graph_metrics"]["outcomes"]), 8)
+            self.assertEqual(teacher["example_count"], 6)
+            self.assertEqual(autonomous["example_count"], 6)
+            self.assertEqual(len(autonomous["graph_metrics"]["outcomes"]), 6)
             provenance = {
                 "git_commit": "a" * 40,
                 "git_branch": "graph-profile-decoder",
@@ -114,7 +195,7 @@ class GraphPilotTensorTests(unittest.TestCase):
             }
             payload = graph_checkpoint_payload(
                 model, optimizer, model_config, pilot_config, training_config,
-                data, 1, 1, 8, 2,
+                data, 1, 1, 6, 2,
                 {"teacher_forced": teacher, "autonomous": autonomous}, provenance,
             )
             for name, value in (
@@ -148,6 +229,7 @@ class GraphPilotTensorTests(unittest.TestCase):
             reloaded = GraphV1Model(model_config)
             reloaded.load_state_dict(loaded["model_state"], strict=True)
             self.assertEqual(set(reloaded.state_dict()), set(model.state_dict()))
+            self.assertEqual(optimizer.state, {})
 
     def test_checkpoint_rejects_identity_vocabulary_mask_features_and_provenance(self):
         from prototype.graph_baseline.checkpoint import (
