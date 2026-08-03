@@ -16,6 +16,8 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus-dir", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--repository-root", required=True)
+    parser.add_argument("--reviewed-commit", required=True)
     return parser
 
 
@@ -25,7 +27,11 @@ def main(argv=None):
         pilot_config = replace(GraphPilotConfig(), output_dir=args.output_dir)
         validate_partition_authorization(pilot_config)
         result = run_graph_v1_pilot(
-            args.corpus_dir, pilot_config, GraphV1Config()
+            args.corpus_dir,
+            pilot_config,
+            GraphV1Config(),
+            repository_root=args.repository_root,
+            reviewed_commit=args.reviewed_commit,
         )
     except Exception as exc:
         print(json.dumps({

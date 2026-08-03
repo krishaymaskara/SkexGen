@@ -80,7 +80,9 @@ PY
 
 container_python -B -m prototype.graph_baseline.run_graph_v1_pilot \
   --corpus-dir "$CORPUS" \
-  --output-dir "$OUTPUT"
+  --output-dir "$OUTPUT" \
+  --repository-root "$REPOSITORY" \
+  --reviewed-commit "$REVIEWED_COMMIT"
 
 test -f "$OUTPUT/epoch-0001.pt"
 test -f "$OUTPUT/epoch-0002.pt"

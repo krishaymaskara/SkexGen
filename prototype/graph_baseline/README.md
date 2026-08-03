@@ -109,5 +109,25 @@ The production-shaped readiness path covers authorization, ordinary train/IID
 loading, graph tensorization, model and node construction, teacher-forced and
 autonomous graph prediction, strict conversion, metrics, checkpoint save and
 reload, finite JSON, and terminal acceptance construction. The first
-scientific graph pilot has not run, so the one permitted evidence-backed
-scientific graph correction remains unused.
+scientific graph pilot attempt failed before validation and checkpoint
+completion, so it produced no scientific result and the one permitted
+evidence-backed scientific graph correction remains unused.
+
+## Pilot source provenance
+
+Job `3339787` was an engineering failure, not a scientific result. It completed
+68 epoch-1 training steps and processed 544 examples, but did not complete
+epoch validation or produce a successful checkpoint. Its state must not be
+resumed or reused; the corrected pilot starts from fresh deterministic
+initialization in a new immutable output directory.
+
+Graph V1 source authorization now collects branch, commit, porcelain-v1 status,
+and the deterministic source digest from an explicit repository root. Branch
+identity uses `git symbolic-ref --quiet --short HEAD`; cleanliness uses
+`git status --porcelain=v1 --untracked-files=all`. The reviewed commit and
+expected `graph-profile-decoder` branch are checked before training. Immediately
+before every checkpoint and strict selected/final reload, the repository is
+recollected and required to be clean and exactly equivalent to the authorized
+branch, commit, and digest. The checkpoint stores that verified-equivalent
+record. Detached HEAD, command failure, field/type errors, dirtiness, and
+identity mismatch are terminal structured provenance errors.

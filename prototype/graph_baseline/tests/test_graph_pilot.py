@@ -49,6 +49,7 @@ class GraphPilotStaticTests(unittest.TestCase):
             "Python 3.8.13", "1.11.0", "11.3", "graph-profile-decoder",
             "focused_graph_tests_skipped", "systematic_partition_accessed",
             "test_partition_accessed", "constrained_graph_v1_runs",
+            "--repository-root", "--reviewed-commit",
         ):
             self.assertIn(text, script)
 
@@ -85,6 +86,12 @@ class GraphPilotTensorTests(unittest.TestCase):
             _require_acceptance,
             _require_finite_json,
         )
+        from prototype.graph_baseline.provenance import (
+            collect_graph_source_provenance,
+        )
+        from prototype.graph_baseline.tests.test_graph_provenance import (
+            initialize_temporary_graph_repository,
+        )
         from prototype.graph_baseline.training import build_graph_optimizer
         from prototype.graph_baseline.training_config import GraphTrainingConfig
         templates = ("E", "R", "EE", "ER", "RE", "RR")
@@ -115,6 +122,13 @@ class GraphPilotTensorTests(unittest.TestCase):
         self.assertEqual(len(set(validation_ids)), 6)
         self.assertTrue(set(train_ids).isdisjoint(validation_ids))
         with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "source-repository"
+            reviewed_commit = initialize_temporary_graph_repository(repository)
+            provenance = collect_graph_source_provenance(repository)
+            self.assertEqual(provenance["git_branch"], "graph-profile-decoder")
+            self.assertEqual(provenance["git_commit"], reviewed_commit)
+            self.assertIs(provenance["git_dirty"], False)
+            self.assertEqual(provenance["git_status_porcelain"], [])
             write_physical_corpus(
                 temporary,
                 train_sources + validation_sources,
@@ -251,17 +265,11 @@ class GraphPilotTensorTests(unittest.TestCase):
                 sum(count * (count - 1) for count in (4, 5, 7, 8, 8, 9)),
             )
             stages.append("metrics")
-            provenance = {
-                "git_commit": "a" * 40,
-                "git_branch": "graph-profile-decoder",
-                "git_dirty": False,
-                "git_status_porcelain": [],
-                "source_tree_sha256": "b" * 64,
-            }
             payload = graph_checkpoint_payload(
                 model, optimizer, model_config, pilot_config, training_config,
                 data, 1, 1, 6, 2,
                 {"teacher_forced": teacher, "autonomous": autonomous}, provenance,
+                repository_root=repository,
             )
             for name, value in (
                 ("checkpoint_version", 2),
@@ -291,16 +299,33 @@ class GraphPilotTensorTests(unittest.TestCase):
                     validate_graph_checkpoint(
                         malformed, model, model_config, pilot_config,
                         training_config, torch,
+                        expected_source_provenance=provenance,
                     )
-            malformed = dict(payload)
-            malformed["source_provenance"] = dict(
-                provenance, git_branch="wrong"
-            )
-            with self.assertRaisesRegex(ValueError, "malformed_graph_checkpoint"):
-                validate_graph_checkpoint(
-                    malformed, model, model_config, pilot_config,
-                    training_config, torch,
+            for name, value, code in (
+                ("git_branch", None, "missing_git_branch"),
+                ("git_branch", "wrong", "wrong_git_branch"),
+                ("git_commit", None, "missing_git_commit"),
+                ("git_commit", "0" * 40, "wrong_git_commit"),
+                ("git_dirty", True, "dirty_source_tree"),
+                ("git_status_porcelain", (), "malformed_git_status"),
+                ("source_tree_sha256", None, "missing_source_tree_digest"),
+                (
+                    "source_tree_sha256", "0" * 64,
+                    "source_tree_digest_mismatch",
+                ),
+            ):
+                malformed = dict(payload)
+                malformed["source_provenance"] = dict(
+                    provenance, **{name: value}
                 )
+                with self.assertRaisesRegex(
+                    ValueError, "malformed_graph_checkpoint: {}".format(code)
+                ):
+                    validate_graph_checkpoint(
+                        malformed, model, model_config, pilot_config,
+                        training_config, torch,
+                        expected_source_provenance=provenance,
+                    )
             selected_path = Path(temporary) / "epoch-0001.pt"
             final_path = Path(temporary) / "epoch-0002.pt"
             save_checkpoint(selected_path, payload, torch)
@@ -308,6 +333,7 @@ class GraphPilotTensorTests(unittest.TestCase):
                 model, optimizer, model_config, pilot_config, training_config,
                 data, 2, 2, 12, 2,
                 {"teacher_forced": teacher, "autonomous": autonomous}, provenance,
+                repository_root=repository,
             )
             save_checkpoint(final_path, final_payload, torch)
             stages.append("checkpoint_save")
@@ -318,22 +344,24 @@ class GraphPilotTensorTests(unittest.TestCase):
             self.assertEqual(loaded["epoch"], 1)
             self.assertEqual(loaded["global_step"], 1)
             self.assertEqual(loaded["examples_processed"], 6)
+            self.assertEqual(loaded["source_provenance"], provenance)
             self.assertFalse(loaded["systematic_partition_accessed"])
             self.assertFalse(loaded["test_partition_accessed"])
             validate_graph_checkpoint(
-                loaded, model, model_config, pilot_config, training_config, torch
+                loaded, model, model_config, pilot_config, training_config, torch,
+                expected_source_provenance=provenance,
             )
             reloaded = GraphV1Model(model_config)
             reloaded.load_state_dict(loaded["model_state"], strict=True)
             self.assertEqual(set(reloaded.state_dict()), set(model.state_dict()))
             self.assertTrue(_reload_and_validate(
                 selected_path, model_config, pilot_config, training_config,
-                data, torch.device("cpu"),
+                data, torch.device("cpu"), provenance, repository,
             ))
             stages.append("selected_reload")
             self.assertTrue(_reload_and_validate(
                 final_path, model_config, pilot_config, training_config,
-                data, torch.device("cpu"),
+                data, torch.device("cpu"), provenance, repository,
             ))
             stages.append("final_reload")
             _require_finite_json({"teacher": teacher, "autonomous": autonomous})

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
-import subprocess
 
 import torch
 
@@ -19,7 +18,6 @@ from prototype.flat_baseline.constrained_v6_pilot import (
     teacher_forced_validation as v6_teacher_forced_validation,
 )
 from prototype.flat_baseline.constrained_v6_pilot_config import ConstrainedV6PilotConfig
-from prototype.flat_baseline.provenance import source_state
 from prototype.flat_baseline.run_logging import JsonlLogger
 from prototype.flat_baseline.training import seed_everything
 from prototype.model_data.batching import collate_flat
@@ -51,6 +49,12 @@ from .pilot_config import (
     GraphPilotConfig,
     validate_partition_authorization,
 )
+from .provenance import (
+    GRAPH_SOURCE_BRANCH,
+    collect_graph_source_provenance,
+    validate_graph_source_provenance,
+    verify_graph_source_provenance,
+)
 from .training import build_graph_optimizer, graph_training_step
 from .training_config import GraphTrainingConfig
 
@@ -75,18 +79,27 @@ class GraphPilotResult:
     terminal_summary: dict
 
 
-def run_graph_v1_pilot(corpus_dir, pilot_config=None, model_config=None):
+def run_graph_v1_pilot(
+    corpus_dir,
+    pilot_config=None,
+    model_config=None,
+    *,
+    repository_root,
+    reviewed_commit
+):
     pilot_config = pilot_config or GraphPilotConfig()
     model_config = model_config or GraphV1Config()
     training_config = GraphTrainingConfig()
     validate_partition_authorization(pilot_config)
     model_config.validate()
     training_config.validate()
-    provenance = _graph_source_state()
-    if pilot_config.require_clean_source and (
-        provenance["git_dirty"] is not False or provenance["git_commit"] is None
-    ):
-        raise ValueError("graph pilot requires a clean committed source")
+    repository_root = Path(repository_root).resolve()
+    provenance = collect_graph_source_provenance(repository_root)
+    validate_graph_source_provenance(
+        provenance,
+        expected_commit=reviewed_commit,
+        expected_branch=GRAPH_SOURCE_BRANCH,
+    )
     output_dir = Path(pilot_config.output_dir)
     if output_dir.exists() or output_dir.is_symlink():
         raise ValueError("graph pilot output must be new and immutable")
@@ -163,7 +176,7 @@ def run_graph_v1_pilot(corpus_dir, pilot_config=None, model_config=None):
         payload = graph_checkpoint_payload(
             model, optimizer, model_config, pilot_config, training_config,
             data, epoch, global_step, examples_processed, configured_steps,
-            validations[epoch], provenance,
+            validations[epoch], provenance, repository_root=repository_root,
         )
         checkpoint_path = output_dir / "epoch-{:04d}.pt".format(epoch)
         save_checkpoint(checkpoint_path, payload, torch)
@@ -180,10 +193,12 @@ def run_graph_v1_pilot(corpus_dir, pilot_config=None, model_config=None):
     selected_path = checkpoint_paths[selected_epoch]
     final_path = checkpoint_paths[pilot_config.epochs]
     selected_reload = _reload_and_validate(
-        selected_path, model_config, pilot_config, training_config, data, device
+        selected_path, model_config, pilot_config, training_config, data, device,
+        provenance, repository_root,
     )
     final_reload = _reload_and_validate(
-        final_path, model_config, pilot_config, training_config, data, device
+        final_path, model_config, pilot_config, training_config, data, device,
+        provenance, repository_root,
     )
     final_train = teacher_forced_graph_validation(
         model, data.train, model_config, pilot_config.batch_size, device
@@ -366,8 +381,11 @@ def autonomous_graph_validation(model, partition, model_config, batch_size, devi
 def graph_checkpoint_payload(
     model, optimizer, model_config, pilot_config, training_config, data,
     epoch, global_step, examples_processed, configured_steps,
-    validation_summaries, provenance,
+    validation_summaries, provenance, *, repository_root,
 ):
+    verified_provenance = verify_graph_source_provenance(
+        repository_root, provenance
+    )
     payload = {
         **graph_model_metadata(model, model_config),
         "checkpoint_kind": "pilot_fixed_epoch",
@@ -385,24 +403,30 @@ def graph_checkpoint_payload(
         "training_partition_state": data.train.metadata(),
         "validation_partition_state": data.validation.metadata(),
         "validation_summaries": validation_summaries,
-        "source_provenance": provenance,
+        "source_provenance": verified_provenance,
         "systematic_partition_accessed": False,
         "test_partition_accessed": False,
     }
     if set(payload) != GRAPH_CHECKPOINT_FIELDS:
         raise ValueError("graph checkpoint field set differs")
     validate_graph_checkpoint(
-        payload, model, model_config, pilot_config, training_config, torch
+        payload, model, model_config, pilot_config, training_config, torch,
+        expected_source_provenance=provenance,
     )
     return payload
 
 
-def _reload_and_validate(path, model_config, pilot_config, training_config, data, device):
+def _reload_and_validate(
+    path, model_config, pilot_config, training_config, data, device,
+    provenance, repository_root,
+):
+    verify_graph_source_provenance(repository_root, provenance)
     model = GraphV1Model(model_config).to(device)
     optimizer = build_graph_optimizer(model, training_config)
     payload = torch.load(str(path), map_location="cpu")
     validate_graph_checkpoint(
-        payload, model, model_config, pilot_config, training_config, torch
+        payload, model, model_config, pilot_config, training_config, torch,
+        expected_source_provenance=provenance,
     )
     model.load_state_dict(payload["model_state"], strict=True)
     optimizer.load_state_dict(payload["optimizer_state"])
@@ -443,21 +467,3 @@ def _require_finite_json(value, path="$ "):
             _require_finite_json(item, "{}.{}".format(path, name))
         return
     raise ValueError("{} is not JSON-compatible".format(path))
-
-
-def _graph_source_state(repository=None):
-    """Extend immutable source provenance with the required branch identity."""
-
-    provenance = source_state(repository)
-    root = Path(repository) if repository is not None else Path(__file__).resolve().parents[2]
-    try:
-        result = subprocess.run(
-            ("git", "branch", "--show-current"),
-            cwd=str(root), check=True, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, universal_newlines=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        branch = None
-    else:
-        branch = result.stdout.strip() or None
-    return dict(provenance, git_branch=branch)

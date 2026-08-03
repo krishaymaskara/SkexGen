@@ -446,6 +446,13 @@ class GraphV1TensorTests(unittest.TestCase):
         from prototype.graph_baseline.model import GraphV1Model
         from prototype.graph_baseline.pilot import graph_checkpoint_payload
         from prototype.graph_baseline.pilot_config import GraphPilotConfig
+        from prototype.graph_baseline.provenance import (
+            collect_graph_source_provenance,
+            validate_graph_source_provenance,
+        )
+        from prototype.graph_baseline.tests.test_graph_provenance import (
+            initialize_temporary_graph_repository,
+        )
         from prototype.graph_baseline.training import (
             build_graph_optimizer,
             graph_training_step,
@@ -458,6 +465,14 @@ class GraphV1TensorTests(unittest.TestCase):
         model_config = GraphV1Config()
         training_config = GraphTrainingConfig()
         pilot_config = GraphPilotConfig(require_clean_source=False)
+        source_temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(source_temporary.cleanup)
+        repository = Path(source_temporary.name) / "source-repository"
+        reviewed_commit = initialize_temporary_graph_repository(repository)
+        provenance = collect_graph_source_provenance(repository)
+        validate_graph_source_provenance(
+            provenance, expected_commit=reviewed_commit
+        )
         model = GraphV1Model(model_config)
         optimizer = build_graph_optimizer(model, training_config)
         parameters_before = {
@@ -485,19 +500,23 @@ class GraphV1TensorTests(unittest.TestCase):
             "identity": "temporary_authorized_ordinary_partition"
         })
         data = SimpleNamespace(train=partition, validation=partition)
-        provenance = {
-            "git_commit": "a" * 40,
-            "git_branch": "graph-profile-decoder",
-            "git_dirty": False,
-            "git_status_porcelain": [],
-            "source_tree_sha256": "b" * 64,
-        }
-        payload = graph_checkpoint_payload(
-            model, optimizer, model_config, pilot_config, training_config,
-            data, 1, 1, 2, 1,
-            {"teacher_forced": {}, "autonomous": {}}, provenance,
-        )
         with tempfile.TemporaryDirectory() as temporary:
+            payload = graph_checkpoint_payload(
+                model, optimizer, model_config, pilot_config, training_config,
+                data, 1, 1, 2, 1,
+                {"teacher_forced": {}, "autonomous": {}}, provenance,
+                repository_root=repository,
+            )
+            unexpected_source = repository / "unexpected-source.txt"
+            unexpected_source.write_text("must block checkpointing\n")
+            with self.assertRaisesRegex(ValueError, "dirty_source_tree"):
+                graph_checkpoint_payload(
+                    model, optimizer, model_config, pilot_config,
+                    training_config, data, 1, 1, 2, 1,
+                    {"teacher_forced": {}, "autonomous": {}}, provenance,
+                    repository_root=repository,
+                )
+            unexpected_source.unlink()
             path = Path(temporary) / "one-step.pt"
             save_checkpoint(path, payload, torch)
             loaded = torch.load(str(path), map_location="cpu")
@@ -508,7 +527,9 @@ class GraphV1TensorTests(unittest.TestCase):
             validate_graph_checkpoint(
                 loaded, reloaded, model_config, pilot_config,
                 training_config, torch,
+                expected_source_provenance=provenance,
             )
+            self.assertEqual(loaded["source_provenance"], provenance)
             reloaded.load_state_dict(loaded["model_state"], strict=True)
             reloaded_optimizer.load_state_dict(loaded["optimizer_state"])
             self.assertEqual(
@@ -539,6 +560,13 @@ class GraphV1TensorTests(unittest.TestCase):
             graph_checkpoint_payload,
         )
         from prototype.graph_baseline.pilot_config import GraphPilotConfig
+        from prototype.graph_baseline.provenance import (
+            collect_graph_source_provenance,
+            validate_graph_source_provenance,
+        )
+        from prototype.graph_baseline.tests.test_graph_provenance import (
+            initialize_temporary_graph_repository,
+        )
         from prototype.graph_baseline.training import (
             build_graph_optimizer,
             graph_training_step,
@@ -557,15 +585,14 @@ class GraphV1TensorTests(unittest.TestCase):
             "identity": "tiny_authorized_ordinary_partition"
         })
         data = SimpleNamespace(train=partition, validation=partition)
-        provenance = {
-            "git_commit": "a" * 40,
-            "git_branch": "graph-profile-decoder",
-            "git_dirty": False,
-            "git_status_porcelain": [],
-            "source_tree_sha256": "b" * 64,
-        }
         validations = {}
         with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "source-repository"
+            reviewed_commit = initialize_temporary_graph_repository(repository)
+            provenance = collect_graph_source_provenance(repository)
+            validate_graph_source_provenance(
+                provenance, expected_commit=reviewed_commit
+            )
             logger = JsonlLogger(Path(temporary) / "metrics.jsonl")
             checkpoints = {}
             for epoch in (1, 2):
@@ -612,7 +639,7 @@ class GraphV1TensorTests(unittest.TestCase):
                     model, optimizer, model_config, pilot_config,
                     training_config, data, epoch, epoch, 2 * epoch, 2,
                     validations[epoch],
-                    provenance,
+                    provenance, repository_root=repository,
                 )
                 path = Path(temporary) / "epoch-{:04d}.pt".format(epoch)
                 save_checkpoint(path, payload, torch)
@@ -634,6 +661,7 @@ class GraphV1TensorTests(unittest.TestCase):
                 validate_graph_checkpoint(
                     loaded, reloaded, model_config, pilot_config,
                     training_config, torch,
+                    expected_source_provenance=provenance,
                 )
                 reloaded.load_state_dict(loaded["model_state"], strict=True)
                 reloaded_optimizer.load_state_dict(loaded["optimizer_state"])

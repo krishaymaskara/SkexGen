@@ -12,6 +12,11 @@ from prototype.node_conditioned_categories import v4_categorical_contract_metada
 from .config import GraphV1Config
 from .graph_contract import graph_contract_metadata
 from .model import graph_decoder_parameter_count
+from .provenance import (
+    GRAPH_SOURCE_BRANCH,
+    GraphProvenanceError,
+    validate_graph_source_provenance,
+)
 
 
 GRAPH_CHECKPOINT_FIELDS = frozenset({
@@ -81,7 +86,16 @@ def graph_model_metadata(model, config):
     }
 
 
-def validate_graph_checkpoint(payload, model, model_config, pilot_config, training_config, torch_module):
+def validate_graph_checkpoint(
+    payload,
+    model,
+    model_config,
+    pilot_config,
+    training_config,
+    torch_module,
+    *,
+    expected_source_provenance
+):
     if not isinstance(payload, Mapping):
         raise GraphCheckpointError("payload must be a mapping")
     missing = GRAPH_CHECKPOINT_FIELDS - set(payload)
@@ -114,17 +128,24 @@ def validate_graph_checkpoint(payload, model, model_config, pilot_config, traini
         if payload[name] is not False:
             raise GraphCheckpointError("{} must be exactly false".format(name))
     provenance = payload["source_provenance"]
-    if (
-        not isinstance(provenance, Mapping)
-        or provenance.get("git_dirty") is not False
-        or not isinstance(provenance.get("git_commit"), str)
-        or len(provenance["git_commit"]) != 40
-        or provenance.get("git_branch") != "graph-profile-decoder"
-        or provenance.get("git_status_porcelain") != []
-        or not isinstance(provenance.get("source_tree_sha256"), str)
-        or len(provenance["source_tree_sha256"]) != 64
-    ):
-        raise GraphCheckpointError("source provenance must be clean")
+    expected_provenance = expected_source_provenance
+    expected_commit = (
+        expected_provenance.get("git_commit")
+        if isinstance(expected_provenance, Mapping) else None
+    )
+    expected_digest = (
+        expected_provenance.get("source_tree_sha256")
+        if isinstance(expected_provenance, Mapping) else None
+    )
+    try:
+        validate_graph_source_provenance(
+            provenance,
+            expected_commit=expected_commit,
+            expected_branch=GRAPH_SOURCE_BRANCH,
+            expected_digest=expected_digest,
+        )
+    except GraphProvenanceError as exc:
+        raise GraphCheckpointError(str(exc))
     for name, value in payload["model_state"].items():
         if not isinstance(name, str) or not torch_module.is_tensor(value):
             raise GraphCheckpointError("model state is malformed")
