@@ -212,7 +212,7 @@ class GraphV1Model(ConstrainedProfileV6Model):
 
 
 def _teacher_forced_constrained_node_ids(logits, authoritative_ids, node_mask):
-    """Select generated grammar IDs without reading authoritative node IDs."""
+    """Mirror the frozen V6 current-node selection from shifted prefixes."""
 
     batch_size, count = node_mask.shape
     requested = node_mask.long().sum(dim=1)
@@ -220,7 +220,7 @@ def _teacher_forced_constrained_node_ids(logits, authoritative_ids, node_mask):
     with torch.no_grad():
         for position in range(count):
             prefixes = tuple(
-                tuple(int(value) for value in result[row, :position].tolist())
+                tuple(int(value) for value in authoritative_ids[row, :position].tolist())
                 if bool(node_mask[row, position].item()) else ()
                 for row in range(batch_size)
             )

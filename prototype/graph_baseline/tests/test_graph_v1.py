@@ -66,10 +66,16 @@ class GraphV1TensorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             graph_targets_from_reconstruction_batch(malformed)
 
-    def test_pair_decoder_shapes_direction_mask_finiteness_and_no_targets(self):
+    def test_job_3338945_pair_orientation_masking_and_reconstruction(self):
+        from prototype.flat_baseline.tests.test_constrained_v6 import V6GrammarTensorTests
+        from prototype.graph_baseline.conversion import graph_prediction_from_evidence
         from prototype.graph_baseline.model import GraphV1Model
         from prototype.graph_baseline.config import GraphV1Config
-        from prototype.graph_baseline.graph_tensors import mask_graph_edge_logits
+        from prototype.graph_baseline.graph_tensors import (
+            graph_type_allowed_mask,
+            mask_graph_edge_logits,
+        )
+        from prototype.model_data.vocab import NODE_TYPES
         model = GraphV1Model(GraphV1Config())
         states = torch.randn(2, 5, model.config.model_dim)
         node_ids = torch.tensor([
@@ -79,8 +85,21 @@ class GraphV1TensorTests(unittest.TestCase):
             [True, True, True, True, False], [True] * 5
         ])
         memory = torch.randn(2, model.config.latent_tokens, model.config.model_dim)
+        captured_features = []
+        hook = model.graph_edge_decoder.register_forward_pre_hook(
+            lambda unused_module, values: captured_features.append(values[0].detach().clone())
+        )
         logits = model.decode_graph_edges(states, node_ids, memory, active)
+        hook.remove()
         self.assertEqual(tuple(logits.shape), (2, 5, 5, len(GRAPH_EDGE_CLASS_ORDER)))
+        width = model.config.model_dim
+        torch.testing.assert_close(
+            captured_features[0][0, 1, 0, :width], states[0, 1], rtol=0, atol=0
+        )
+        torch.testing.assert_close(
+            captured_features[0][0, 1, 0, width:2 * width], states[0, 0],
+            rtol=0, atol=0,
+        )
         self.assertTrue(torch.isfinite(logits).all())
         self.assertFalse(torch.equal(logits[:, 1, 0], logits[:, 0, 1]))
         masked = mask_graph_edge_logits(logits, node_ids, active)
@@ -91,6 +110,101 @@ class GraphV1TensorTests(unittest.TestCase):
         self.assertTrue(masked.masked_class_ids.is_contiguous())
         self.assertTrue(masked.correction_mask.is_contiguous())
         self.assertNotIn("target", inspect.signature(model.decode_graph_edges).parameters)
+
+        # Independently indexed [source, destination] evidence: profile (2) to
+        # revolve (4) cannot be defined_in, while revolve to profile can use it.
+        authoritative_ids = torch.tensor([[5, 7, 4, 2, 6]], dtype=torch.long)
+        forced = torch.full((1, 5, 5, len(GRAPH_EDGE_CLASS_ORDER)), -20.0)
+        forced[..., 0] = 0.0
+        forced[0, 2, 4, 1] = 10.0
+        forced[0, 4, 2, 1] = 10.0
+        forced[0, 4, 2, 5] = 9.0
+        oriented = mask_graph_edge_logits(
+            forced, authoritative_ids, torch.ones(1, 5, dtype=torch.bool)
+        )
+        self.assertEqual(oriented.raw_class_ids[0, 2, 4].item(), 1)
+        self.assertEqual(oriented.masked_class_ids[0, 2, 4].item(), 0)
+        self.assertTrue(oriented.correction_mask[0, 2, 4].item())
+        self.assertEqual(
+            oriented.allowed_class_mask[0, 2, 4].tolist(),
+            [True, False, False, False, False, False],
+        )
+        self.assertEqual(oriented.raw_class_ids[0, 4, 2].item(), 1)
+        self.assertEqual(oriented.masked_class_ids[0, 4, 2].item(), 5)
+        self.assertEqual(
+            oriented.allowed_class_mask[0, 4, 2].tolist(),
+            [True, False, False, False, False, True],
+        )
+        expected_classes = {
+            ("profile", "sketch"): {0, 1},
+            ("axis", "sketch"): {0, 1},
+            ("sketch", "reference_plane"): {0, 3},
+            ("extrude", "profile"): {0, 5},
+            ("revolve", "profile"): {0, 5},
+            ("revolve", "axis"): {0, 4},
+            ("extrude", "extrude"): {0, 2},
+            ("extrude", "revolve"): {0, 2},
+            ("revolve", "extrude"): {0, 2},
+            ("revolve", "revolve"): {0, 2},
+        }
+        semantic_types = (
+            "axis", "extrude", "profile", "reference_plane", "revolve", "sketch"
+        )
+        for source_type in semantic_types:
+            for destination_type in semantic_types:
+                pair_types = torch.tensor([[
+                    NODE_TYPES.id(source_type), NODE_TYPES.id(destination_type)
+                ]], dtype=torch.long)
+                allowed, unused_active = graph_type_allowed_mask(
+                    pair_types, torch.ones(1, 2, dtype=torch.bool)
+                )
+                actual = {
+                    class_id for class_id, value
+                    in enumerate(allowed[0, 0, 1].tolist()) if value
+                }
+                self.assertEqual(
+                    actual,
+                    expected_classes.get((source_type, destination_type), {0}),
+                )
+        node_prediction = V6GrammarTensorTests()._authoritative_v6_prediction("R")
+        prediction = graph_prediction_from_evidence(
+            node_prediction,
+            oriented.raw_class_ids[0].tolist(),
+            oriented.masked_class_ids[0].tolist(),
+            oriented.correction_mask[0].tolist(),
+        )
+        self.assertNotIn(
+            (2, 4, 1),
+            {(edge.source, edge.destination, edge.edge_type_id)
+             for edge in prediction.graph.directed_typed_edges},
+        )
+        self.assertIn(
+            (4, 2, 5),
+            {(edge.source, edge.destination, edge.edge_type_id)
+             for edge in prediction.graph.directed_typed_edges},
+        )
+        with self.assertRaisesRegex(GraphContractError, "graph_edge_type_mismatch"):
+            graph_prediction_from_evidence(
+                node_prediction,
+                oriented.raw_class_ids[0].tolist(),
+                [
+                    [1 if (source, destination) == (2, 4) else 0
+                     for destination in range(5)]
+                    for source in range(5)
+                ],
+                [[False] * 5 for unused in range(5)],
+            )
+
+        # No flattening is used in production; unique legal class IDs survive
+        # the exact [source, destination] matrix position at every valid length.
+        for count in (4, 5, 7, 8, 9):
+            pair_ids = torch.arange(count * count).reshape(count, count)
+            for source in range(count):
+                for destination in range(count):
+                    self.assertEqual(
+                        pair_ids.reshape(-1)[source * count + destination].item(),
+                        pair_ids[source, destination].item(),
+                    )
         torch.manual_seed(902)
         first = GraphV1Model(GraphV1Config())
         torch.manual_seed(902)
@@ -105,6 +219,7 @@ class GraphV1TensorTests(unittest.TestCase):
         from prototype.flat_baseline.constrained_v6 import ConstrainedProfileV6Model
         from prototype.flat_baseline.constrained_v6_config import ConstrainedProfileV6Config
         from prototype.graph_baseline.config import GraphV1Config
+        from prototype.graph_baseline.conversion import graph_v1_teacher_forced_predictions
         from prototype.graph_baseline.losses import graph_v1_loss
         from prototype.graph_baseline.model import GraphV1Model, graph_decoder_parameter_count
         from prototype.graph_baseline.training import build_graph_optimizer
@@ -126,6 +241,17 @@ class GraphV1TensorTests(unittest.TestCase):
         ):
             torch.testing.assert_close(
                 getattr(flat_output, name), getattr(graph_output, name), rtol=0, atol=0
+            )
+        graph_predictions = graph_v1_teacher_forced_predictions(
+            graph_output,
+            node_mask=target["node_mask"],
+            node_count_source="job_3338945_regression",
+        )
+        for row, prediction in enumerate(graph_predictions):
+            count = prediction.node_prediction.node_count
+            self.assertEqual(
+                graph_output.graph_constrained_node_type_ids[row, :count].tolist(),
+                [node.node_type_id for node in prediction.node_prediction.raw_nodes],
             )
         self.assertEqual(
             sum(parameter.numel() for parameter in flat.parameters())
