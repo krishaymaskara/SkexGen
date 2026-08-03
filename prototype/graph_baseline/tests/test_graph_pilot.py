@@ -24,6 +24,16 @@ from prototype.graph_baseline.pilot_config import (
 TORCH_REASON = "real PyTorch execution is deferred to the authoritative environment"
 
 
+def _is_within(path, parent):
+    """Python 3.8-compatible resolved-path containment check."""
+
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+    except ValueError:
+        return False
+    return True
+
+
 class GraphPilotStaticTests(unittest.TestCase):
     def test_exact_frozen_protocol_and_flat_reference(self):
         config = GraphPilotConfig()
@@ -56,7 +66,7 @@ class GraphPilotStaticTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, TORCH_REASON)
 class GraphPilotTensorTests(unittest.TestCase):
-    def test_production_shaped_readiness_job_3338803_no_training(self):
+    def test_production_shaped_readiness_jobs_3338803_3340201_no_training(self):
         from prototype.controlled_data.builders import build_history
         from prototype.controlled_data.factors import PrimitiveFamily, ReferencePlane
         from prototype.controlled_data.identity import source_family_id
@@ -122,23 +132,46 @@ class GraphPilotTensorTests(unittest.TestCase):
         self.assertEqual(len(set(validation_ids)), 6)
         self.assertTrue(set(train_ids).isdisjoint(validation_ids))
         with tempfile.TemporaryDirectory() as temporary:
-            repository = Path(temporary) / "source-repository"
-            reviewed_commit = initialize_temporary_graph_repository(repository)
-            provenance = collect_graph_source_provenance(repository)
+            temporary_root = Path(temporary).resolve()
+            corpus_root = temporary_root / "corpus"
+            source_repository_root = temporary_root / "source-repository"
+            output_root = temporary_root / "outputs"
+            output_root.mkdir()
+            self.assertNotEqual(corpus_root, source_repository_root)
+            self.assertNotEqual(corpus_root, output_root)
+            self.assertNotEqual(source_repository_root, output_root)
+            self.assertFalse(_is_within(source_repository_root, corpus_root))
+            self.assertFalse(_is_within(output_root, corpus_root))
+            reviewed_commit = initialize_temporary_graph_repository(
+                source_repository_root
+            )
+            self.assertTrue((source_repository_root / ".git").is_dir())
+            provenance = collect_graph_source_provenance(
+                source_repository_root
+            )
             self.assertEqual(provenance["git_branch"], "graph-profile-decoder")
             self.assertEqual(provenance["git_commit"], reviewed_commit)
             self.assertIs(provenance["git_dirty"], False)
             self.assertEqual(provenance["git_status_porcelain"], [])
             write_physical_corpus(
-                temporary,
+                corpus_root,
                 train_sources + validation_sources,
                 partitions={
                     **{item: "train" for item in train_ids},
                     **{item: "validation" for item in validation_ids},
                 },
             )
+            corpus_paths = tuple(
+                path.relative_to(corpus_root)
+                for path in corpus_root.rglob("*")
+            )
+            self.assertTrue(corpus_paths)
+            self.assertFalse(any(
+                relative.parts[0] in (".git", "source-repository", "outputs")
+                for relative in corpus_paths
+            ))
             split = json.loads(
-                (Path(temporary) / "manifests" / "iid.json").read_text()
+                (corpus_root / "manifests" / "iid.json").read_text()
             )
             family_rows = split["families"]
             assignments = [
@@ -169,10 +202,10 @@ class GraphPilotTensorTests(unittest.TestCase):
             self.assertTrue(all(len(values) == 1 for values in sample_assignments.values()))
 
             train_physical = load_partition_physical_examples(
-                temporary, "iid", "train"
+                corpus_root, "iid", "train"
             )
             validation_physical = load_partition_physical_examples(
-                temporary, "iid", "validation"
+                corpus_root, "iid", "validation"
             )
             stages.append("dataset_loading")
             self.assertEqual(len(train_physical), 6)
@@ -269,7 +302,7 @@ class GraphPilotTensorTests(unittest.TestCase):
                 model, optimizer, model_config, pilot_config, training_config,
                 data, 1, 1, 6, 2,
                 {"teacher_forced": teacher, "autonomous": autonomous}, provenance,
-                repository_root=repository,
+                repository_root=source_repository_root,
             )
             for name, value in (
                 ("checkpoint_version", 2),
@@ -326,14 +359,16 @@ class GraphPilotTensorTests(unittest.TestCase):
                         training_config, torch,
                         expected_source_provenance=provenance,
                     )
-            selected_path = Path(temporary) / "epoch-0001.pt"
-            final_path = Path(temporary) / "epoch-0002.pt"
+            selected_path = output_root / "epoch-0001.pt"
+            final_path = output_root / "epoch-0002.pt"
+            self.assertTrue(_is_within(selected_path, output_root))
+            self.assertTrue(_is_within(final_path, output_root))
             save_checkpoint(selected_path, payload, torch)
             final_payload = graph_checkpoint_payload(
                 model, optimizer, model_config, pilot_config, training_config,
                 data, 2, 2, 12, 2,
                 {"teacher_forced": teacher, "autonomous": autonomous}, provenance,
-                repository_root=repository,
+                repository_root=source_repository_root,
             )
             save_checkpoint(final_path, final_payload, torch)
             stages.append("checkpoint_save")
@@ -356,12 +391,12 @@ class GraphPilotTensorTests(unittest.TestCase):
             self.assertEqual(set(reloaded.state_dict()), set(model.state_dict()))
             self.assertTrue(_reload_and_validate(
                 selected_path, model_config, pilot_config, training_config,
-                data, torch.device("cpu"), provenance, repository,
+                data, torch.device("cpu"), provenance, source_repository_root,
             ))
             stages.append("selected_reload")
             self.assertTrue(_reload_and_validate(
                 final_path, model_config, pilot_config, training_config,
-                data, torch.device("cpu"), provenance, repository,
+                data, torch.device("cpu"), provenance, source_repository_root,
             ))
             stages.append("final_reload")
             _require_finite_json({"teacher": teacher, "autonomous": autonomous})
