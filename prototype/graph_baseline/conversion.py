@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+import torch
+
 from prototype.flat_baseline.autonomous import (
     RAW_PREFIX_FEEDBACK,
     RawDecodedEdge,
