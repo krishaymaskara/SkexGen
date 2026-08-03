@@ -226,6 +226,7 @@ class GraphV1TensorTests(unittest.TestCase):
         from prototype.flat_baseline.constrained_v6 import ConstrainedProfileV6Model
         from prototype.flat_baseline.constrained_v6_autonomous import greedy_decode_v6
         from prototype.flat_baseline.constrained_v6_config import ConstrainedProfileV6Config
+        from prototype.graph_baseline.autonomous import greedy_decode_graph_v1
         from prototype.graph_baseline.config import GraphV1Config
         from prototype.graph_baseline.conversion import graph_v1_teacher_forced_predictions
         from prototype.graph_baseline.losses import graph_v1_loss
