@@ -1,4 +1,4 @@
-"""Run the frozen graph-native V1 train/IID-validation pilot."""
+"""Run the one frozen corrected graph V1 C1 train/IID-validation pilot."""
 
 from __future__ import annotations
 

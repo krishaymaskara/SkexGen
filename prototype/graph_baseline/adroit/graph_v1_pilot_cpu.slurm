@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=graph-v1-iid
+#SBATCH --job-name=graph-v1-c1-iid
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
 #SBATCH --time=08:00:00
-#SBATCH --output=/scratch/network/km6349/graph-v1-iid-%j.out
-#SBATCH --error=/scratch/network/km6349/graph-v1-iid-%j.err
+#SBATCH --output=/scratch/network/km6349/graph-v1-c1-iid-%j.out
+#SBATCH --error=/scratch/network/km6349/graph-v1-c1-iid-%j.err
 
 set -Eeuo pipefail
 
@@ -21,17 +21,17 @@ trap terminal_failure ERR
 
 REPOSITORY="/scratch/network/km6349/SkexGen"
 CORPUS="/scratch/network/km6349/controlled_corpora/b0-pilot-680-seed2026"
-RUN_ROOT="/scratch/network/km6349/constrained_graph_v1_runs"
+RUN_ROOT="/scratch/network/km6349/constrained_graph_v1_position_bias_c1_runs"
 CONTAINER="/scratch/network/km6349/skexgen.sif"
 PYTHON="/root/miniconda3/bin/python3.8"
 : "${REVIEWED_COMMIT:?set REVIEWED_COMMIT to the reviewed graph V1 commit}"
 : "${SLURM_JOB_ID:?this workflow must run under Slurm}"
-OUTPUT="${RUN_ROOT}/iid-pilot-${REVIEWED_COMMIT}-${SLURM_JOB_ID}"
+OUTPUT="${RUN_ROOT}/c1-iid-pilot-${REVIEWED_COMMIT}-${SLURM_JOB_ID}"
 
 export CUDA_VISIBLE_DEVICES=""
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
-export PYTHONPYCACHEPREFIX="/tmp/graph-v1-${SLURM_JOB_ID}"
+export PYTHONPYCACHEPREFIX="/tmp/graph-v1-c1-${SLURM_JOB_ID}"
 
 container_python() {
   apptainer exec --cleanenv \
@@ -93,6 +93,9 @@ import json
 import sys
 rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
 assert rows[0]["event"] == "run_metadata"
+assert rows[0]["model_metadata"]["scientific_correction_index"] == 1
+assert rows[0]["model_metadata"]["scientific_correction_limit"] == 1
+assert rows[0]["model_metadata"]["parent_graph_pilot_job"] == 3341942
 terminal = rows[-1]
 assert terminal["event"] == "terminal_success"
 assert terminal["global_step"] == 136

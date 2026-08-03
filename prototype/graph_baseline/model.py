@@ -1,4 +1,4 @@
-"""V6-equivalent node path with a graph-native shared pair decoder."""
+"""Graph V1 C1 with a shared pair decoder and directed position bias."""
 
 from __future__ import annotations
 
@@ -28,13 +28,19 @@ from prototype.profile_geometry_torch import (
 )
 from prototype.reference_plane_geometry_torch import canonicalize_reference_plane_tensors
 
-from .config import GRAPH_PAIR_HIDDEN_DIM, GraphV1Config
+from .config import (
+    GRAPH_PAIR_HIDDEN_DIM,
+    GRAPH_POSITION_BIAS_RANK,
+    GraphV1Config,
+)
 from .graph_contract import GRAPH_EDGE_CLASS_ORDER
 
 
 @dataclass(frozen=True)
 class GraphV1Output(ConstrainedProfileV6Output):
     graph_edge_logits: torch.Tensor
+    graph_main_pair_logits: torch.Tensor
+    graph_position_bias_logits: torch.Tensor
     graph_raw_node_type_argmax_ids: torch.Tensor
     authoritative_graph_node_type_ids: torch.Tensor
     graph_node_type_correction_mask: torch.Tensor
@@ -49,6 +55,13 @@ class GraphNodeSelection:
     node_type_correction_mask: torch.Tensor
     legal_node_type_mask: torch.Tensor
     grammar_state_evidence: tuple
+
+
+@dataclass(frozen=True)
+class GraphEdgeLogitComponents:
+    main_pair_logits: torch.Tensor
+    position_bias_logits: torch.Tensor
+    edge_logits: torch.Tensor
 
 
 class GraphV1Model(ConstrainedProfileV6Model):
@@ -79,6 +92,17 @@ class GraphV1Model(ConstrainedProfileV6Model):
             nn.Linear(7 * width + 1, GRAPH_PAIR_HIDDEN_DIM),
             nn.GELU(),
             nn.Linear(GRAPH_PAIR_HIDDEN_DIM, len(GRAPH_EDGE_CLASS_ORDER)),
+        )
+        self.source_position_factor = nn.Embedding(
+            self.config.max_nodes, GRAPH_POSITION_BIAS_RANK
+        )
+        self.destination_position_factor = nn.Embedding(
+            self.config.max_nodes, GRAPH_POSITION_BIAS_RANK
+        )
+        self.position_class_projection = nn.Linear(
+            GRAPH_POSITION_BIAS_RANK,
+            len(GRAPH_EDGE_CLASS_ORDER),
+            bias=False,
         )
 
     def forward(
@@ -134,7 +158,7 @@ class GraphV1Model(ConstrainedProfileV6Model):
         graph_nodes = select_complete_graph_node_sequence(
             node_logits, target["node_mask"]
         )
-        graph_logits = self.decode_graph_edges(
+        graph_components = self.decode_graph_edge_components(
             states, graph_nodes.authoritative_node_type_ids,
             encoded.memory, target["node_mask"]
         )
@@ -178,7 +202,9 @@ class GraphV1Model(ConstrainedProfileV6Model):
             encoded.vq.utilization,
             encoded.vq.perplexity,
             prefix.contiguous(),
-            graph_logits,
+            graph_components.edge_logits,
+            graph_components.main_pair_logits,
+            graph_components.position_bias_logits,
             graph_nodes.raw_node_type_argmax_ids,
             graph_nodes.authoritative_node_type_ids,
             graph_nodes.node_type_correction_mask,
@@ -187,6 +213,13 @@ class GraphV1Model(ConstrainedProfileV6Model):
         )
 
     def decode_graph_edges(self, states, node_type_ids, memory, node_mask):
+        return self.decode_graph_edge_components(
+            states, node_type_ids, memory, node_mask
+        ).edge_logits
+
+    def decode_graph_edge_components(
+        self, states, node_type_ids, memory, node_mask
+    ):
         if states.dim() != 3 or states.shape[:2] != node_type_ids.shape:
             raise ValueError("states and constrained node IDs must align")
         batch_size, count, width = states.shape
@@ -212,7 +245,22 @@ class GraphV1Model(ConstrainedProfileV6Model):
             source_state, destination_state, source_type, destination_type,
             source_position, destination_position, global_context, relative,
         ), dim=-1)
-        return self.graph_edge_decoder(features).contiguous()
+        main_pair_logits = self.graph_edge_decoder(features)
+        source_factors = self.source_position_factor(positions).view(
+            1, count, 1, GRAPH_POSITION_BIAS_RANK
+        )
+        destination_factors = self.destination_position_factor(positions).view(
+            1, 1, count, GRAPH_POSITION_BIAS_RANK
+        )
+        position_latent = source_factors * destination_factors
+        position_bias_logits = self.position_class_projection(
+            position_latent
+        ).expand(batch_size, -1, -1, -1)
+        return GraphEdgeLogitComponents(
+            main_pair_logits.contiguous(),
+            position_bias_logits.contiguous(),
+            (main_pair_logits + position_bias_logits).contiguous(),
+        )
 
     def decode_relations(self, decoded_states, node_mask):
         """Compatibility-only neutral output; never used as graph structure."""
@@ -271,4 +319,22 @@ def select_complete_graph_node_sequence(logits, node_mask):
 
 
 def graph_decoder_parameter_count(model):
-    return sum(parameter.numel() for parameter in model.graph_edge_decoder.parameters())
+    return main_pair_mlp_parameter_count(model) + position_bias_parameter_count(model)
+
+
+def main_pair_mlp_parameter_count(model):
+    return sum(
+        parameter.numel() for parameter in model.graph_edge_decoder.parameters()
+    )
+
+
+def position_bias_parameter_count(model):
+    modules = (
+        model.source_position_factor,
+        model.destination_position_factor,
+        model.position_class_projection,
+    )
+    return sum(
+        parameter.numel()
+        for module in modules for parameter in module.parameters()
+    )

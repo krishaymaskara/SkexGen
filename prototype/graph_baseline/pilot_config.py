@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 
-GRAPH_PILOT_IDENTITY = "B0-GRAPH-NATIVE-EDGE-DECODER-V1-iid-pilot-v1"
+GRAPH_PILOT_IDENTITY = (
+    "B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1-iid-pilot-v1"
+)
 EXPECTED_TRAIN_EXAMPLES = 544
 EXPECTED_VALIDATION_EXAMPLES = 68
 EXPECTED_OPTIMIZER_STEPS = 136
@@ -24,7 +26,7 @@ class GraphPilotConfig:
     validation_partition: str = "validation"
     validation_partition_identity: str = "iid_validation"
     checkpoint_selection_metric: str = "ordinary_validation_total_loss"
-    output_dir: str = "constrained_graph_v1_runs"
+    output_dir: str = "constrained_graph_v1_position_bias_c1_runs"
     systematic_partition_accessed: bool = False
     test_partition_accessed: bool = False
     require_clean_source: bool = True

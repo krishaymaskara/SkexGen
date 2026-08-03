@@ -9,9 +9,20 @@ from prototype.flat_baseline.constrained_v6_checkpoint import canonical_grammar_
 from prototype.model_data.vocab import NODE_TYPES
 from prototype.node_conditioned_categories import v4_categorical_contract_metadata
 
-from .config import GraphV1Config
+from .config import (
+    GRAPH_CORRECTION_HYPOTHESIS,
+    GRAPH_SCIENTIFIC_CORRECTION_INDEX,
+    GRAPH_SCIENTIFIC_CORRECTION_LIMIT,
+    PARENT_GRAPH_COMMIT,
+    PARENT_GRAPH_PILOT_JOB,
+    GraphV1Config,
+)
 from .graph_contract import graph_contract_metadata
-from .model import graph_decoder_parameter_count
+from .model import (
+    graph_decoder_parameter_count,
+    main_pair_mlp_parameter_count,
+    position_bias_parameter_count,
+)
 from .provenance import (
     GRAPH_SOURCE_BRANCH,
     GraphProvenanceError,
@@ -29,6 +40,8 @@ GRAPH_CHECKPOINT_FIELDS = frozenset({
     "inherited_node_path", "node_grammar_contract",
     "categorical_selection_contract", "axis_geometry_contract",
     "node_vocabulary", "model_config", "parameter_counts",
+    "scientific_correction_index", "scientific_correction_limit",
+    "parent_graph_commit", "parent_graph_pilot_job", "correction_hypothesis",
     "pilot_config", "training_config", "model_state", "optimizer_state",
     "vq_state", "rng_state", "epoch", "global_step",
     "examples_processed", "configured_maximum_steps", "completed_epochs",
@@ -50,11 +63,13 @@ def graph_model_metadata(model, config):
     graph = graph_contract_metadata()
     total = sum(parameter.numel() for parameter in model.parameters())
     decoder = graph_decoder_parameter_count(model)
+    main_pair = main_pair_mlp_parameter_count(model)
+    position_bias = position_bias_parameter_count(model)
     return {
-        "checkpoint_version": 1,
+        "checkpoint_version": config.checkpoint_version,
         "model_name": config.model_name,
-        "model_config_version": 1,
-        "decoder_contract_version": 1,
+        "model_config_version": config.model_config_version,
+        "decoder_contract_version": config.decoder_contract_version,
         "graph_contract_version": 1,
         "graph_contract": graph,
         "graph_vocabulary": graph["edge_vocabulary"],
@@ -63,11 +78,15 @@ def graph_model_metadata(model, config):
         "minimal_mask_contract": graph["minimal_mask_contract"],
         "pair_feature_contract": list(config.pair_feature_order),
         "pair_decoder_architecture": {
-            "kind": "shared_ordered_pair_mlp",
+            "kind": "shared_ordered_pair_mlp-plus-directed-position-bias",
             "input_width": 7 * config.model_dim + 1,
             "hidden_width": config.pair_hidden_dim,
             "output_width": len(graph["edge_vocabulary"]),
             "activation": "gelu",
+            "position_bias_rank": config.position_bias_rank,
+            "position_factor_rows": config.max_nodes,
+            "position_factor_directionality": "distinct-source-and-destination",
+            "combination": "main-pair-logits-plus-position-logits-before-mask",
         },
         "loss_normalization": config.graph_loss_normalization,
         "inherited_node_path": config.inherited_node_path_id,
@@ -76,12 +95,26 @@ def graph_model_metadata(model, config):
         "axis_geometry_contract": axis_geometry_metadata(),
         "node_vocabulary": list(NODE_TYPES.tokens),
         "model_config": config.to_dict(),
+        "scientific_correction_index": GRAPH_SCIENTIFIC_CORRECTION_INDEX,
+        "scientific_correction_limit": GRAPH_SCIENTIFIC_CORRECTION_LIMIT,
+        "parent_graph_commit": PARENT_GRAPH_COMMIT,
+        "parent_graph_pilot_job": PARENT_GRAPH_PILOT_JOB,
+        "correction_hypothesis": GRAPH_CORRECTION_HYPOTHESIS,
         "parameter_counts": {
             "graph_model_total": total,
             "graph_edge_decoder": decoder,
+            "main_pair_mlp": main_pair,
+            "position_bias": position_bias,
+            "source_position_factor": model.source_position_factor.weight.numel(),
+            "destination_position_factor": (
+                model.destination_position_factor.weight.numel()
+            ),
+            "position_class_projection": (
+                model.position_class_projection.weight.numel()
+            ),
             "frozen_v6_structural_heads": 3496,
-            "frozen_v6_total": total + 10,
-            "absolute_total_difference": 10,
+            "frozen_v6_total": 32866,
+            "absolute_total_difference": abs(32866 - total),
         },
     }
 

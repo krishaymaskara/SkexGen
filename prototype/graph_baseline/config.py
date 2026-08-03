@@ -1,4 +1,4 @@
-"""Frozen configuration for the first graph-native controlled decoder."""
+"""Frozen configuration for the single corrected graph-native decoder."""
 
 from __future__ import annotations
 
@@ -36,10 +36,10 @@ from prototype.reference_plane_geometry import CANONICAL_PLANE_CONTRACT_ID
 from .graph_contract import graph_contract_metadata
 
 
-GRAPH_MODEL_NAME = "B0-GRAPH-NATIVE-EDGE-DECODER-V1"
-GRAPH_CHECKPOINT_VERSION = 1
-GRAPH_MODEL_CONFIG_VERSION = 1
-GRAPH_DECODER_CONTRACT_VERSION = 1
+GRAPH_MODEL_NAME = "B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1"
+GRAPH_CHECKPOINT_VERSION = 2
+GRAPH_MODEL_CONFIG_VERSION = 2
+GRAPH_DECODER_CONTRACT_VERSION = 2
 GRAPH_PAIR_FEATURE_ORDER = (
     "source_decoded_state",
     "destination_decoded_state",
@@ -50,9 +50,17 @@ GRAPH_PAIR_FEATURE_ORDER = (
     "global_quantized_program_context",
     "signed_relative_serialized_position",
 )
-GRAPH_PAIR_HIDDEN_DIM = 15
+GRAPH_PAIR_HIDDEN_DIM = 14
+GRAPH_POSITION_BIAS_RANK = 6
 GRAPH_LOSS_NORMALIZATION = "mean-active-pairs-per-example-then-batch-mean-v1"
 GRAPH_NODE_PATH_ID = "frozen-v6-generated-constrained-node-path"
+GRAPH_SCIENTIFIC_CORRECTION_INDEX = 1
+GRAPH_SCIENTIFIC_CORRECTION_LIMIT = 1
+PARENT_GRAPH_COMMIT = "089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb"
+PARENT_GRAPH_PILOT_JOB = 3341942
+GRAPH_CORRECTION_HYPOTHESIS = (
+    "explicit-directed-ordered-position-bias-for-repeated-instance-alignment"
+)
 
 
 @dataclass(frozen=True)
@@ -86,6 +94,7 @@ class GraphV1Config(FlatBaselineConfig):
     graph_contract: dict = field(default_factory=graph_contract_metadata)
     pair_feature_order: tuple = GRAPH_PAIR_FEATURE_ORDER
     pair_hidden_dim: int = GRAPH_PAIR_HIDDEN_DIM
+    position_bias_rank: int = GRAPH_POSITION_BIAS_RANK
     graph_loss_normalization: str = GRAPH_LOSS_NORMALIZATION
     inherited_node_path_id: str = GRAPH_NODE_PATH_ID
     graph_edge_loss_weight: float = 1.0
@@ -94,9 +103,9 @@ class GraphV1Config(FlatBaselineConfig):
         FlatBaselineConfig.validate(self)
         fixed = (
             ("model_name", GRAPH_MODEL_NAME),
-            ("checkpoint_version", 1),
-            ("model_config_version", 1),
-            ("decoder_contract_version", 1),
+            ("checkpoint_version", GRAPH_CHECKPOINT_VERSION),
+            ("model_config_version", GRAPH_MODEL_CONFIG_VERSION),
+            ("decoder_contract_version", GRAPH_DECODER_CONTRACT_VERSION),
             ("profile_family_order", tuple(item.value for item in PROFILE_FAMILIES)),
             ("learned_geometry_channel_indices", V4_LEARNED_GEOMETRY_CHANNEL_INDICES),
             ("canonical_plane_contract_id", CANONICAL_PLANE_CONTRACT_ID),
@@ -118,6 +127,7 @@ class GraphV1Config(FlatBaselineConfig):
             ("graph_contract", graph_contract_metadata()),
             ("pair_feature_order", GRAPH_PAIR_FEATURE_ORDER),
             ("pair_hidden_dim", GRAPH_PAIR_HIDDEN_DIM),
+            ("position_bias_rank", GRAPH_POSITION_BIAS_RANK),
             ("graph_loss_normalization", GRAPH_LOSS_NORMALIZATION),
             ("inherited_node_path_id", GRAPH_NODE_PATH_ID),
             ("graph_edge_loss_weight", 1.0),

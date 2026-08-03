@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from prototype.model_data.vocab import NODE_TYPES
 
 from .graph_contract import (
@@ -21,10 +23,34 @@ FROZEN_V6_REFERENCE = {
     "complete_validity": 0,
     "unexpected_edge_failures": 68,
 }
+INITIAL_GRAPH_V1_REFERENCE = {
+    "initial_graph_v1_exact_graph_match_count": 22,
+    "initial_graph_v1_complete_validity_count": 22,
+    "initial_graph_v1_two_operation_validity_count": 0,
+    "initial_graph_v1_job": 3341942,
+    "flat_v6_complete_validity_count": 0,
+    "flat_v6_job": 3338639,
+}
+POSITION_LOGIT_GROUPS = (
+    "all_active_pairs",
+    "positive_target_pairs",
+    "negative_target_pairs",
+    "single_operation_examples",
+    "two_operation_examples",
+)
 
 
-def new_graph_metrics():
+def new_graph_metrics(model):
+    from .model import (
+        graph_decoder_parameter_count,
+        main_pair_mlp_parameter_count,
+        position_bias_parameter_count,
+    )
     return {
+        "position_bias_parameter_count": position_bias_parameter_count(model),
+        "main_pair_mlp_parameter_count": main_pair_mlp_parameter_count(model),
+        "corrected_graph_decoder_parameter_count": graph_decoder_parameter_count(model),
+        **INITIAL_GRAPH_V1_REFERENCE,
         "active_ordered_pair_count": 0,
         "positive_target_edge_count": 0,
         "negative_target_pair_count": 0,
@@ -64,6 +90,14 @@ def new_graph_metrics():
         },
         "example_count": 0,
         "outcomes": [],
+        "position_bias_logit_statistics": {
+            name: {
+                "position_bias_absolute_sum": 0.0,
+                "main_pair_absolute_sum": 0.0,
+                "logit_count": 0,
+            }
+            for name in POSITION_LOGIT_GROUPS
+        },
     }
 
 
@@ -73,6 +107,12 @@ def update_pair_metrics(stats, prediction, target):
     targets = [[0 for _ in range(count)] for _ in range(count)]
     for edge in graph.directed_typed_edges:
         targets[edge.source][edge.destination] = edge.edge_type_id
+    if prediction.main_pair_logits is None or prediction.position_bias_logits is None:
+        raise ValueError("graph prediction must carry corrected logit evidence")
+    operation_count = sum(
+        NODE_TYPES.tokens[node_id] in ("extrude", "revolve")
+        for node_id in graph.node_type_ids
+    )
     stats["self_edge_prediction_count"] += prediction.raw_self_edge_prediction_count
     stats["inactive_node_edge_prediction_count"] += (
         prediction.raw_inactive_node_edge_prediction_count
@@ -83,6 +123,32 @@ def update_pair_metrics(stats, prediction, target):
             if source == destination:
                 continue
             expected = targets[source][destination]
+            main_logits = prediction.main_pair_logits[source][destination]
+            position_logits = prediction.position_bias_logits[source][destination]
+            groups = [
+                "all_active_pairs",
+                (
+                    "positive_target_pairs"
+                    if expected != 0 else "negative_target_pairs"
+                ),
+                (
+                    "single_operation_examples"
+                    if operation_count == 1 else "two_operation_examples"
+                ),
+            ]
+            for group in groups:
+                row = stats["position_bias_logit_statistics"][group]
+                row["position_bias_absolute_sum"] += sum(
+                    abs(value) for value in position_logits
+                )
+                row["main_pair_absolute_sum"] += sum(
+                    abs(value) for value in main_logits
+                )
+                row["logit_count"] += len(main_logits)
+            stats["nonfinite_logit_count"] += sum(
+                not math.isfinite(value)
+                for value in tuple(main_logits) + tuple(position_logits)
+            )
             raw = prediction.raw_graph_edge_predictions[source][destination]
             masked = prediction.masked_graph_edge_predictions[source][destination]
             stats["active_ordered_pair_count"] += 1
@@ -284,6 +350,23 @@ def finish_graph_metrics(stats):
     result["validity_by_edge_count"] = _outcome_rates(
         stats["outcomes"], "edge_count"
     )
+    result["position_bias_logit_statistics"] = {}
+    for name, row in stats["position_bias_logit_statistics"].items():
+        count = row["logit_count"]
+        position_mean = (
+            row["position_bias_absolute_sum"] / float(count) if count else 0.0
+        )
+        main_mean = (
+            row["main_pair_absolute_sum"] / float(count) if count else 0.0
+        )
+        result["position_bias_logit_statistics"][name] = {
+            "position_bias_logit_absolute_mean": position_mean,
+            "main_pair_logit_absolute_mean": main_mean,
+            "position_bias_to_main_logit_ratio": (
+                position_mean / main_mean if main_mean else 0.0
+            ),
+            "logit_count": count,
+        }
     return result
 
 

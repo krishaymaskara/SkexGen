@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -36,6 +37,7 @@ def _is_within(path, parent):
 
 class GraphPilotStaticTests(unittest.TestCase):
     def test_exact_frozen_protocol_and_flat_reference(self):
+        from prototype.graph_baseline.config import GraphV1Config
         config = GraphPilotConfig()
         validate_partition_authorization(config)
         self.assertEqual(
@@ -43,6 +45,10 @@ class GraphPilotStaticTests(unittest.TestCase):
             (2026, 2, 8, "cpu"),
         )
         self.assertEqual((EXPECTED_OPTIMIZER_STEPS, EXPECTED_EXAMPLES_PROCESSED), (136, 1088))
+        self.assertEqual(
+            config.pilot_identity,
+            "B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1-iid-pilot-v1",
+        )
         self.assertEqual(FROZEN_V6_REFERENCE, {
             "pilot_job": "3338639",
             "commit": "ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad",
@@ -51,6 +57,22 @@ class GraphPilotStaticTests(unittest.TestCase):
             "complete_validity": 0,
             "unexpected_edge_failures": 68,
         })
+        model_config = GraphV1Config()
+        model_config.validate()
+        self.assertEqual(
+            (
+                model_config.model_name,
+                model_config.checkpoint_version,
+                model_config.model_config_version,
+                model_config.decoder_contract_version,
+                model_config.pair_hidden_dim,
+                model_config.position_bias_rank,
+            ),
+            (
+                "B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1",
+                2, 2, 2, 14, 6,
+            ),
+        )
 
     def test_slurm_contract_is_authoritative_and_protected(self):
         root = Path(__file__).resolve().parents[1]
@@ -58,7 +80,9 @@ class GraphPilotStaticTests(unittest.TestCase):
         for text in (
             "Python 3.8.13", "1.11.0", "11.3", "graph-profile-decoder",
             "focused_graph_tests_skipped", "systematic_partition_accessed",
-            "test_partition_accessed", "constrained_graph_v1_runs",
+            "test_partition_accessed",
+            "constrained_graph_v1_position_bias_c1_runs",
+            "c1-iid-pilot-${REVIEWED_COMMIT}-${SLURM_JOB_ID}",
             "--repository-root", "--reviewed-commit",
         ):
             self.assertIn(text, script)
@@ -77,7 +101,10 @@ class GraphPilotTensorTests(unittest.TestCase):
         from prototype.model_data.loader import load_partition_physical_examples
         from prototype.model_data.tests.fixtures import source, write_physical_corpus
         from prototype.representation.model import GeometryEncoding
-        from prototype.graph_baseline.checkpoint import validate_graph_checkpoint
+        from prototype.graph_baseline.checkpoint import (
+            graph_model_metadata,
+            validate_graph_checkpoint,
+        )
         from prototype.graph_baseline.config import GraphV1Config
         from prototype.graph_baseline.autonomous import greedy_decode_graph_v1
         from prototype.graph_baseline.conversion import (
@@ -245,6 +272,41 @@ class GraphPilotTensorTests(unittest.TestCase):
             model = GraphV1Model(model_config)
             stages.append("model_construction")
             optimizer = build_graph_optimizer(model, training_config)
+            model_metadata = graph_model_metadata(model, model_config)
+            self.assertEqual(model_metadata["model_name"], (
+                "B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1"
+            ))
+            self.assertEqual(
+                (
+                    model_metadata["checkpoint_version"],
+                    model_metadata["model_config_version"],
+                    model_metadata["decoder_contract_version"],
+                ),
+                (2, 2, 2),
+            )
+            self.assertEqual(model_metadata["scientific_correction_index"], 1)
+            self.assertEqual(model_metadata["scientific_correction_limit"], 1)
+            self.assertEqual(
+                model_metadata["parent_graph_commit"],
+                "089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb",
+            )
+            self.assertEqual(model_metadata["parent_graph_pilot_job"], 3341942)
+            self.assertEqual(model_metadata["correction_hypothesis"], (
+                "explicit-directed-ordered-position-bias-for-repeated-"
+                "instance-alignment"
+            ))
+            self.assertEqual(model_metadata["parameter_counts"], {
+                "graph_model_total": 32852,
+                "graph_edge_decoder": 3482,
+                "main_pair_mlp": 3254,
+                "position_bias": 228,
+                "source_position_factor": 96,
+                "destination_position_factor": 96,
+                "position_class_projection": 36,
+                "frozen_v6_structural_heads": 3496,
+                "frozen_v6_total": 32866,
+                "absolute_total_difference": 14,
+            })
             profiles = profile_targets_for_loss(
                 audit_batch.target, audit_inputs["geometry"]
             )
@@ -297,6 +359,58 @@ class GraphPilotTensorTests(unittest.TestCase):
                 teacher["graph_metrics"]["active_ordered_pair_count"],
                 sum(count * (count - 1) for count in (4, 5, 7, 8, 8, 9)),
             )
+            for summary in (teacher, autonomous):
+                graph_metrics = summary["graph_metrics"]
+                self.assertEqual(
+                    graph_metrics["position_bias_parameter_count"], 228
+                )
+                self.assertEqual(
+                    graph_metrics["main_pair_mlp_parameter_count"], 3254
+                )
+                self.assertEqual(
+                    graph_metrics["corrected_graph_decoder_parameter_count"],
+                    3482,
+                )
+                self.assertEqual(
+                    graph_metrics["initial_graph_v1_job"], 3341942
+                )
+                self.assertEqual(
+                    graph_metrics["initial_graph_v1_exact_graph_match_count"],
+                    22,
+                )
+                self.assertEqual(
+                    graph_metrics["initial_graph_v1_complete_validity_count"],
+                    22,
+                )
+                self.assertEqual(
+                    graph_metrics[
+                        "initial_graph_v1_two_operation_validity_count"
+                    ],
+                    0,
+                )
+                self.assertEqual(
+                    graph_metrics["flat_v6_complete_validity_count"], 0
+                )
+                self.assertEqual(graph_metrics["flat_v6_job"], 3338639)
+                self.assertEqual(
+                    set(graph_metrics["position_bias_logit_statistics"]),
+                    {
+                        "all_active_pairs", "positive_target_pairs",
+                        "negative_target_pairs", "single_operation_examples",
+                        "two_operation_examples",
+                    },
+                )
+                for row in graph_metrics[
+                    "position_bias_logit_statistics"
+                ].values():
+                    self.assertGreater(row["logit_count"], 0)
+                    for name in (
+                        "position_bias_logit_absolute_mean",
+                        "main_pair_logit_absolute_mean",
+                        "position_bias_to_main_logit_ratio",
+                    ):
+                        self.assertTrue(math.isfinite(row[name]))
+                        self.assertGreater(row[name], 0.0)
             stages.append("metrics")
             payload = graph_checkpoint_payload(
                 model, optimizer, model_config, pilot_config, training_config,
@@ -305,10 +419,10 @@ class GraphPilotTensorTests(unittest.TestCase):
                 repository_root=source_repository_root,
             )
             for name, value in (
-                ("checkpoint_version", 2),
-                ("model_name", "wrong"),
-                ("model_config_version", 2),
-                ("decoder_contract_version", 2),
+                ("checkpoint_version", 1),
+                ("model_name", "B0-GRAPH-NATIVE-EDGE-DECODER-V1"),
+                ("model_config_version", 1),
+                ("decoder_contract_version", 1),
                 ("graph_contract_version", 2),
                 ("graph_contract", {"representation_name": "wrong"}),
                 ("graph_vocabulary", list(reversed(payload["graph_vocabulary"]))),
@@ -325,6 +439,11 @@ class GraphPilotTensorTests(unittest.TestCase):
                 ("node_vocabulary", list(reversed(payload["node_vocabulary"]))),
                 ("model_config", {"model_name": "wrong"}),
                 ("parameter_counts", {"graph_model_total": -1}),
+                ("scientific_correction_index", 0),
+                ("scientific_correction_limit", 2),
+                ("parent_graph_commit", "0" * 40),
+                ("parent_graph_pilot_job", 0),
+                ("correction_hypothesis", "wrong"),
             ):
                 malformed = dict(payload)
                 malformed[name] = value
@@ -334,6 +453,27 @@ class GraphPilotTensorTests(unittest.TestCase):
                         training_config, torch,
                         expected_source_provenance=provenance,
                     )
+            initial_graph_checkpoint = dict(payload)
+            initial_graph_checkpoint.update({
+                "checkpoint_version": 1,
+                "model_name": "B0-GRAPH-NATIVE-EDGE-DECODER-V1",
+                "model_config_version": 1,
+                "decoder_contract_version": 1,
+            })
+            for name in (
+                "scientific_correction_index", "scientific_correction_limit",
+                "parent_graph_commit", "parent_graph_pilot_job",
+                "correction_hypothesis",
+            ):
+                del initial_graph_checkpoint[name]
+            with self.assertRaisesRegex(
+                ValueError, "malformed_graph_checkpoint"
+            ):
+                validate_graph_checkpoint(
+                    initial_graph_checkpoint, model, model_config,
+                    pilot_config, training_config, torch,
+                    expected_source_provenance=provenance,
+                )
             for name, value, code in (
                 ("git_branch", None, "missing_git_branch"),
                 ("git_branch", "wrong", "wrong_git_branch"),

@@ -348,9 +348,9 @@ class GraphV1TensorTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "invalid_v5_generated_prefix")
         self.assertEqual(
             sum(parameter.numel() for parameter in flat.parameters())
-            - sum(parameter.numel() for parameter in graph.parameters()), 10
+            - sum(parameter.numel() for parameter in graph.parameters()), 14
         )
-        self.assertEqual(graph_decoder_parameter_count(graph), 3486)
+        self.assertEqual(graph_decoder_parameter_count(graph), 3482)
         state_names = set(graph.state_dict())
         for forbidden in (
             "edge_source.weight", "edge_target.weight", "edge_presence_head.weight",
@@ -359,7 +359,14 @@ class GraphV1TensorTests(unittest.TestCase):
             self.assertNotIn(forbidden, state_names)
         optimizer = build_graph_optimizer(graph, GraphTrainingConfig())
         optimized = {id(parameter) for group in optimizer.param_groups for parameter in group["params"]}
-        self.assertTrue(all(id(parameter) in optimized for parameter in graph.graph_edge_decoder.parameters()))
+        graph_decoder_parameters = tuple(graph.graph_edge_decoder.parameters()) + tuple(
+            graph.source_position_factor.parameters()
+        ) + tuple(graph.destination_position_factor.parameters()) + tuple(
+            graph.position_class_projection.parameters()
+        )
+        self.assertTrue(all(
+            id(parameter) in optimized for parameter in graph_decoder_parameters
+        ))
         loss = graph_v1_loss(graph_output, target, profiles, graph.config)
         loss.total.backward()
         self.assertTrue(all(
@@ -380,6 +387,169 @@ class GraphV1TensorTests(unittest.TestCase):
         torch.testing.assert_close(actual[0], manual, rtol=0, atol=0)
         zero = _per_example_graph_cross_entropy(logits, targets, torch.zeros_like(mask))
         self.assertEqual(zero.item(), 0.0)
+
+    def test_scientific_correction_c1_directed_position_bias(self):
+        from prototype.flat_baseline.constrained_v6 import ConstrainedProfileV6Model
+        from prototype.flat_baseline.constrained_v6_config import ConstrainedProfileV6Config
+        from prototype.graph_baseline.config import GraphV1Config
+        from prototype.graph_baseline.graph_tensors import mask_graph_edge_logits
+        from prototype.graph_baseline.model import (
+            GraphV1Model,
+            graph_decoder_parameter_count,
+            main_pair_mlp_parameter_count,
+            position_bias_parameter_count,
+        )
+        torch.manual_seed(2026)
+        model = GraphV1Model(GraphV1Config())
+        torch.manual_seed(2026)
+        repeated = GraphV1Model(GraphV1Config())
+        for name in model.state_dict():
+            self.assertTrue(torch.equal(
+                model.state_dict()[name], repeated.state_dict()[name]
+            ))
+        self.assertEqual(tuple(model.source_position_factor.weight.shape), (16, 6))
+        self.assertEqual(
+            tuple(model.destination_position_factor.weight.shape), (16, 6)
+        )
+        self.assertIsNot(
+            model.source_position_factor, model.destination_position_factor
+        )
+        self.assertEqual(
+            tuple(model.position_class_projection.weight.shape), (6, 6)
+        )
+        self.assertIsNone(model.position_class_projection.bias)
+        self.assertEqual(
+            tuple(model.graph_edge_decoder[0].weight.shape), (14, 225)
+        )
+        self.assertEqual(
+            tuple(model.graph_edge_decoder[2].weight.shape), (6, 14)
+        )
+        self.assertEqual(
+            tuple(inspect.signature(model.decode_graph_edge_components).parameters),
+            ("states", "node_type_ids", "memory", "node_mask"),
+        )
+        batch_size, count = 2, 5
+        states = torch.randn(batch_size, count, model.config.model_dim)
+        memory = torch.randn(
+            batch_size, model.config.latent_tokens, model.config.model_dim
+        )
+        node_ids = torch.tensor([
+            [5, 7, 4, 7, 4],
+            [5, 7, 4, 7, 4],
+        ], dtype=torch.long)
+        active = torch.tensor([
+            [True, True, True, True, True],
+            [True, True, True, True, False],
+        ])
+        components = model.decode_graph_edge_components(
+            states, node_ids, memory, active
+        )
+        expected_shape = (batch_size, count, count, 6)
+        self.assertEqual(tuple(components.main_pair_logits.shape), expected_shape)
+        self.assertEqual(tuple(components.position_bias_logits.shape), expected_shape)
+        self.assertEqual(tuple(components.edge_logits.shape), expected_shape)
+        torch.testing.assert_close(
+            components.edge_logits,
+            components.main_pair_logits + components.position_bias_logits,
+            rtol=0, atol=0,
+        )
+        torch.testing.assert_close(
+            components.position_bias_logits[0],
+            components.position_bias_logits[1],
+            rtol=0, atol=0,
+        )
+        changed_node_types = node_ids.clone()
+        changed_node_types[:, :] = 5
+        changed = model.decode_graph_edge_components(
+            states, changed_node_types, memory, active
+        )
+        torch.testing.assert_close(
+            components.position_bias_logits,
+            changed.position_bias_logits,
+            rtol=0, atol=0,
+        )
+        self.assertTrue(components.edge_logits.is_contiguous())
+        self.assertFalse(hasattr(components, "directed_typed_edges"))
+
+        with torch.no_grad():
+            model.source_position_factor.weight.zero_()
+            model.destination_position_factor.weight.zero_()
+            model.position_class_projection.weight.zero_()
+            model.source_position_factor.weight[2, 0] = 1.0
+            model.source_position_factor.weight[4, 1] = 1.0
+            model.destination_position_factor.weight[1, 0] = 1.0
+            model.destination_position_factor.weight[3, 1] = 1.0
+            model.position_class_projection.weight[1, 0] = 1.0
+            model.position_class_projection.weight[1, 1] = 1.0
+        directed = model.decode_graph_edge_components(
+            states, node_ids, memory, active
+        )
+        self.assertEqual(directed.position_bias_logits[0, 2, 1, 1].item(), 1.0)
+        self.assertEqual(directed.position_bias_logits[0, 4, 3, 1].item(), 1.0)
+        self.assertEqual(directed.position_bias_logits[0, 2, 3, 1].item(), 0.0)
+        self.assertEqual(directed.position_bias_logits[0, 4, 1, 1].item(), 0.0)
+        self.assertNotEqual(
+            directed.position_bias_logits[0, 2, 1, 1].item(),
+            directed.position_bias_logits[0, 2, 3, 1].item(),
+        )
+        self.assertNotEqual(
+            directed.position_bias_logits[0, 2, 1, 1].item(),
+            directed.position_bias_logits[0, 1, 2, 1].item(),
+        )
+        self.assertEqual(node_ids[0, 2].item(), node_ids[0, 4].item())
+        self.assertEqual(node_ids[0, 1].item(), node_ids[0, 3].item())
+
+        masked = mask_graph_edge_logits(directed.edge_logits, node_ids, active)
+        main_masked = mask_graph_edge_logits(
+            directed.main_pair_logits, node_ids, active
+        )
+        self.assertTrue(torch.equal(
+            masked.raw_class_ids, directed.edge_logits.argmax(dim=-1)
+        ))
+        self.assertTrue(torch.equal(
+            masked.allowed_class_mask, main_masked.allowed_class_mask
+        ))
+        self.assertFalse(torch.diagonal(
+            masked.active_pair_mask, dim1=1, dim2=2
+        ).any())
+        self.assertFalse(masked.active_pair_mask[1, 4].any())
+        self.assertFalse(masked.active_pair_mask[1, :, 4].any())
+
+        with torch.no_grad():
+            model.position_class_projection.weight.zero_()
+        zeroed = model.decode_graph_edge_components(
+            states, node_ids, memory, active
+        )
+        self.assertEqual(zeroed.position_bias_logits.abs().max().item(), 0.0)
+        torch.testing.assert_close(
+            zeroed.edge_logits, zeroed.main_pair_logits, rtol=0, atol=0
+        )
+
+        gradient_model = GraphV1Model(GraphV1Config())
+        gradient_components = gradient_model.decode_graph_edge_components(
+            states, node_ids, memory, active
+        )
+        gradient_components.edge_logits.square().mean().backward()
+        for module in (
+            gradient_model.graph_edge_decoder,
+            gradient_model.source_position_factor,
+            gradient_model.destination_position_factor,
+            gradient_model.position_class_projection,
+        ):
+            for parameter in module.parameters():
+                self.assertIsNotNone(parameter.grad)
+                self.assertTrue(torch.isfinite(parameter.grad).all())
+                self.assertGreater(parameter.grad.abs().sum().item(), 0.0)
+
+        flat = ConstrainedProfileV6Model(ConstrainedProfileV6Config())
+        graph_total = sum(parameter.numel() for parameter in gradient_model.parameters())
+        flat_total = sum(parameter.numel() for parameter in flat.parameters())
+        self.assertEqual(main_pair_mlp_parameter_count(gradient_model), 3254)
+        self.assertEqual(position_bias_parameter_count(gradient_model), 228)
+        self.assertEqual(graph_decoder_parameter_count(gradient_model), 3482)
+        self.assertEqual(graph_total, 32852)
+        self.assertEqual(flat_total, 32866)
+        self.assertEqual(flat_total - graph_total, 14)
 
     def test_strict_graph_conversion_canonical_and_malformed_edges(self):
         from prototype.flat_baseline.tests.test_constrained_v6 import V6GrammarTensorTests

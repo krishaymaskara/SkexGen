@@ -45,9 +45,11 @@ position-template baseline to recover all controlled edges.
 
 The V6 trainable flat structural modules—source/target relation projections,
 edge-presence and edge-type heads, operation queries, and operation keys—have
-3,496 parameters. Graph V1 replaces them with a shared 225→15→6 GELU pair MLP
-with 3,486 parameters. Total capacity differs by ten parameters, below 1%.
-Every graph-decoder parameter participates in prediction.
+3,496 parameters. The single corrected Graph V1 identity uses a 225→14→6 GELU
+main pair MLP with 3,254 parameters plus a directed rank-6 ordered-position
+bias with 228 parameters, for a 3,482-parameter graph decoder. Its 32,852 total
+parameters differ from frozen V6's 32,866 by 14 (about 0.043%). Every
+graph-decoder parameter participates in prediction.
 
 Pair features, in order, are source and destination decoded states, their
 constrained node-type embeddings, source and destination position embeddings,
@@ -73,8 +75,40 @@ system admits at most one present edge class for any source/destination node
 type pair, the edge-type-prior arm and node-type-pair-only arm coincide; both
 names are still reported so that this fact is visible rather than omitted.
 
-The graph experiment will not be repeatedly revised until it produces valid CAD.
-After the initial pilot, at most one evidence-backed graph correction is permitted.
+The graph experiment is frozen after the single evidence-backed correction
+documented below. No further graph-model correction is permitted.
+
+## Scientific correction C1
+
+Initial Graph V1 pilot job `3341942` completed the frozen two-epoch protocol.
+It produced 22/68 exact graphs and complete valid CAD programs: every
+single-operation E and R example was valid, while all 46 two-operation examples
+failed with `invalid_boolean_sequence`. Its 553 predicted positive edges versus
+510 targets, 68/68 conversion success, empty structural-violation histogram,
+and zero mask corrections ruled out all-none collapse and illegal-class
+masking. The node-type-pair prior tied Graph V1 at 22/68, while the scoring-only
+position prior reached 59/68. This supports one specific hypothesis: repeated
+semantic instances need a more direct chronological alignment signal.
+
+Correction C1 adds only
+`ordered_position_bias(source_position, destination_position)` to the main pair
+logits before the unchanged legal-class mask. Distinct learned 16×6 source and
+destination factors are multiplied elementwise and projected by a bias-free
+6×6 class projection. The branch consumes serialized source and destination
+indices only; it does not consume targets, templates, canonical edges, family
+labels, or validation statistics. Normal deterministic PyTorch initialization
+under seed 2026 is retained. This remains a serialization-position-aware,
+not order-independent, graph decoder and tests whether explicit directed order
+improves repeated-instance alignment in this controlled dataset.
+
+The corrected identity is
+`B0-GRAPH-NATIVE-EDGE-DECODER-V1-POSITION-BIAS-C1`. Correction metadata records
+index/limit 1/1, parent commit
+`089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb`, parent pilot job `3341942`, and
+hypothesis
+`explicit-directed-ordered-position-bias-for-repeated-instance-alignment`.
+Initial Graph V1 checkpoints are intentionally incompatible. Job `3341942`
+artifacts are evidence only and are never loaded or resumed.
 
 ## Pre-pilot node-sequence audit
 
@@ -109,9 +143,9 @@ The production-shaped readiness path covers authorization, ordinary train/IID
 loading, graph tensorization, model and node construction, teacher-forced and
 autonomous graph prediction, strict conversion, metrics, checkpoint save and
 reload, finite JSON, and terminal acceptance construction. The first
-scientific graph pilot attempt failed before validation and checkpoint
-completion, so it produced no scientific result and the one permitted
-evidence-backed scientific graph correction remains unused.
+engineering attempt failed before validation and checkpoint completion; the
+later initial scientific pilot `3341942` completed and supplied the evidence
+for the now-consumed C1 correction.
 
 ## Pilot source provenance
 

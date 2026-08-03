@@ -63,17 +63,25 @@ def greedy_decode_graph_v1(
             device=memory.memory.device,
         )
         active = torch.ones((1, count), dtype=torch.bool, device=memory.memory.device)
-        logits = model.decode_graph_edges(
+        components = model.decode_graph_edge_components(
             prefix_output.decoded_states,
             node_ids,
             memory.memory[batch_index:batch_index + 1],
             active,
         )
-        masked = mask_graph_edge_logits(logits, node_ids, active)
+        masked = mask_graph_edge_logits(
+            components.edge_logits, node_ids, active
+        )
         results.append(graph_prediction_from_evidence(
             node_prediction,
             masked.raw_class_ids[0].detach().cpu().tolist(),
             masked.masked_class_ids[0].detach().cpu().tolist(),
             masked.correction_mask[0].detach().cpu().tolist(),
+            main_pair_logits=(
+                components.main_pair_logits[0].detach().cpu().tolist()
+            ),
+            position_bias_logits=(
+                components.position_bias_logits[0].detach().cpu().tolist()
+            ),
         ))
     return tuple(results)

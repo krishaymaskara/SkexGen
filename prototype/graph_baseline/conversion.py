@@ -27,6 +27,7 @@ from prototype.node_grammar import NODE_GRAMMAR_CONTRACT_ID
 
 from .graph_contract import (
     GRAPH_CONTRACT_VERSION,
+    GRAPH_EDGE_CLASS_ORDER,
     GRAPH_REPRESENTATION_NAME,
     GRAPH_TENSOR_VERSION,
     CanonicalGraphRecord,
@@ -50,6 +51,8 @@ class GraphV1Prediction:
     raw_self_edge_prediction_count: int
     raw_inactive_node_edge_prediction_count: int
     graph_edge_correction_count: int
+    main_pair_logits: tuple = None
+    position_bias_logits: tuple = None
 
 
 def graph_v1_teacher_forced_predictions(output, *, node_mask, node_count_source):
@@ -96,6 +99,12 @@ def graph_v1_teacher_forced_predictions(output, *, node_mask, node_count_source)
             graph_edge_correction_count=int(
                 masked.correction_mask[row].sum().item()
             ),
+            main_pair_logits=output.graph_main_pair_logits[
+                row, :count, :count
+            ].detach().cpu().tolist(),
+            position_bias_logits=output.graph_position_bias_logits[
+                row, :count, :count
+            ].detach().cpu().tolist(),
         ))
     return tuple(results)
 
@@ -200,12 +209,24 @@ def graph_prediction_from_evidence(
     *, raw_self_edge_prediction_count=None,
     raw_inactive_node_edge_prediction_count=0,
     graph_edge_correction_count=None,
+    main_pair_logits=None,
+    position_bias_logits=None,
 ):
     count = node_prediction.node_count
     matrices = (raw_classes, masked_classes, correction_mask)
     if any(len(matrix) != count or any(len(row) != count for row in matrix)
            for matrix in matrices):
         raise GraphContractError("malformed_graph_prediction", "pair evidence width differs")
+    if (main_pair_logits is None) != (position_bias_logits is None):
+        raise GraphContractError(
+            "malformed_graph_prediction", "logit component evidence is incomplete"
+        )
+    logit_components = (None, None)
+    if main_pair_logits is not None:
+        logit_components = tuple(
+            _validated_logit_component(values, count)
+            for values in (main_pair_logits, position_bias_logits)
+        )
     node_ids = tuple(node.node_type_id for node in node_prediction.raw_nodes)
     edges = tuple(sorted(
         (
@@ -247,7 +268,39 @@ def graph_prediction_from_evidence(
         int(raw_self_edge_prediction_count),
         int(raw_inactive_node_edge_prediction_count),
         int(graph_edge_correction_count),
+        logit_components[0],
+        logit_components[1],
     )
+
+
+def _validated_logit_component(values, count):
+    class_count = len(GRAPH_EDGE_CLASS_ORDER)
+    if (
+        len(values) != count
+        or any(len(row) != count for row in values)
+        or any(
+            len(classes) != class_count
+            for row in values for classes in row
+        )
+    ):
+        raise GraphContractError(
+            "malformed_graph_prediction", "logit component shape differs"
+        )
+    result = tuple(
+        tuple(
+            tuple(float(value) for value in classes)
+            for classes in row
+        )
+        for row in values
+    )
+    if any(
+        not torch.isfinite(torch.tensor(classes)).all().item()
+        for row in result for classes in row
+    ):
+        raise GraphContractError(
+            "malformed_graph_prediction", "logit component is nonfinite"
+        )
+    return result
 
 
 def validate_and_convert_graph_prediction(prediction, *, max_operations=2):

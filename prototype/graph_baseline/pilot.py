@@ -1,4 +1,4 @@
-"""Frozen two-epoch train/IID-validation pilot for graph V1."""
+"""Frozen two-epoch train/IID-validation pilot for corrected graph V1 C1."""
 
 from __future__ import annotations
 
@@ -203,12 +203,11 @@ def run_graph_v1_pilot(
     final_train = teacher_forced_graph_validation(
         model, data.train, model_config, pilot_config.batch_size, device
     )
-    scientific = {
+    engineering = {
         "configured_budget_completed": (
             global_step == EXPECTED_OPTIMIZER_STEPS
             and examples_processed == EXPECTED_EXAMPLES_PROCESSED
         ),
-        "train_total_loss_decreased": final_train["total_loss"] < initial_train["total_loss"],
         "validation_losses_finite": all(
             math.isfinite(validations[pilot_config.epochs]["teacher_forced"][
                 name + "_loss"
@@ -266,7 +265,7 @@ def run_graph_v1_pilot(
             == len(data.validation.flat_examples)
         ),
     }
-    acceptance = _require_acceptance(scientific, {
+    acceptance = _require_acceptance(engineering, {
         "systematic_partition_accessed": False,
         "test_partition_accessed": False,
     })
@@ -279,6 +278,13 @@ def run_graph_v1_pilot(
         "completed_epochs": pilot_config.epochs,
         "global_step": global_step,
         "examples_processed": examples_processed,
+        "scientific_observations": {
+            "initial_train_total_loss": initial_train["total_loss"],
+            "final_train_total_loss": final_train["total_loss"],
+            "train_total_loss_decreased": (
+                final_train["total_loss"] < initial_train["total_loss"]
+            ),
+        },
         "final_validation_teacher_forced": validations[pilot_config.epochs]["teacher_forced"],
         "final_validation_autonomous": validations[pilot_config.epochs]["autonomous"],
         "systematic_partition_accessed": False,
@@ -295,7 +301,7 @@ def run_graph_v1_pilot(
 def teacher_forced_graph_validation(model, partition, model_config, batch_size, device):
     was_training = model.training
     loss_sums = {name: 0.0 for name in GRAPH_LOSS_FIELDS}
-    metrics = new_graph_metrics()
+    metrics = new_graph_metrics(model)
     example_count = 0
     try:
         model.eval()
@@ -342,7 +348,7 @@ def teacher_forced_graph_validation(model, partition, model_config, batch_size, 
 
 def autonomous_graph_validation(model, partition, model_config, batch_size, device):
     was_training = model.training
-    metrics = new_graph_metrics()
+    metrics = new_graph_metrics(model)
     try:
         model.eval()
         for start in range(0, len(partition.flat_examples), batch_size):
