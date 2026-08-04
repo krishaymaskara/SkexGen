@@ -181,6 +181,21 @@ def unified_layout_errors(root: Path) -> List[str]:
                 "README.md: embedded upstream README must live in docs/reference/"
             )
 
+    docs_root = root / "docs"
+    allowed_root_pages = {
+        "README.md",
+        "documentation_structure.md",
+        "research_plan.md",
+        "status.md",
+    }
+    if docs_root.is_dir():
+        for page in sorted(docs_root.glob("*.md")):
+            if page.name not in allowed_root_pages:
+                errors.append(
+                    f"{page.relative_to(root)}: loose documentation page must be "
+                    "migrated into a documented collection"
+                )
+
     docs_index_path = root / "docs" / "README.md"
     if not docs_index_path.is_file():
         return errors

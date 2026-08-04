@@ -89,6 +89,27 @@ the immediate next action changes.
   replay](experiments/b0_phase_b_categorical_isolation_replay.md) —
   preregistered plane/profile factorial diagnosis over the immutable repaired
   validation bundle and constraint-manifold replay.
+- [Phase B constraint-manifold
+  replay](experiments/b0_phase_b_constraint_manifold_replay.md) — four-arm
+  diagnostic separating semantic constants, constrained geometry,
+  categorical oracle sensitivity, and autoregressive sensitivity.
+- [Constrained Flat V2-V5
+  progression](experiments/b0_constrained_flat_v2_v5_progression.md) — staged
+  profile, plane, categorical, and node-grammar repair with external-evidence
+  limitations.
+- [Frozen constrained Flat
+  V6](experiments/b0_constrained_flat_v6.md) — capacity reference and uniform
+  structural-edge failure on all 68 IID-validation families.
+- [Graph V1 engineering readiness and C1
+  validation](experiments/b0_graph_v1_engineering_readiness.md) — all
+  pre-pilot failure/repair jobs, provenance hardening, and authoritative
+  regression validation.
+- [Initial Graph V1](experiments/b0_graph_v1_initial.md) — explicit typed-edge
+  decoder, 22/68 complete validity, and the single- versus two-operation
+  boundary.
+- [Graph V1 directed-position
+  C1](experiments/b0_graph_v1_c1.md) — the single authorized correction,
+  improved edge metrics, unchanged complete validity, and freeze decision.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
@@ -114,6 +135,7 @@ individual records.
 - [Counterfactual edit benchmark](../prototype/counterfactual_edits/README.md)
 - [Model-ready data interface](../prototype/model_data/README.md)
 - [B0 flat mixed/VQ baseline](../prototype/flat_baseline/README.md)
+- [Graph-native constrained baseline](../prototype/graph_baseline/README.md)
 
 These READMEs describe what the checked-in implementations support, how to use
 them, and which cases remain outside their current scope. They are not
@@ -125,6 +147,8 @@ substitutes for completed-run evidence.
 - [Milestone summaries](milestones/README.md)
 - [Controlled CAD foundation](milestones/controlled_cad_foundation.md)
 - [Flat mixed/VQ baseline](milestones/flat_baseline.md)
+- [Constrained Flat V6 and Graph V1
+  comparison](milestones/constrained_flat_graph_comparison.md)
 - [Decision-record template](templates/decision-record.md)
 
 Decision records explain choices with lasting effects on schemas, model
@@ -137,6 +161,10 @@ raw metrics or logs.
 - [Project reports](reports/README.md)
 - [Mentor progress report — July 28,
   2026](reports/mentor_progress_report_2026-07-28.md)
+- [Flat V6 and Graph V1 progress report — August 3,
+  2026](reports/graph_v1_progress_report_2026-08-03.md)
+- [Graph V1 research handoff — August 3,
+  2026](reports/graph_v1_handoff_2026-08-03.md)
 
 Reports are dated audience-facing snapshots derived from the authoritative
 status and evidence records. They are not maintained as alternate status

@@ -55,11 +55,11 @@ parameterization is not a confound.
   limitations.
 
 The existing epoch-44 flat checkpoint remains the frozen, reproducible failed
-unconstrained baseline. The checked-in deterministic profile-geometry
-contract is a prerequisite for the shared neural decoder, not evidence that
-the neural constrained decoder or a successor flat checkpoint is complete.
-Current implementation and experiment state is maintained in
-[the status page](status.md).
+unconstrained baseline. At approval time, the deterministic profile-geometry
+contract was only a prerequisite and did not establish a neural successor.
+The later Flat V6 and Graph V1 implementation and IID-validation results are
+maintained in [the status page](status.md) and experiment records; this plan
+continues to define scope rather than current progress.
 
 ### Three-week schedule
 
@@ -131,9 +131,10 @@ comparison or report.
   generality.
 - One systematic split, one localized-edit test, and limited seeds constrain
   the breadth and statistical strength of conclusions.
-- The deterministic profile-geometry contract is implemented; the neural
-  constrained decoder, successor flat checkpoint, and graph model are not yet
-  implemented or trained.
+- At plan approval, only the deterministic profile-geometry contract was
+  implemented. Flat V6 and Graph V1 were subsequently completed and frozen;
+  consult [current status](status.md) rather than using this dated plan to
+  infer implementation progress.
 
 ## Historical six-to-eight-week planning context
 

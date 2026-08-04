@@ -1,4 +1,10 @@
-# Frozen Flat V6 and Graph V1 Experiment Record
+# Flat V6 and Graph V1 Progress Report — August 3, 2026
+
+This is a dated audience-facing snapshot. The authoritative current state is
+maintained in [project status](../status.md), and immutable run evidence is
+maintained in the separate [Flat V6](../experiments/b0_constrained_flat_v6.md),
+[initial Graph V1](../experiments/b0_graph_v1_initial.md), and
+[Graph V1 C1](../experiments/b0_graph_v1_c1.md) records.
 
 ## 1. Research question
 

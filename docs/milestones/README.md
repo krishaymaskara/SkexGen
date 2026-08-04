@@ -12,6 +12,10 @@ duplicating raw run details.
 - [Flat mixed/VQ baseline](flat_baseline.md) — baseline implementation,
   original collapse, diagnosis, bounded repair, and the current
   evaluation-readiness boundary.
+- [Constrained Flat V6 and Graph V1
+  comparison](constrained_flat_graph_comparison.md) — shared constrained
+  decoder, frozen flat structural baseline, capacity-matched graph pilots,
+  the single correction, and the single- versus two-operation boundary.
 
 ## Maintenance rule
 

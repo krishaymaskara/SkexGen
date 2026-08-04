@@ -1,4 +1,9 @@
-# Graph V1 Research Handoff Questions
+# Graph V1 Research Handoff Questions — August 3, 2026
+
+This dated handoff accompanies the
+[Graph V1 progress report](graph_v1_progress_report_2026-08-03.md). It records
+open questions rather than current status or an authorized experiment
+protocol.
 
 The questions below are prompts for the next research discussion. They intentionally do not prescribe answers or authorize additional graph corrections, pilot reruns, or partition access.
 

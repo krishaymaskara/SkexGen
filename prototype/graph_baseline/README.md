@@ -6,6 +6,12 @@ It generated grammar-valid nodes, canonical profiles, planes, and axes for all
 68 IID-validation records, but every record first failed on `unexpected_edge`.
 Graph V1 therefore changes only structural prediction.
 
+Immutable run evidence and interpretation live in the
+[initial Graph V1](../../docs/experiments/b0_graph_v1_initial.md) and
+[Graph V1 C1](../../docs/experiments/b0_graph_v1_c1.md) records. This README
+is authoritative for the current checked-in implementation contract, not as a
+replacement for those experiment records.
+
 The graph representation is `B0-CONTROLLED-CAD-TYPED-GRAPH-v1`. Nodes retain
 the canonical chronological order used by model-data. Edges are directed from
 the dependent/owned object to its referenced object. The ordered categorical

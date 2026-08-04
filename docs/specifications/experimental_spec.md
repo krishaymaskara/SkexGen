@@ -60,11 +60,13 @@ closely enough to isolate the input representation. The required evaluation is
 ordinary validation, one predetermined systematic-generalization split, and
 one localized numerical-edit test.
 
-**[ACTIVE IMPLEMENTATION BOUNDARY]:** The deterministic profile-geometry
-contract is implemented. Explicit neural profile-family prediction, compact
-continuous parameter prediction, decoder integration, a successor flat
-checkpoint, and the graph model are not implemented or trained. The epoch-44
-checkpoint remains the frozen failed unconstrained baseline.
+**[ACTIVE IMPLEMENTATION BOUNDARY]:** The shared neural profile-family and
+compact-parameter path, constrained Flat V6, initial Graph V1, and the single
+authorized Graph V1 correction are implemented, trained, evaluated on IID
+validation, and frozen. The epoch-44 checkpoint remains the failed
+unconstrained reference. The required systematic-generalization and localized
+edit evaluations have not run, and held-out test data remains untouched. Any
+new architecture is a separately named phase, not another Graph V1 correction.
 
 **[HISTORICAL PROPOSED V0] Earlier phased causal controls:** the superseded
 candidate protocol organized `B0-FLAT-MIXED-VQ`,
@@ -387,13 +389,15 @@ is optional and unimplemented.
 
 | Condition | Input representation | Shared geometry condition | Required status |
 |---|---|---|---|
-| Repaired flat | Canonical chronological serialization without dependency edges | Category-conditioned constrained continuous-geometry decoder | Required |
-| Minimal typed graph | Typed dependency graph under schema version 1 | The same category-conditioned constrained continuous-geometry decoder | Required |
+| Repaired flat | Canonical chronological serialization without dependency edges | Category-conditioned constrained continuous-geometry decoder | Implemented and frozen as Flat V6 |
+| Minimal typed graph | Typed dependency graph under schema version 1 | The same category-conditioned constrained continuous-geometry decoder | Implemented and frozen as Graph V1/C1 |
 
-The shared decoder must explicitly predict profile family and compact
-continuous profile parameters, then use the family to select the deterministic
-profile construction. Its interface, targets, losses, and evaluation treatment
-must be frozen before the graph condition begins.
+The shared decoder explicitly predicts profile family and compact continuous
+profile parameters, then uses the family to select deterministic profile
+construction. Its interface, targets, losses, and evaluation treatment were
+frozen before the graph condition. The completed IID result and remaining
+evaluation boundary are recorded in the
+[comparison milestone](../milestones/constrained_flat_graph_comparison.md).
 
 ### 8.2 Historical candidate model matrix
 
@@ -451,20 +455,18 @@ During early training, geometry may be conditioned on ground-truth structure. Fi
 
 ## 9. Training protocol and order
 
-**[ACTIVE PLAN REQUIREMENT] Training order:**
+**[ACTIVE PLAN REQUIREMENT] Training order and current completion:**
 
-1. integrate explicit profile-family prediction and compact continuous profile
-   parameters with the deterministic geometry contract;
-2. freeze the shared neural decoder interface, targets, losses, and validity
-   checks;
-3. timebox the repaired flat model and produce one reproducible successor
-   checkpoint;
-4. begin the minimal typed graph model as soon as the shared decoder interface
-   is frozen;
-5. evaluate both models on ordinary validation, one predetermined systematic
-   split, and one localized numerical-edit test; and
-6. expand experiments only after that comparison and its concise report or
-   presentation are complete.
+1. **Complete:** integrate explicit profile-family prediction and compact
+   continuous profile parameters with deterministic geometry;
+2. **Complete:** freeze the shared neural decoder interface, targets, losses,
+   and validity checks;
+3. **Complete:** timebox and freeze Flat V6;
+4. **Complete:** implement initial Graph V1 and its one authorized correction;
+5. **Partially complete:** ordinary IID validation is complete; the
+   predetermined systematic split and localized numerical-edit test remain;
+6. **Not authorized yet:** expand only after the minimal comparison and its
+   concise report or presentation are complete.
 
 **[HISTORICAL PLAN REQUIREMENT + PROPOSED V0] Earlier training order:**
 

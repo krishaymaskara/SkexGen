@@ -30,3 +30,6 @@ it superseded by a later ADR.
   scope](ADR-0002-three-week-flat-versus-graph-scope.md) — narrows the active
   project to one repaired-flat-versus-typed-graph comparison under a shared
   category-conditioned constrained continuous-geometry decoder.
+- [ADR-0003: Freeze Graph V1 after
+  C1](ADR-0003-freeze-graph-v1.md) — exhausts the one-correction budget,
+  preserves protected partitions, and requires a separately named next phase.

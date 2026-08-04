@@ -13,13 +13,21 @@ The implemented work includes:
 - a counterfactual edit benchmark;
 - shared flat and graph model-data interfaces;
 - a flat/mixed VQ baseline with paired validation evaluation;
-- VQ-collapse diagnosis and train-only k-means initialization.
+- VQ-collapse diagnosis and train-only k-means initialization;
+- a shared category-conditioned constrained profile/plane/axis decoder;
+- a frozen constrained Flat V6 structural baseline;
+- an effectively capacity-matched graph-native typed-edge baseline;
+- one frozen evidence-backed graph correction and complete IID-validation
+  comparison.
 
-Revolve support itself is not the proposed contribution. The intended
-scientific comparison is between a flat/mixed baseline, a typed graph with
-fully discrete structure-conditioned geometry, and a typed graph with
-discrete structure plus continuous conditioned geometry. The graph models
-and final comparison are not yet complete.
+Revolve support itself is not the proposed contribution. The completed
+bounded comparison asks whether explicit typed-edge prediction improves over
+flat relation and pointer heads under the same constrained node/geometry path.
+Graph V1 improves complete IID-validation validity from 0/68 to 22/68 by
+solving every single-operation program, but neither the initial nor corrected
+pairwise graph decoder solves a two-operation program. Systematic and held-out
+test partitions remain untouched. See the current status for the precise
+result and next gate.
 
 ## Documentation
 

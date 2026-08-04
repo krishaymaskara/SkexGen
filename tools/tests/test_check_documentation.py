@@ -104,6 +104,25 @@ class DocumentationCheckerTests(unittest.TestCase):
                 errors,
             )
 
+    def test_unified_layout_rejects_loose_docs_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "README.md").write_text("# Index\n", encoding="utf-8")
+            (docs / "status.md").write_text("# Status\n", encoding="utf-8")
+            (docs / "loose_handoff.md").write_text(
+                "# Loose handoff\n", encoding="utf-8"
+            )
+
+            errors = unified_layout_errors(root)
+
+            self.assertIn(
+                "docs/loose_handoff.md: loose documentation page must be "
+                "migrated into a documented collection",
+                errors,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

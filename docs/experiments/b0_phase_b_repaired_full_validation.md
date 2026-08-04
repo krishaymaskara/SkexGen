@@ -5,8 +5,8 @@
 | Item | Value |
 |---|---|
 | Experiment ID | `b0-phase-b-repaired-full-validation-3329040` |
-| Record status | `recovered`; primary bundle remains external |
-| Evidence state | `documented-external` |
+| Record status | `recovered` and locally verified |
+| Evidence state | `verified-local` |
 | Scientific role | Frozen 68-family repaired-checkpoint validation |
 | Evaluation commit | `ce4abca8f450745a8832c0189aaae4a7d8263ec0` |
 | Recovery implementation | `b00ac0d1a645ae9559e269ed93f5ee7940a0512c` |
@@ -116,7 +116,7 @@ the observed Gate C and Gate D inputs do not meet their frozen thresholds.
 
 ## Artifacts and integrity
 
-The recovered external namespace is:
+The original recovered external namespace is:
 
 ```text
 /scratch/network/km6349/flat_baseline_evaluations/
@@ -149,11 +149,17 @@ sha256-manifest.txt
 The recovery transcript is retained externally as
 `/scratch/network/km6349/phase-b-repaired-validation-3329040-recovery.log`.
 The verified 15-entry manifest is authoritative for individual artifact
-hashes. The namespace and recovery log have not yet been downloaded into
-`/Users/krishaymaskara/research/audited-runs`, so this record does not claim a
-second local hash verification. Downloading and freezing that bundle would
-upgrade its evidence state from `documented-external` to `verified-local`
-without changing the scientific result.
+hashes. The flattened namespace was subsequently downloaded to:
+
+```text
+/Users/krishaymaskara/research/audited-runs/phase-b-full-validation/
+phase-b-repaired-validation-ce4abca8f450745a8832c0189aaae4a7d8263ec0-3329040
+```
+
+Its 15-entry manifest has SHA-256
+`a13d5f35b345b6814912145a56e0cce0290ae677b030a1215b61e92558862541`
+and was checked locally. The recovery transcript itself remains external;
+that does not change the locally verified scientific namespace or result.
 
 ## Interpretation and unsupported claims
 

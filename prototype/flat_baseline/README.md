@@ -842,6 +842,10 @@ deterministic blocker for every revolve-containing example.
 
 ## Constrained-profile V6 canonical revolve axis
 
+The frozen V6 run result and its evidence limitations are recorded separately
+in the [Flat V6 experiment
+record](../../docs/experiments/b0_constrained_flat_v6.md).
+
 V6 is the final planned flat-model revision. It retains the complete V5
 architecture, state-dictionary shapes, logits, losses, VQ/EMA behavior,
 prefix grammar, categorical/profile/plane construction, relations, pointers,

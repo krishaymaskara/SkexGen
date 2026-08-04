@@ -35,6 +35,7 @@ prototype/
   counterfactual_edits/README.md
   model_data/README.md
   flat_baseline/README.md
+  graph_baseline/README.md
 tools/
   check_documentation.py
 ```
@@ -140,6 +141,7 @@ prototype/kernel_validation/README.md
 prototype/counterfactual_edits/README.md
 prototype/model_data/README.md
 prototype/flat_baseline/README.md
+prototype/graph_baseline/README.md
 ```
 
 These files describe the behavior of checked-in code. They contain API
@@ -345,10 +347,13 @@ The checker validates:
 - reference, report, and specification index coverage;
 - durable records for locally verified evidence;
 - required semantic sections in structured experiment records;
-- the unified documentation layout.
+- the unified documentation layout, including rejection of loose pages at the
+  root of `docs/` outside the four designated root documents.
 
 The retired `notes/` layout must not be recreated. New project Markdown
-belongs in `docs/`, the root README, or an appropriate package README.
+belongs in an indexed `docs/` collection, one of `docs/README.md`,
+`docs/documentation_structure.md`, `docs/research_plan.md`, or
+`docs/status.md`, the root README, or an appropriate package README.
 
 ## Practical update summary
 
@@ -384,4 +389,3 @@ true now, experiment records show what happened, package READMEs explain what
 the code does, specifications state the protocol, decisions explain lasting
 choices, milestones summarize accepted stages, and reports communicate dated
 progress to external readers.
-

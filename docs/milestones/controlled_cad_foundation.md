@@ -70,7 +70,9 @@ documented external evidence rather than locally complete artifact bundles.
   bundle were not recovered into the local audited-run store.
 - The counterfactual audit does not evaluate learned edits or causal locality
   in a neural representation.
-- No graph-discrete or graph-hybrid model has been implemented.
+- At this milestone's acceptance date, no graph model had been implemented;
+  later graph work is tracked in the
+  [constrained flat/graph milestone](constrained_flat_graph_comparison.md).
 - OpenCascade execution for learned model predictions remains a future
   evaluation gate.
 
@@ -80,4 +82,3 @@ The next milestone was a credible flat mixed/VQ baseline using this shared
 data authority. Its implementation, collapse diagnosis, repair, and current
 acceptance boundary are summarized in the
 [flat-baseline milestone](flat_baseline.md).
-
