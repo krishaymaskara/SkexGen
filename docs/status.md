@@ -14,9 +14,12 @@ specifications or new decision records.
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 3, 2026 |
+| Status recorded | August 7, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
+| Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0 complete and frozen; Stage 1 not begun |
+| GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
 
@@ -30,16 +33,18 @@ typed-edge prediction improves autonomous CAD validity over flat relation and
 pointer heads when both conditions share the same constrained node and
 geometry path.
 
-That comparison is complete on IID validation. The next research question is
-now narrower:
+That comparison is complete on IID validation. Accepted
+[ADR-0004](decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md)
+authorizes the next separately named question:
 
-> What representation or decoding structure can produce globally consistent
-> multi-operation topology when sketches, profiles, axes, and operations
-> repeat?
+> Under one shared continuous-memory decoder and the operation-template-only
+> protocol, does a position-free typed graph encoder outperform the flat
+> chronological encoder on executable-prefix reconstruction and RR
+> compositional generalization?
 
 Graph V1 itself is frozen under
-[ADR-0003](decisions/ADR-0003-freeze-graph-v1.md). Any further work must begin
-as a separately named phase rather than as another Graph V1 correction.
+[ADR-0003](decisions/ADR-0003-freeze-graph-v1.md). GE1 does not unfreeze it or
+authorize Graph V1 C2.
 
 ## Completed implementation milestones
 
@@ -125,9 +130,10 @@ held-out test partition accessed: false
 ```
 
 The IID validation partition has been used for repeated scientific iteration
-and is not an untouched final benchmark. Systematic and held-out test data
-remain available only under a new frozen access policy and model-selection
-rule.
+and is not an untouched final benchmark. GE1 may not open any IID,
+history-depth, or geometry-extrapolation partition. Under the accepted
+operation-template policy, RR remains closed until the one-time systematic
+stage and ER remains closed throughout GE1.
 
 ## What has not been established
 
@@ -144,26 +150,17 @@ rule.
 
 ## Immediate scientific gate
 
-No further Graph V1 correction or rerun is authorized. A new protocol must
-choose one isolated next hypothesis:
+ADR-0004 is accepted by designated reviewer Krishay Maskara, with fixed
+epoch-50 checkpoint selection. The acceptance did not remove ADR-0004's
+preauthorized two-seed timing fallback. The
+[Stage 0 preregistration](specifications/ge1_stage0_preregistration.md) freezes
+the complete protocol, records the verified manifest and assignment hashes,
+and records zero protected payload access. C0 is complete. GE1 model
+implementation and Stage 1 have not begun.
 
-1. explicit hierarchical/global operation grouping and dependency decoding;
-2. the causal role of latent collapse under a frozen structural decoder.
-
-The next protocol must predefine:
-
-- the primary program-level endpoint;
-- the components held frozen;
-- capacity and training controls;
-- a bounded correction budget;
-- how the position-only prior will be interpreted;
-- the criterion for first systematic-partition access;
-- the condition for later one-time held-out test access.
-
-The current evidence points most directly to operation grouping because the
-failure boundary is exactly single versus two operations and because C1
-omitted the globally required `depends_on` edge. VQ collapse remains an
-important but unisolated alternative.
+No further Graph V1 correction or rerun is authorized. RR access remains
+blocked until the accepted one-time systematic stage, and ER remains closed
+throughout GE1.
 
 ## Documentation and artifact maintenance
 

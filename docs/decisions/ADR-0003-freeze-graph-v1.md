@@ -4,7 +4,7 @@
 - Decision date: `2026-08-03`
 - Owners/reviewers: project research team
 - Supersedes: none
-- Superseded by: none
+- Superseded by: [ADR-0004](ADR-0004-ge1-single-manifest-encoder-comparison.md) for the immediate next-phase-selection gate only; the Graph V1 freeze remains accepted
 
 ## Context
 

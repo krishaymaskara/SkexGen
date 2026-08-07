@@ -33,3 +33,8 @@ it superseded by a later ADR.
 - [ADR-0003: Freeze Graph V1 after
   C1](ADR-0003-freeze-graph-v1.md) — exhausts the one-correction budget,
   preserves protected partitions, and requires a separately named next phase.
+- [ADR-0004: GE1 single-manifest encoder
+  comparison](ADR-0004-ge1-single-manifest-encoder-comparison.md) — accepted;
+  accepted by designated reviewer Krishay Maskara; freezes the
+  operation-template-only protocol, core continuous encoder comparison,
+  fixed epoch-50 selection, training controls, and endpoints.
