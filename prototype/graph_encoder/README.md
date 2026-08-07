@@ -546,9 +546,11 @@ components identical at a given seed, arm-specific components independent.
 The exact module counts, parameter-object disjointness, direction and edge-type
 sensitivity, batch isolation, continuous flat parity, quantizer non-invocation,
 finite gradients, shared-component initialization equality, and float32/float64
-permutation properties are covered by `tests/test_encoders.py`. Authoritative C4 CPU validation on `adroit-h11n3`
-passed all 26 targeted C4 tests and all 85 graph-encoder tests with zero skips;
-see the [validation record](../../docs/experiments/ge1_c4_cpu_validation.md).
+permutation properties are covered by `tests/test_encoders.py`. After the C4
+review fixes, authoritative Adroit CPU job `3344265` passed both new
+shared-initialization tests, all 28 C4 encoder tests, and all 88 graph-encoder
+tests with zero skips; see the [review-fix validation
+record](../../docs/experiments/ge1_c4_review_fix_cpu_validation.md).
 
 ## Frozen identities and training policy
 
@@ -620,7 +622,8 @@ The non-C2 package boundary uses:
 - C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
   check on Adroit as job `3344235`; see the
   [validation record](../../docs/experiments/ge1_c3_cpu_validation.md).
-- C4 passed its authoritative real-PyTorch CPU validation. Every later
-  implementation addition still requires its own production-environment
-  validation; C4's result does not validate code that does not yet exist.
+- C4 and its capacity-freezing/shared-initialization review fixes passed
+  authoritative real-PyTorch CPU validation. Every later implementation
+  addition still requires its own production-environment validation; C4's
+  result does not validate code that does not yet exist.
 - C5 and every later GE1 chunk have not begun.

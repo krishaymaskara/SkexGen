@@ -206,6 +206,7 @@ git bundle verify \
 
 ## Related records
 
+- Successor: [C4 review-fix authoritative CPU validation](ge1_c4_review_fix_cpu_validation.md)
 - Prerequisite: [C3 authoritative CPU validation](ge1_c3_cpu_validation.md)
 - Protocol: [GE1 Stage 0 preregistration](../specifications/ge1_stage0_preregistration.md)
 - Implementation contract: [Typed graph encoder implementation plan](../specifications/graph_encoder_implementation_plan.md)

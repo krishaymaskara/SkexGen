@@ -118,6 +118,10 @@ the immediate next action changes.
   validation](experiments/ge1_c4_cpu_validation.md) — exact-commit validation
   of both standalone encoders, including continuous parity, capacity,
   sensitivity, isolation, gradients, and permutation contracts.
+- [GE1 C4 review-fix authoritative CPU
+  validation](experiments/ge1_c4_review_fix_cpu_validation.md) — exact-commit
+  revalidation of the frozen capacity contract and arm-independent shared
+  initialization, including all C4 and graph-encoder tests with zero skips.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

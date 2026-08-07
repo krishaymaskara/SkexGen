@@ -21,7 +21,7 @@ specifications or new decision records.
 | GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
-| GE1 C4 review-fix revalidation | **Required and not yet run.** The C4 review fixes changed encoder construction after that validated commit; the recorded C4 result no longer covers current `prototype/graph_encoder` source |
+| GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -184,10 +184,12 @@ rather than original Flat V6; relation-basis count and per-arm feed-forward
 width are frozen consistently in configuration and documentation; genuinely
 shared components are now initialized identically across arms from one
 arm-independent source; and the capacity rationale records the corrected
-inherited-width arithmetic. Those changes altered encoder construction, so the
-recorded C4 validation no longer covers current source. Local no-PyTorch
-checks pass, but a new authoritative Python 3.8 / PyTorch 1.11 Adroit CPU
-validation is required before C5 begins.
+inherited-width arithmetic. Those changes altered encoder construction, so
+they received a separate authoritative Python 3.8.13/PyTorch 1.11.0 Adroit CPU
+validation as job `3344265`. Both new shared-initialization tests, all 28 C4
+encoder tests, and all 88 graph-encoder tests passed with zero skips; the
+exact-commit evidence is in the [C4 review-fix validation
+record](experiments/ge1_c4_review_fix_cpu_validation.md).
 
 C5 shared-decoder integration and every later chunk have not begun, and no
 next-stage work was performed while recording this result.

@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C4 complete; C4 authoritative Adroit CPU validation passed; C5 and later work not begun |
+| Status | Accepted protocol; C0-C4 complete; C4 review fixes authoritatively revalidated as Adroit job `3344265`; C5 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -76,10 +76,12 @@ C0 is complete under the frozen
 [Stage 0 preregistration](ge1_stage0_preregistration.md). The Stage 1 paired
 data path is implemented, and its C3 authoritative Python 3.8/PyTorch 1.11 CPU
 validation passed as Adroit job `3344235`. C4 implements the standalone flat
-and typed-graph encoders, and its authoritative CPU validation passed on
-`adroit-h11n3`: 26/26 targeted C4 tests and 85/85 complete graph-encoder tests,
-with zero skips. C5 and later implementation has not begun. RR and ER payload
-access remains restricted by the accepted staged-access rules.
+and typed-graph encoders. Its original authoritative CPU validation passed,
+and the subsequent capacity-freezing and shared-initialization review fixes
+were authoritatively revalidated on `adroit-h11n3` as job `3344265`: both new
+tests, all 28 C4 encoder tests, and all 88 graph-encoder tests passed with zero
+skips. C5 and later implementation has not begun. RR and ER payload access
+remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -485,10 +487,12 @@ arbitrary consistent node permutation.
 
 **Implementation status:** C4 completes this stage with the frozen two bases,
 ten directed channels, three layers, continuous memory contract, graph-local
-pooling, and a capacity-matched flat wrapper. Authoritative Adroit CPU
-validation passed all 26 targeted C4 tests and all 85 graph-encoder tests with
-zero skips. The [C4 validation record](../experiments/ge1_c4_cpu_validation.md)
-retains the exact-commit and artifact audit. Stage 3/C5 has not begun.
+pooling, and a capacity-matched flat wrapper. After the C4 review fixes,
+authoritative Adroit CPU job `3344265` passed both new shared-initialization
+tests, all 28 C4 encoder tests, and all 88 graph-encoder tests with zero skips.
+The [review-fix validation
+record](../experiments/ge1_c4_review_fix_cpu_validation.md) retains the
+exact-commit and artifact audit. Stage 3/C5 has not begun.
 
 1. Implement relation-basis mixing and both edge orientations.
 2. Implement degree normalization with `index_add_`.

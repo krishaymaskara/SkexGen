@@ -64,6 +64,7 @@ frozen archive described below is now the primary evidence.
 | Graph V1 directed-position C1 | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` | validation `3341972`; pilot `3341974` | Complete recovery archive plus lightweight metrics/log archive | 544 train / 68 IID validation; systematic/test false | `verified-local` | [Record](b0_graph_v1_c1.md) |
 | GE1 C3 authoritative CPU compatibility validation | `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` | `3344235` | Local stdout/stderr and preserved runner listed in record | Fixture-only validation; authoritative manifest and CAD-history payloads not opened; systematic/test false | `verified-local` | [Record](ge1_c3_cpu_validation.md) |
 | GE1 C4 authoritative CPU validation | `e66cd089462c2e075b9ff742e157c21e4d9a2a6e` | Interactive `srun`; ID not captured | Local terminal transcript and complete-history Git bundle listed in record | Procedural and temporary fixture validation only; authoritative corpus payloads not opened; systematic/test false | `verified-local` | [Record](ge1_c4_cpu_validation.md) |
+| GE1 C4 review-fix authoritative CPU validation | `3a41abc81f68ef6d6450465e05b3544f07a08b83` | `3344265` | Local stdout/stderr and complete-history Git bundle listed in record | Fixture-only validation; authoritative manifest and CAD-history payloads not opened; systematic/test false | `verified-local` | [Record](ge1_c4_review_fix_cpu_validation.md) |
 
 ### Current-through-August-3 coverage
 
