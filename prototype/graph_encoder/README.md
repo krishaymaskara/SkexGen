@@ -3,7 +3,8 @@
 ## Implemented scope
 
 This package implements the C1 boundary, C2 position-free graph canonicalizer,
-and C3 paired flat/graph batching for
+C3 paired flat/graph batching, and C4 continuous flat and position-free typed
+graph encoders for
 `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
 
 C1 provides:
@@ -20,9 +21,21 @@ controlled typed graph at a time.
 
 C3 provides deterministic paired-family sorting, target-separated flat and
 graph encoder inputs, graph bookkeeping, inherited flat/graph collation
-validation, and an explicit deterministic diagnostic permutation utility. It
-does not implement a neural encoder, shared decoder, losses, checkpointing,
-training, evaluation, or a scientific result. The frozen
+validation, and an explicit deterministic diagnostic permutation utility.
+
+C4 provides:
+
+- a three-layer, two-basis relational encoder with ten directed semantic
+  channels;
+- graph-local latent-query cross-attention pooling;
+- a capacity-matched wrapper around the inherited flat Transformer encoder;
+- a common continuous-memory result that bypasses nearest-code assignment;
+- node-level permutation-equivariance diagnostics and graph-memory
+  permutation-invariance tests; and
+- exact component and arm-level parameter accounting.
+
+C4 does not implement a shared decoder, losses, checkpointing, training,
+evaluation, or a scientific result. The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
 unchanged.
@@ -43,11 +56,18 @@ from prototype.graph_encoder import (
     PairedBatch,
     build_paired_batch,
     canonicalize_graph,
+    capacity_difference_percent,
+    default_encoder_config,
+    encoder_parameter_report,
     load_development,
     load_train,
     permute_graph,
 )
 ```
+
+When PyTorch is installed, the package additionally exports
+`EncodedMemory`, `FlatProgramEncoder`, and `TypedGraphProgramEncoder`. The
+tuple-only C1-C3 API remains importable without PyTorch.
 
 `load_train(corpus_dir)` loads the complete authoritative train assignment.
 Its optional `family_ids` argument accepts only a sorted, unique, balanced
@@ -336,6 +356,123 @@ prevented structurally by distinct frozen record types and are tested through
 dataclass fields, signatures, and separate tensor dictionaries rather than by
 adding unreachable runtime error codes.
 
+## C4 common continuous encoder contract
+
+Both encoder arms return the same frozen `EncodedMemory` record:
+
+```text
+prequant: [batch_size, 2, 16]
+memory:   [batch_size, 2, 32]
+```
+
+`prequant` is exactly the continuous output of the inherited
+`to_codebook` projection. It is exposed for diagnostics only. `memory` is
+exactly `from_codebook(prequant)`, is contiguous, and is the only tensor
+intended for the future shared decoder. Neither arm owns or calls an EMA
+quantizer, performs nearest-code assignment, or mutates codebook state.
+
+`FlatProgramEncoder` deep-copies only the inherited flat encoder's content
+embeddings, chronological position embedding, Transformer, latent queries,
+and `to_codebook`/`from_codebook` projections. It does not retain the inherited
+decoder or VQ module. Its parity test compares against the corresponding
+continuous inherited path with identical state and inputs.
+
+`TypedGraphProgramEncoder.forward(...)` accepts only:
+
+```text
+node_type_ids
+categorical_attributes
+geometry
+geometry_mask
+edge_index
+edge_type_ids
+graph_offsets
+```
+
+The first six values are C3 graph semantics. `graph_offsets` is the minimum
+separate bookkeeping needed to validate graph boundaries and slice graph-local
+pooling. It is never embedded, projected, concatenated to node content, or
+used as a learned feature. The encoder accepts no target, operation sequence,
+family/template/split label, node graph ID, edge offset, padding position, or
+local index feature, and it registers no position-embedding parameter.
+
+### Relational layers and pooling
+
+Each of the three layers retains the stored dependent-to-reference edge
+orientation and constructs its reverse message direction internally. Five
+semantic edge types in two directions produce ten channels. Every layer owns
+two `[32, 32]` learned bases and one separate pair of mixing coefficients for
+each channel. The resulting ten transforms therefore lie in the span of the
+two bases.
+
+For every receiver and directed channel, messages are summed with
+`index_add_`, divided by that channel's receiver degree clamped to at least
+one, and then summed across channels. There is no second division by the
+number of active channels. Empty channels contribute exactly zero. A learned
+self projection, GELU, dropout, residual connection, and LayerNorm keep
+isolated nodes and completely empty edge sets finite.
+
+After three layers, each graph is pooled independently by two learned
+32-dimensional queries using four-head cross-attention. Each query attends
+only to the node interval identified by that graph's offsets. Cross-graph
+edges are rejected before message aggregation, and separate attention calls
+prevent cross-graph pooling.
+
+### Permutation properties and controlled diameter
+
+The diagnostic node interface is permutation equivariant: after a consistent
+node permutation and endpoint relabeling, applying the inverse permutation to
+node outputs recovers the originals. The pooled memory is permutation
+invariant. Tests freeze float32 tolerances at `atol=1e-6`, `rtol=1e-5` and
+float64 tolerances at approximately `1e-12` for both values, always in
+evaluation mode.
+
+Procedural in-memory fixtures verify these maximum undirected diameters:
+
+| Template | E | R | EE | ER | RE | RR | Maximum |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Diameter | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
+
+No corpus manifest or history payload is used for this verification. The
+frozen three relational layers therefore cover the complete controlled
+template diameter.
+
+### C4 parameter counts and capacity gate
+
+The flat feed-forward width is fixed at 192 and the graph pooling
+feed-forward width remains 64. Increasing only the flat width from the
+inherited 64 is the preregistered arithmetic-only capacity adjustment; it was
+chosen before observing encoder behavior or training results. The inherited
+implementation instantiated at width 192 remains the flat parity reference.
+
+| Component | Trainable parameters |
+|---|---:|
+| Graph node initialization | 4,224 |
+| Graph relational layer 1 | 3,188 |
+| Graph relational layer 2 | 3,188 |
+| Graph relational layer 3 | 3,188 |
+| Relation bases, nested in the three layers | 6,144 |
+| Relation/direction mixing, nested in the three layers | 60 |
+| Graph-local pooling, including latent queries | 8,608 |
+| Graph bottleneck projection | 1,072 |
+| **Complete graph encoder** | **23,468** |
+| **Complete flat encoder wrapper** | **22,800** |
+
+The graph arm has 668 more parameters, or `2.9298245614%` relative to the flat
+control. This passes the frozen 5% rule. The nested basis and mixing rows are
+reported for auditability and must not be added again to the relational-layer
+totals. Parameter matching does not match receptive fields: the flat
+Transformer has global self-attention, while the graph arm has a three-hop
+typed receptive field.
+
+The exact module counts, parameter-object disjointness, direction and edge-type
+sensitivity, batch isolation, continuous flat parity, quantizer non-invocation,
+finite gradients, and float32/float64 permutation properties are covered by
+`tests/test_encoders.py`. The current macOS Python environment has no PyTorch,
+so those real-tensor checks remain pending in the authoritative Python
+3.8/PyTorch 1.11 Adroit environment rather than being reported as local
+passes.
+
 ## Frozen identities and training policy
 
 | Role | Literal |
@@ -397,11 +534,8 @@ The non-C2 package boundary uses:
 
 ## Explicit limitations
 
-- C3 completes paired batching, target separation, padding/offset validation,
-  and explicit permutation diagnostics. C4 relational message passing has not
-  begun.
-- No relational or flat neural encoder, model, or decoder class exists in this
-  package yet.
+- C4 implements the two standalone encoder arms only. It does not connect them
+  to a shared decoder.
 - No loss, training loop, checkpoint, evaluation, or systematic-access
   capability exists.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
@@ -410,5 +544,6 @@ The non-C2 package boundary uses:
   check on Adroit as job `3344235`; see the
   [validation record](../../docs/experiments/ge1_c3_cpu_validation.md).
 - C4 and every later implementation addition still require their own
-  production-environment validation; C3's result does not validate code that
-  does not yet exist.
+  production-environment validation. C4's real-PyTorch validation is pending;
+  C3's result does not validate the new encoder code.
+- C5 and every later GE1 chunk have not begun.

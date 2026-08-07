@@ -1,4 +1,4 @@
-"""GE1 configuration, guarded data access, canonicalization, and batching."""
+"""GE1 configuration, guarded data access, batching, and C4 encoders."""
 
 from .batching import (
     FlatEncoderInput,
@@ -36,3 +36,25 @@ __all__ = (
     "load_train",
     "permute_graph",
 )
+
+try:
+    from .encoders import (
+        EncodedMemory,
+        FlatProgramEncoder,
+        TypedGraphProgramEncoder,
+        capacity_difference_percent,
+        default_encoder_config,
+        encoder_parameter_report,
+    )
+except ImportError as exc:
+    if exc.name != "torch":
+        raise
+else:
+    __all__ = __all__ + (
+        "EncodedMemory",
+        "FlatProgramEncoder",
+        "TypedGraphProgramEncoder",
+        "capacity_difference_percent",
+        "default_encoder_config",
+        "encoder_parameter_report",
+    )

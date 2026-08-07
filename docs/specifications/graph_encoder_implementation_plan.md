@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0 and Stage 1 paired data path complete; C3 authoritative CPU validation passed; neural model implementation not begun |
+| Status | Accepted protocol; C0-C3 complete; C4 standalone encoders implemented with authoritative real-PyTorch validation pending; C5 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -75,8 +75,10 @@ ADR-0004:
 C0 is complete under the frozen
 [Stage 0 preregistration](ge1_stage0_preregistration.md). The Stage 1 paired
 data path is implemented, and its C3 authoritative Python 3.8/PyTorch 1.11 CPU
-validation passed as Adroit job `3344235`; neural model implementation has not
-begun. RR and ER payload access remains restricted by the accepted
+validation passed as Adroit job `3344235`. C4 implements the standalone flat
+and typed-graph encoders; its real-PyTorch validation remains pending because
+PyTorch is unavailable in the local environment. C5 and later implementation
+has not begun. RR and ER payload access remains restricted by the accepted
 staged-access rules.
 
 ## Evidence that constrains the design
@@ -480,6 +482,14 @@ and targets, and all six controlled families recover identically after
 arbitrary consistent node permutation.
 
 ### Stage 2 — Relational encoder unit
+
+**Implementation status:** C4 implements this stage with the frozen two bases,
+ten directed channels, three layers, continuous memory contract, graph-local
+pooling, and a capacity-matched flat wrapper. Static, grammar, diameter, and
+non-PyTorch tests pass locally. The real-tensor, parity, gradient, sensitivity,
+batch-isolation, exact module-count, and permutation tests await the
+authoritative Python 3.8/PyTorch 1.11 CPU environment. Stage 3/C5 has not
+begun.
 
 1. Implement relation-basis mixing and both edge orientations.
 2. Implement degree normalization with `index_add_`.

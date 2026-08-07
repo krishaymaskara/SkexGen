@@ -18,8 +18,9 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0 frozen; Stage 1 paired data path complete; neural model not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C3 complete; C4 standalone encoders implemented; C5 not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
+| GE1 C4 validation | Static/local checks passed; Python 3.8/PyTorch 1.11 real-tensor validation pending on Adroit |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -73,6 +74,11 @@ authorize Graph V1 C2.
   canonicalization, and C3 target-separated paired flat/graph batching.
 - Authoritative C3 compatibility validation under Python 3.8.13 and PyTorch
   1.11.0 on Adroit CPU, including an unskipped real-PyTorch tensor smoke.
+- C4 continuous flat wrapper and position-free typed graph encoder with ten
+  directed relation channels, three two-basis layers, graph-local pooling,
+  explicit VQ bypass, and a common encoded-memory contract.
+- C4 arithmetic capacity match: 22,800 flat versus 23,468 graph encoder
+  parameters, a 2.93% difference relative to the flat control.
 
 ## Frozen comparison
 
@@ -164,11 +170,13 @@ and records zero protected payload access. C0 is complete. The Stage 1 paired
 data path is implemented and procedurally validated for all six controlled
 templates. Its C3 production-environment compatibility gate passed on Adroit
 CPU as job `3344235`; the detailed evidence and provenance limitations are in
-the [C3 validation record](experiments/ge1_c3_cpu_validation.md). Neural
-encoder and model work has not begun. The immediate engineering gate is C4,
-the position-free relational encoder unit, with bookkeeping restricted to
-addressing, membership, scatter/gather, masking, and graph-local pooling. C4
-has not begun.
+the [C3 validation record](experiments/ge1_c3_cpu_validation.md). C4 now
+implements the two standalone continuous encoders with bookkeeping restricted
+to addressing, membership, scatter/gather, masking, and graph-local pooling.
+The local environment has no PyTorch, so the immediate engineering gate is the
+authoritative C4 Python 3.8/PyTorch 1.11 CPU validation of parity, gradients,
+sensitivity, isolation, parameter counts, and permutation properties. C5
+shared-decoder integration and every later chunk have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed
