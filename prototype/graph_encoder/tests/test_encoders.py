@@ -36,12 +36,15 @@ if torch is not None:
         CAPACITY_TOLERANCE_PERCENT,
         FLAT_CAPACITY_MATCHED_FEEDFORWARD_WIDTH,
         GRAPH_FEEDFORWARD_WIDTH,
+        SHARED_INITIALIZATION_COMPONENTS,
+        SHARED_INITIALIZATION_FEEDFORWARD_WIDTH,
         EncodedMemory,
         FlatProgramEncoder,
         TypedGraphProgramEncoder,
         capacity_difference_percent,
         default_encoder_config,
         encoder_parameter_report,
+        shared_initialization_source,
     )
     from prototype.graph_encoder.relational import (
         DIRECTED_RELATION_CHANNELS,
@@ -675,6 +678,66 @@ class InterfaceAndCapacityTests(C4TensorTestCase):
         self.assertTrue(flat_ids)
         self.assertTrue(graph_ids)
         self.assertTrue(flat_ids.isdisjoint(graph_ids))
+
+    def test_shared_components_are_byte_identical_across_arms_at_one_seed(self):
+        """Genuinely shared components must not inherit arm-specific RNG drift.
+
+        The two arms build differently sized Transformers, so components drawn
+        after the encoder would otherwise diverge at the same seed. Both arms
+        therefore copy shared components from one arm-independent source built
+        first, with no global reseeding inside either constructor.
+        """
+
+        torch.manual_seed(131)
+        flat = FlatProgramEncoder()
+        torch.manual_seed(131)
+        graph = TypedGraphProgramEncoder()
+
+        for name in SHARED_INITIALIZATION_COMPONENTS:
+            flat_module = getattr(flat, name)
+            graph_module = getattr(graph, name)
+            with self.subTest(component=name):
+                if isinstance(flat_module, torch.nn.Parameter):
+                    self.assertTrue(torch.equal(flat_module, graph_module))
+                    continue
+                flat_state = flat_module.state_dict()
+                graph_state = graph_module.state_dict()
+                self.assertEqual(tuple(flat_state), tuple(graph_state))
+                self.assertTrue(flat_state)
+                for key in flat_state:
+                    self.assertTrue(
+                        torch.equal(flat_state[key], graph_state[key]),
+                        "{}.{} differs across arms".format(name, key),
+                    )
+
+        # The arm-specific Transformer is deliberately not shared.
+        self.assertFalse(hasattr(graph, "encoder"))
+        # Sharing values must not share Parameter objects.
+        flat_ids = {id(parameter) for parameter in flat.parameters()}
+        graph_ids = {id(parameter) for parameter in graph.parameters()}
+        self.assertTrue(flat_ids.isdisjoint(graph_ids))
+
+    def test_shared_initialization_source_is_arm_independent(self):
+        flat_config = default_encoder_config("flat")
+        graph_config = default_encoder_config("typed_graph")
+        torch.manual_seed(137)
+        from_flat = shared_initialization_source(flat_config)
+        torch.manual_seed(137)
+        from_graph = shared_initialization_source(graph_config)
+        self.assertEqual(
+            from_flat.config.feedforward_dim,
+            SHARED_INITIALIZATION_FEEDFORWARD_WIDTH,
+        )
+        self.assertEqual(
+            from_graph.config.feedforward_dim,
+            SHARED_INITIALIZATION_FEEDFORWARD_WIDTH,
+        )
+        first = from_flat.state_dict()
+        second = from_graph.state_dict()
+        self.assertEqual(tuple(first), tuple(second))
+        self.assertTrue(
+            all(torch.equal(first[name], second[name]) for name in first)
+        )
 
     def test_exact_component_parameter_counts_and_capacity_gate(self):
         flat = FlatProgramEncoder()

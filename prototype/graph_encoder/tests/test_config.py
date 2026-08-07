@@ -12,6 +12,9 @@ from prototype.graph_encoder.config import (
     CHECKPOINT_SCHEMA,
     EXPERIMENT_IDENTITY,
     FLAT_ARM,
+    FROZEN_FLAT_FEEDFORWARD_WIDTH,
+    FROZEN_GRAPH_FEEDFORWARD_WIDTH,
+    FROZEN_RELATION_BASIS_COUNT,
     GE1Config,
     GE1TrainingConfig,
     GRAPH_ARM,
@@ -19,13 +22,21 @@ from prototype.graph_encoder.config import (
     PLANNED_SEEDS,
     PROTOCOL_IDENTITY,
     SHARED_DECODER,
+    frozen_encoder_config,
+    frozen_feedforward_width,
 )
 from prototype.graph_encoder.errors import GraphEncoderError
 
 
+def _flat():
+    """The complete frozen flat configuration; width differs per arm."""
+
+    return frozen_encoder_config("flat")
+
+
 class GE1ConfigTests(unittest.TestCase):
     def test_exact_identities_and_derived_arm(self):
-        flat = GE1Config("flat")
+        flat = _flat()
         graph = GE1Config("typed_graph")
         self.assertEqual(flat.model_family, MODEL_FAMILY)
         self.assertEqual(flat.shared_decoder, SHARED_DECODER)
@@ -44,33 +55,65 @@ class GE1ConfigTests(unittest.TestCase):
         self.assertNotIn("NaN", config.to_json())
         self.assertNotIn("Infinity", config.to_json())
 
-    def test_only_capacity_adjustment_fields_are_variable(self):
+    def test_capacity_adjustment_fields_are_frozen_at_selected_values(self):
+        """The Stage 4 match is complete, so both former knobs are now fixed."""
+
         self.assertEqual(
             CAPACITY_ADJUSTMENT_FIELDS,
             ("relation_basis_count", "encoder_feedforward_width"),
         )
-        adjusted = replace(
-            GE1Config("typed_graph"),
-            relation_basis_count=1,
-            encoder_feedforward_width=128,
+        self.assertEqual(FROZEN_RELATION_BASIS_COUNT, 2)
+        self.assertEqual(FROZEN_FLAT_FEEDFORWARD_WIDTH, 192)
+        self.assertEqual(FROZEN_GRAPH_FEEDFORWARD_WIDTH, 64)
+        self.assertEqual(frozen_feedforward_width("flat"), 192)
+        self.assertEqual(frozen_feedforward_width("typed_graph"), 64)
+        with self.assertRaises(GraphEncoderError):
+            frozen_feedforward_width("graph")
+
+        for encoder, width in (("flat", 192), ("typed_graph", 64)):
+            config = frozen_encoder_config(encoder)
+            self.assertEqual(config.encoder_feedforward_width, width)
+            self.assertEqual(config.relation_basis_count, 2)
+            config.validate()
+
+        rejected = (
+            replace(_flat(), relation_basis_count=1),
+            replace(_flat(), relation_basis_count=3),
+            replace(_flat(), encoder_feedforward_width=64),
+            replace(_flat(), encoder_feedforward_width=128),
+            replace(GE1Config("typed_graph"), relation_basis_count=1),
+            replace(GE1Config("typed_graph"), encoder_feedforward_width=192),
         )
-        adjusted.validate()
+        for config in rejected:
+            with self.subTest(config=config):
+                with self.assertRaises(GraphEncoderError) as caught:
+                    config.validate()
+                self.assertEqual(
+                    caught.exception.code, "unauthorized_configuration"
+                )
+
+    def test_bare_flat_config_is_incomplete_without_the_frozen_width(self):
+        """`GE1Config('flat')` alone carries the graph width and must fail."""
+
+        with self.assertRaises(GraphEncoderError) as caught:
+            GE1Config("flat").validate()
+        self.assertEqual(caught.exception.code, "unauthorized_configuration")
 
     def test_invalid_encoder_seed_bottleneck_and_identity(self):
         cases = (
-            (replace(GE1Config("flat"), encoder="graph"), "invalid_configuration"),
-            (replace(GE1Config("flat"), seed=2025), "unauthorized_configuration"),
-            (replace(GE1Config("flat"), seed=True), "invalid_configuration"),
+            (replace(_flat(), encoder="graph"), "invalid_configuration"),
+            (replace(_flat(), seed=2025), "unauthorized_configuration"),
+            (replace(_flat(), seed=True), "invalid_configuration"),
             (
-                replace(GE1Config("flat"), bottleneck_mode="discrete"),
+                replace(_flat(), bottleneck_mode="discrete"),
                 "unauthorized_configuration",
             ),
             (
-                replace(GE1Config("flat"), model_family="GE1-MODEL-v2"),
+                replace(_flat(), model_family="GE1-MODEL-v2"),
                 "identity_mismatch",
             ),
             (
-                replace(GE1Config("flat"), checkpoint_schema="checkpoint"),
+                replace(_flat(), checkpoint_schema="checkpoint"),
                 "identity_mismatch",
             ),
         )
@@ -82,18 +125,18 @@ class GE1ConfigTests(unittest.TestCase):
 
     def test_invalid_dimensions_layers_heads_dropout_and_losses(self):
         cases = (
-            replace(GE1Config("flat"), model_dim=0),
-            replace(GE1Config("flat"), model_dim=True),
-            replace(GE1Config("flat"), attention_heads=3),
-            replace(GE1Config("flat"), relational_layers=2),
-            replace(GE1Config("flat"), relation_basis_count=0),
-            replace(GE1Config("flat"), encoder_feedforward_width=False),
-            replace(GE1Config("flat"), dropout=0.5),
-            replace(GE1Config("flat"), dropout=float("nan")),
-            replace(GE1Config("flat"), dropout=float("inf")),
-            replace(GE1Config("flat"), node_type_loss_weight=0.0),
-            replace(GE1Config("flat"), graph_edge_loss_weight=True),
-            replace(GE1Config("flat"), geometry_loss_weight=float("nan")),
+            replace(_flat(), model_dim=0),
+            replace(_flat(), model_dim=True),
+            replace(_flat(), attention_heads=3),
+            replace(_flat(), relational_layers=2),
+            replace(_flat(), relation_basis_count=0),
+            replace(_flat(), encoder_feedforward_width=False),
+            replace(_flat(), dropout=0.5),
+            replace(_flat(), dropout=float("nan")),
+            replace(_flat(), dropout=float("inf")),
+            replace(_flat(), node_type_loss_weight=0.0),
+            replace(_flat(), graph_edge_loss_weight=True),
+            replace(_flat(), geometry_loss_weight=float("nan")),
         )
         for config in cases:
             with self.subTest(config=config):

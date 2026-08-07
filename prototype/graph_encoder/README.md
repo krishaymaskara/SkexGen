@@ -59,6 +59,8 @@ from prototype.graph_encoder import (
     capacity_difference_percent,
     default_encoder_config,
     encoder_parameter_report,
+    frozen_encoder_config,
+    frozen_feedforward_width,
     load_development,
     load_train,
     permute_graph,
@@ -66,8 +68,10 @@ from prototype.graph_encoder import (
 ```
 
 When PyTorch is installed, the package additionally exports
-`EncodedMemory`, `FlatProgramEncoder`, and `TypedGraphProgramEncoder`. The
-tuple-only C1-C3 API remains importable without PyTorch.
+`EncodedMemory`, `FlatProgramEncoder`, `TypedGraphProgramEncoder`, and
+`shared_initialization_source`. The tuple-only C1-C3 API, including
+`frozen_encoder_config` and `frozen_feedforward_width`, remains importable
+without PyTorch.
 
 `load_train(corpus_dir)` loads the complete authoritative train assignment.
 Its optional `family_ids` argument accepts only a sorted, unique, balanced
@@ -439,11 +443,40 @@ template diameter.
 
 ### C4 parameter counts and capacity gate
 
-The flat feed-forward width is fixed at 192 and the graph pooling
-feed-forward width remains 64. Increasing only the flat width from the
+The flat feed-forward width is frozen at 192 and the graph pooling
+feed-forward width at 64. Increasing only the flat width from the
 inherited 64 is the preregistered arithmetic-only capacity adjustment; it was
 chosen before observing encoder behavior or training results. The inherited
-implementation instantiated at width 192 remains the flat parity reference.
+implementation instantiated at width 192 remains the flat parity reference;
+original Flat V6 at width 64 is not, and numerical equality with it is neither
+expected nor required.
+
+#### Why the flat arm was widened
+
+The preregistration allows exactly two capacity adjustments: relation-basis
+count and encoder feed-forward width. At the inherited width, and at every
+value of the basis knob, the graph arm cannot be brought within the 5% gate by
+shrinking the treatment:
+
+| Configuration | Flat encoder | Graph encoder | Graph excess over flat |
+|---|---:|---:|---:|
+| Inherited width 64, two bases | 14,480 | 23,468 | 62.07% |
+| Inherited width 64, one basis | 14,480 | 20,366 | 40.65% |
+| **Selected: flat width 192, two bases** | **22,800** | **23,468** | **2.93%** |
+
+One relation basis is the smallest the decomposition admits, and it still
+leaves the graph arm 40.65% larger. Widening the flat feed-forward layer was
+therefore the only adjustment within the authorized knobs that could satisfy
+the gate; the basis count stayed at two because reducing it neither closes the
+gap nor serves any other purpose. All counts include the final
+`nn.TransformerEncoder` `LayerNorm`, which is easy to omit when recomputing
+these by hand.
+
+This is recorded as arithmetic, not as an expected advantage for either arm.
+A larger control has more parameters, but parameter count is not monotonically
+related to capability, and architecture and optimization effects are not
+additive. The direction of the adjustment must not be read as making a
+treatment win harder or easier.
 
 | Component | Trainable parameters |
 |---|---:|
@@ -465,10 +498,55 @@ totals. Parameter matching does not match receptive fields: the flat
 Transformer has global self-attention, while the graph arm has a three-hop
 typed receptive field.
 
+#### Frozen capacity contract
+
+Both former capacity-adjustment fields are now frozen at their selected values
+in `config.py`, so configuration and the encoder modules tell one story:
+`relation_basis_count` is 2 in every arm, and `encoder_feedforward_width` is
+192 for `flat` and 64 for `typed_graph`. `GE1Config.validate()` rejects any
+other value with `unauthorized_configuration`.
+
+Because the frozen width differs per arm, `GE1Config(encoder)` alone is **not**
+a complete configuration — its default width is the graph value. Use
+`frozen_encoder_config(encoder, seed)` (re-exported by `encoders.py` as
+`default_encoder_config`) as the constructor. `CAPACITY_ADJUSTMENT_FIELDS` is
+retained to name what could have been adjusted, not what still can be.
+
+### Shared-component initialization across arms
+
+The two arms build differently sized Transformers, and `FlatMixedVQModel`
+constructs its bottleneck projections *after* its encoder. Left alone, the arms
+would therefore draw different values for `to_codebook` and `from_codebook` at
+the same seed, even though those projections are a shared latent-interface
+component.
+
+Both arms instead copy every genuinely shared component from one
+arm-independent source, `shared_initialization_source(config)`, which is
+constructed **first**, before any arm-specific module, at a fixed feed-forward
+width. The random stream reaching the shared components is therefore identical
+in both arms, and no constructor reseeds globally. The shared set is:
+
+```text
+field_embeddings, geometry_projection, geometry_mask_projection,
+input_norm, latent_queries, to_codebook, from_codebook
+```
+
+The Transformer encoder of the flat arm and the relational core and pooling
+stack of the graph arm are arm-specific and are not shared. Values are shared;
+`Parameter` objects are not, so training one arm cannot affect the other. The
+Transformer this shared source builds is discarded.
+
+`FlatProgramEncoder.from_inherited(model)` is unaffected: an explicitly
+supplied model remains authoritative for every component, which is what makes
+exact parity against it testable.
+
+When C5 introduces the shared decoder, the same rule should apply to it: shared
+components identical at a given seed, arm-specific components independent.
+
 The exact module counts, parameter-object disjointness, direction and edge-type
 sensitivity, batch isolation, continuous flat parity, quantizer non-invocation,
-finite gradients, and float32/float64 permutation properties are covered by
-`tests/test_encoders.py`. Authoritative C4 CPU validation on `adroit-h11n3`
+finite gradients, shared-component initialization equality, and float32/float64
+permutation properties are covered by `tests/test_encoders.py`. Authoritative C4 CPU validation on `adroit-h11n3`
 passed all 26 targeted C4 tests and all 85 graph-encoder tests with zero skips;
 see the [validation record](../../docs/experiments/ge1_c4_cpu_validation.md).
 

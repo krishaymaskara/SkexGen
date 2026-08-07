@@ -508,7 +508,12 @@ node numbering does not change treatment memory.
 ### Stage 3 — Shared decoder refactor
 
 1. Wrap the common latent-memory-to-history path.
-2. Prove flat-encoder parity with the frozen implementation on fixed inputs.
+2. Prove flat-encoder parity on fixed inputs against the **inherited
+   implementation instantiated at the frozen GE1 flat feed-forward width of
+   192**, not against original Flat V6 at width 64. The C4 capacity match
+   widened the flat control's Transformer feed-forward layer, so Flat V6 is no
+   longer the parity reference; numerical equality with it is neither expected
+   nor required. Flat V6 remains frozen historical evidence.
 3. Route both encoders through the same decoder object type and output schema.
 4. Keep raw, constrained, and converted predictions separately observable.
 

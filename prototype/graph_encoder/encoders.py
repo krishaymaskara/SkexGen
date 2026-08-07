@@ -12,16 +12,35 @@ from prototype.flat_baseline.config import FlatBaselineConfig
 from prototype.flat_baseline.model import FlatMixedVQModel
 from prototype.model_data.geometry import GEOMETRY_WIDTH
 
-from .config import GE1Config
+from .config import (
+    FROZEN_FLAT_FEEDFORWARD_WIDTH,
+    FROZEN_GRAPH_FEEDFORWARD_WIDTH,
+    FROZEN_RELATION_BASIS_COUNT,
+    frozen_encoder_config,
+)
 from .relational import RelationalEncoderCore
 
 
-# This arithmetic-only capacity adjustment is frozen before any encoder
-# behavior or training result is observed. The graph feed-forward width stays
-# at the inherited 64; the flat Transformer width is the sole adjusted field.
-FLAT_CAPACITY_MATCHED_FEEDFORWARD_WIDTH = 192
-GRAPH_FEEDFORWARD_WIDTH = 64
+# Re-exported from config so configuration and modules name one frozen value.
+FLAT_CAPACITY_MATCHED_FEEDFORWARD_WIDTH = FROZEN_FLAT_FEEDFORWARD_WIDTH
+GRAPH_FEEDFORWARD_WIDTH = FROZEN_GRAPH_FEEDFORWARD_WIDTH
 CAPACITY_TOLERANCE_PERCENT = 5.0
+
+# Components that are genuinely shared between the two arms are drawn from one
+# arm-independent source model so that the same seed yields byte-identical
+# initial values in both conditions. The source is constructed first, before any
+# arm-specific module, so the random stream reaching these components does not
+# depend on the arm's Transformer width. No constructor reseeds globally.
+SHARED_INITIALIZATION_FEEDFORWARD_WIDTH = FROZEN_GRAPH_FEEDFORWARD_WIDTH
+SHARED_INITIALIZATION_COMPONENTS = (
+    "field_embeddings",
+    "geometry_projection",
+    "geometry_mask_projection",
+    "input_norm",
+    "latent_queries",
+    "to_codebook",
+    "from_codebook",
+)
 
 
 @dataclass(frozen=True)
@@ -41,17 +60,36 @@ class EncodedMemory:
 def default_encoder_config(encoder, seed=2026):
     """Return the capacity-matched C4 configuration for one encoder arm."""
 
-    width = (
-        FLAT_CAPACITY_MATCHED_FEEDFORWARD_WIDTH
-        if encoder == "flat"
-        else GRAPH_FEEDFORWARD_WIDTH
+    return frozen_encoder_config(encoder, seed)
+
+
+def shared_initialization_source(config):
+    """Build the arm-independent source for genuinely shared components.
+
+    Its feed-forward width is fixed, so both arms consume the identical random
+    stream up to and including the bottleneck projections. The Transformer this
+    source builds is discarded; only its width-independent modules are copied.
+    """
+
+    shared = replace(
+        config,
+        encoder="typed_graph",
+        encoder_feedforward_width=SHARED_INITIALIZATION_FEEDFORWARD_WIDTH,
     )
-    config = replace(
-        GE1Config(encoder=encoder, seed=seed),
-        encoder_feedforward_width=width,
+    shared.validate()
+    return FlatMixedVQModel(_flat_baseline_config(shared))
+
+
+def _copy_shared_components(target, source):
+    target.field_embeddings = copy.deepcopy(source.field_embeddings)
+    target.geometry_projection = copy.deepcopy(source.geometry_projection)
+    target.geometry_mask_projection = copy.deepcopy(
+        source.geometry_mask_projection
     )
-    config.validate()
-    return config
+    target.input_norm = copy.deepcopy(source.input_norm)
+    target.latent_queries = nn.Parameter(source.latent_queries.detach().clone())
+    target.to_codebook = copy.deepcopy(source.to_codebook)
+    target.from_codebook = copy.deepcopy(source.from_codebook)
 
 
 class FlatProgramEncoder(nn.Module):
@@ -64,26 +102,27 @@ class FlatProgramEncoder(nn.Module):
         if self.config.encoder != "flat":
             raise ValueError("FlatProgramEncoder requires encoder='flat'")
 
-        source = inherited_model
-        if source is None:
-            source = FlatMixedVQModel(_flat_baseline_config(self.config))
-        _validate_inherited_model(source, self.config)
+        if inherited_model is not None:
+            # An explicitly supplied model is authoritative for every component,
+            # which is what makes exact parity against it testable.
+            _validate_inherited_model(inherited_model, self.config)
+            _copy_shared_components(self, inherited_model)
+            self.node_position_embedding = copy.deepcopy(
+                inherited_model.node_position_embedding
+            )
+            self.encoder = copy.deepcopy(inherited_model.encoder)
+            return
 
-        # Deep copies preserve the inherited state and computation without
-        # retaining its quantizer, decoder, or shared live Parameters.
-        self.field_embeddings = copy.deepcopy(source.field_embeddings)
-        self.geometry_projection = copy.deepcopy(source.geometry_projection)
-        self.geometry_mask_projection = copy.deepcopy(
-            source.geometry_mask_projection
-        )
+        # Shared components come from the arm-independent source built first;
+        # only the width-dependent Transformer comes from the arm-width source.
+        shared_source = shared_initialization_source(self.config)
+        arm_source = FlatMixedVQModel(_flat_baseline_config(self.config))
+        _validate_inherited_model(arm_source, self.config)
+        _copy_shared_components(self, shared_source)
         self.node_position_embedding = copy.deepcopy(
-            source.node_position_embedding
+            shared_source.node_position_embedding
         )
-        self.input_norm = copy.deepcopy(source.input_norm)
-        self.latent_queries = nn.Parameter(source.latent_queries.detach().clone())
-        self.encoder = copy.deepcopy(source.encoder)
-        self.to_codebook = copy.deepcopy(source.to_codebook)
-        self.from_codebook = copy.deepcopy(source.from_codebook)
+        self.encoder = copy.deepcopy(arm_source.encoder)
 
     @classmethod
     def from_inherited(cls, inherited_model, config=None):
@@ -168,25 +207,19 @@ class TypedGraphProgramEncoder(nn.Module):
         self.config.validate()
         if self.config.encoder != "typed_graph":
             raise ValueError("TypedGraphProgramEncoder requires encoder='typed_graph'")
-        if self.config.relation_basis_count != 2:
+        if self.config.relation_basis_count != FROZEN_RELATION_BASIS_COUNT:
             raise ValueError("C4 requires exactly two relation bases")
         if self.config.encoder_feedforward_width != GRAPH_FEEDFORWARD_WIDTH:
             raise ValueError("C4 graph feed-forward width must remain 64")
 
-        source = FlatMixedVQModel(_flat_baseline_config(self.config))
-        self.field_embeddings = copy.deepcopy(source.field_embeddings)
-        self.geometry_projection = copy.deepcopy(source.geometry_projection)
-        self.geometry_mask_projection = copy.deepcopy(
-            source.geometry_mask_projection
-        )
-        self.input_norm = copy.deepcopy(source.input_norm)
+        shared_source = shared_initialization_source(self.config)
+        _copy_shared_components(self, shared_source)
         self.relational = RelationalEncoderCore(
             self.config.model_dim,
             self.config.relational_layers,
             self.config.relation_basis_count,
             self.config.dropout,
         )
-        self.latent_queries = nn.Parameter(source.latent_queries.detach().clone())
         self.pool_attention = nn.MultiheadAttention(
             self.config.model_dim,
             self.config.attention_heads,
@@ -209,8 +242,6 @@ class TypedGraphProgramEncoder(nn.Module):
         )
         self.pool_feedforward_dropout = nn.Dropout(self.config.dropout)
         self.pool_output_norm = nn.LayerNorm(self.config.model_dim)
-        self.to_codebook = copy.deepcopy(source.to_codebook)
-        self.from_codebook = copy.deepcopy(source.from_codebook)
 
     def initialize_nodes(
         self,

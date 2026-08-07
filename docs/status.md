@@ -21,6 +21,7 @@ specifications or new decision records.
 | GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
+| GE1 C4 review-fix revalidation | **Required and not yet run.** The C4 review fixes changed encoder construction after that validated commit; the recorded C4 result no longer covers current `prototype/graph_encoder` source |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -175,8 +176,20 @@ implements the two standalone continuous encoders with bookkeeping restricted
 to addressing, membership, scatter/gather, masking, and graph-local pooling.
 Its authoritative Adroit CPU validation passed all targeted and complete-suite
 tests; the exact-commit evidence and environment limitations are recorded in
-the [C4 validation record](experiments/ge1_c4_cpu_validation.md). C5
-shared-decoder integration and every later chunk have not begun, and no
+the [C4 validation record](experiments/ge1_c4_cpu_validation.md).
+
+A subsequent C4 implementation review produced four accepted fixes: the Stage 3
+parity reference now names the width-192 capacity-matched flat implementation
+rather than original Flat V6; relation-basis count and per-arm feed-forward
+width are frozen consistently in configuration and documentation; genuinely
+shared components are now initialized identically across arms from one
+arm-independent source; and the capacity rationale records the corrected
+inherited-width arithmetic. Those changes altered encoder construction, so the
+recorded C4 validation no longer covers current source. Local no-PyTorch
+checks pass, but a new authoritative Python 3.8 / PyTorch 1.11 Adroit CPU
+validation is required before C5 begins.
+
+C5 shared-decoder integration and every later chunk have not begun, and no
 next-stage work was performed while recording this result.
 
 No further Graph V1 correction or rerun is authorized. RR access remains

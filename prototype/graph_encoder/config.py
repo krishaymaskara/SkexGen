@@ -27,7 +27,15 @@ PLANNED_SEEDS = AUTHORIZED_SEEDS
 AUTHORIZED_FALLBACK_SEEDS = (2026, 2027)
 
 RELATIONAL_LAYERS = 3
-INITIAL_RELATION_BASIS_COUNT = 2
+
+# Relation-basis count and encoder feed-forward width were the two fields the
+# preregistration left adjustable for the Stage 4 capacity match. That match is
+# now complete and both are frozen at the values below. Basis count stays at the
+# initial two; the flat feed-forward width alone was widened from the inherited
+# 64 to 192. See the capacity rationale in the package README.
+FROZEN_RELATION_BASIS_COUNT = 2
+FROZEN_FLAT_FEEDFORWARD_WIDTH = 192
+FROZEN_GRAPH_FEEDFORWARD_WIDTH = 64
 
 TRAINING_EPOCHS = 50
 TRAINING_BATCH_SIZE = 8
@@ -44,10 +52,41 @@ PLATEAU_START_EPOCH = 10
 NORMALIZED_PREFIX_TRAIN_CEILING_SHORTFALL_MAX = 0.05
 COMPLETE_VALIDITY_TRAIN_CEILING_SHORTFALL_MAX = 0.10
 
+# The fields that *were* available for the capacity match. Both are now frozen;
+# the tuple is retained so the audit trail names what could have been adjusted.
 CAPACITY_ADJUSTMENT_FIELDS = (
     "relation_basis_count",
     "encoder_feedforward_width",
 )
+
+
+def frozen_feedforward_width(encoder):
+    """Return the frozen encoder feed-forward width for one arm."""
+
+    if encoder == "flat":
+        return FROZEN_FLAT_FEEDFORWARD_WIDTH
+    if encoder == "typed_graph":
+        return FROZEN_GRAPH_FEEDFORWARD_WIDTH
+    raise GraphEncoderError(
+        "invalid_configuration",
+        "encoder must be one of flat, typed_graph",
+    )
+
+
+def frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+    """Return the validated frozen configuration for one GE1 arm.
+
+    `GE1Config(encoder)` alone is not a complete configuration: the frozen
+    feed-forward width differs per arm, so this helper is the constructor.
+    """
+
+    config = GE1Config(
+        encoder=encoder,
+        seed=seed,
+        encoder_feedforward_width=frozen_feedforward_width(encoder),
+    )
+    config.validate()
+    return config
 
 _FLAT_CONTRACT = FlatBaselineConfig()
 _GRAPH_CONTRACT = GraphV1Config()
@@ -74,8 +113,8 @@ class GE1Config:
     latent_tokens: int = _FLAT_CONTRACT.latent_tokens
     bottleneck_dim: int = _FLAT_CONTRACT.codebook_dim
     relational_layers: int = RELATIONAL_LAYERS
-    relation_basis_count: int = INITIAL_RELATION_BASIS_COUNT
-    encoder_feedforward_width: int = _FLAT_CONTRACT.feedforward_dim
+    relation_basis_count: int = FROZEN_RELATION_BASIS_COUNT
+    encoder_feedforward_width: int = FROZEN_GRAPH_FEEDFORWARD_WIDTH
     dropout: float = _FLAT_CONTRACT.dropout
     node_type_loss_weight: float = _GRAPH_CONTRACT.node_type_loss_weight
     categorical_loss_weight: float = _GRAPH_CONTRACT.categorical_loss_weight
@@ -163,6 +202,24 @@ class GE1Config:
                 raise GraphEncoderError(
                     "unauthorized_configuration",
                     "{} must equal the frozen value {}".format(name, expected),
+                )
+
+        # Both former capacity-adjustment fields are frozen at their selected
+        # values, so configuration and the encoder modules tell one story.
+        selected_capacity = (
+            ("relation_basis_count", FROZEN_RELATION_BASIS_COUNT),
+            (
+                "encoder_feedforward_width",
+                frozen_feedforward_width(self.encoder),
+            ),
+        )
+        for name, expected in selected_capacity:
+            if getattr(self, name) != expected:
+                raise GraphEncoderError(
+                    "unauthorized_configuration",
+                    "{} is frozen at {} for encoder {}".format(
+                        name, expected, self.encoder
+                    ),
                 )
         _finite_range(self.dropout, "dropout", 0.0, 1.0, upper_inclusive=False)
         if float(self.dropout) != float(_FLAT_CONTRACT.dropout):

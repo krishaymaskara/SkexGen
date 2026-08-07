@@ -15,7 +15,12 @@ from .canonicalization import (
     GraphCanonicalizationInput,
     canonicalize_graph,
 )
-from .config import GE1Config, GE1TrainingConfig
+from .config import (
+    GE1Config,
+    GE1TrainingConfig,
+    frozen_encoder_config,
+    frozen_feedforward_width,
+)
 from .errors import GraphEncoderError
 from .partitions import load_development, load_train
 
@@ -32,6 +37,8 @@ __all__ = (
     "PairedBatch",
     "build_paired_batch",
     "canonicalize_graph",
+    "frozen_encoder_config",
+    "frozen_feedforward_width",
     "load_development",
     "load_train",
     "permute_graph",
@@ -45,6 +52,7 @@ try:
         capacity_difference_percent,
         default_encoder_config,
         encoder_parameter_report,
+        shared_initialization_source,
     )
 except ImportError as exc:
     if exc.name != "torch":
@@ -57,4 +65,5 @@ else:
         "capacity_difference_percent",
         "default_encoder_config",
         "encoder_parameter_report",
+        "shared_initialization_source",
     )
