@@ -657,10 +657,13 @@ Reload reconstructs the selected frozen arm and uses `strict=True`. Missing,
 unexpected, mislabeled, or incompatible metadata and state keys are terminal;
 there is no permissive fallback.
 
-C5 static tests pass locally. The real-tensor parity, autonomous, gradient,
-shared-state, and strict-reload tests require the authoritative Python
-3.8/PyTorch 1.11 CPU environment and remain pending until an Adroit validation
-record is supplied.
+Initial authoritative Adroit job `3344278` ran all 22 focused C5 tests with
+zero skips and zero errors: 19 passed and three test assertions failed. Audit
+found legacy-VQ-provenance, conversion-field-name, and batch-row-order defects
+in the assertions, not production decoder behavior. The corrected tests pass
+locally where available, but local Python has no PyTorch. Real-tensor C5
+acceptance therefore remains pending until the corrected exact commit passes
+the complete Python 3.8/PyTorch 1.11 CPU validation gate.
 
 ## Frozen identities and training policy
 

@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 implemented locally with authoritative runtime validation pending |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 implemented with a corrected exact-commit authoritative rerun pending |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -204,11 +204,20 @@ inventory, permitted bookkeeping routes, target-free autonomous result,
 common loss, and strict checkpoint are frozen in the
 [C5 shared-decoder contract](specifications/ge1_shared_decoder_contract.md).
 
-All locally available C5 static tests pass. This does **not** yet establish
-real-tensor parity or runtime acceptance because local Python has no PyTorch.
-The new C5 real-tensor tests must run without skips under Python 3.8 and
-PyTorch 1.11 on Adroit CPU before C5 is authoritatively validated. C6, C7,
-C8, training, evaluation, and protected access have not begun.
+The first authoritative C5 attempt, Adroit job `3344278` at exact commit
+`ffa6091cfecb37aa648ed3590f591f247a776754`, ran all 22 focused tests with zero
+skips and zero errors: 19 passed and three assertions failed. Audit traced the
+failures to test-contract mistakes involving legacy VQ provenance, outdated
+conversion-result field names, and a batch-row-order assumption. No production
+decoder or model source changed. The [failed-attempt
+record](experiments/ge1_c5_cpu_validation_attempt_3344278.md) preserves the
+exact evidence and protected-access audit.
+
+The test-only corrections pass all locally available C5 checks, but local
+Python has no PyTorch. The corrected exact commit must therefore rerun without
+skips under Python 3.8 and PyTorch 1.11 on Adroit CPU before C5 is
+authoritatively validated. C6, C7, C8, training, evaluation, and protected
+access have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

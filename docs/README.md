@@ -126,6 +126,10 @@ the immediate next action changes.
   validation](experiments/ge1_c4_review_fix_cpu_validation.md) — exact-commit
   revalidation of the frozen capacity contract and arm-independent shared
   initialization, including all C4 and graph-encoder tests with zero skips.
+- [GE1 C5 authoritative CPU validation attempt
+  3344278](experiments/ge1_c5_cpu_validation_attempt_3344278.md) — failed
+  focused-suite attempt traced to three test-contract assertions; C5 remains
+  unvalidated pending an exact-commit rerun.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

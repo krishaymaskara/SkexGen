@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C4 complete; C5 shared-decoder implementation complete locally with authoritative Python 3.8/PyTorch 1.11 CPU validation pending; C6 and later work not begun |
+| Status | Accepted protocol; C0-C4 complete; C5 shared-decoder implementation complete with a corrected exact-commit Python 3.8/PyTorch 1.11 CPU validation rerun pending; C6 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -81,11 +81,12 @@ and the subsequent capacity-freezing and shared-initialization review fixes
 were authoritatively revalidated on `adroit-h11n3` as job `3344265`: both new
 tests, all 28 C4 encoder tests, and all 88 graph-encoder tests passed with zero
 skips. C5 now implements the shared decoder, common loss, strict checkpoint,
-and additive frozen output-position contract. Its locally available static
-tests pass; its exact real-PyTorch parity and runtime tests remain pending in
-the authoritative Adroit environment. C6 and later implementation has not
-begun. RR and ER payload access remains restricted by the accepted
-staged-access rules.
+and additive frozen output-position contract. Initial Adroit job `3344278` ran
+all 22 focused tests with zero skips and zero errors; 19 passed and three
+test-contract assertions failed. Those failures required test-only corrections
+and no production model change. A corrected exact-commit authoritative rerun
+is pending. C6 and later implementation has not begun. RR and ER payload
+access remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -518,10 +519,12 @@ node numbering does not change treatment memory.
 
 **Implementation status:** C5 implements this stage. The additive
 [shared-decoder contract](ge1_shared_decoder_contract.md) freezes the parity
-boundary and exact output-position inventory. Local static validation passes;
-authoritative Python 3.8/PyTorch 1.11 CPU validation is pending. This status is
-an implementation claim, not a parity-result claim until the unskipped Adroit
-tests pass.
+boundary and exact output-position inventory. Authoritative Adroit job
+`3344278` reached all 22 focused tests with zero skips and zero errors, then
+failed three test-contract assertions. The assertions were corrected without
+changing production source; a corrected exact-commit rerun is pending. This
+status is an implementation claim, not a parity-result claim until every
+unskipped Adroit gate passes.
 
 1. Wrap the common latent-memory-to-history path.
 2. Prove decoder-component parity on fixed common memory. The constrained V6

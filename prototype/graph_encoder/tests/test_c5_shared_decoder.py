@@ -163,6 +163,11 @@ class DecoderComponentParityTests(C5TensorTestCase):
         target = prefix[4]
         retained_main_only = replace(
             retained,
+            # Latent indices are encoder/VQ provenance, not a decoder or graph
+            # contract output.  Put the retained decoder evidence under the
+            # same continuous-memory provenance as C5 before comparing every
+            # constrained graph field exactly.
+            code_indices=shared.code_indices,
             graph_edge_logits=retained.graph_main_pair_logits,
             graph_position_bias_logits=torch.zeros_like(
                 retained.graph_position_bias_logits
@@ -337,8 +342,8 @@ class PredictionLossAndCheckpointTests(C5TensorTestCase):
             not item.raised_failure for item in first.converted_prediction
         ))
         self.assertTrue(all(
-            hasattr(item.result, "first_failure")
-            and hasattr(item.result, "additional_failures")
+            hasattr(item.result, "primary_failure")
+            and hasattr(item.result, "secondary_failures")
             for item in first.converted_prediction
         ))
         self.assertTrue(all(
@@ -406,12 +411,21 @@ class PredictionLossAndCheckpointTests(C5TensorTestCase):
         edge = shared.graph_edge_logits.clone()
         remaining = shared.remaining_geometry.clone()
         categorical = tuple(item.clone() for item in shared.categorical_logits)
-        node[0, 4] = 1000.0
-        remaining[0, 4] = 1.0
-        edge[0, 4, :, :] = 1000.0
-        edge[0, :, 4, :] = -1000.0
+        node_counts = target["node_mask"].long().sum(dim=1)
+        padded_row = next(
+            index for index, count in enumerate(node_counts.tolist())
+            if count < target["node_mask"].size(1)
+        )
+        padded_position = int(node_counts[padded_row].item())
+        self.assertFalse(bool(
+            target["node_mask"][padded_row, padded_position].item()
+        ))
+        node[padded_row, padded_position] = 1000.0
+        remaining[padded_row, padded_position] = 1.0
+        edge[padded_row, padded_position, :, :] = 1000.0
+        edge[padded_row, :, padded_position, :] = -1000.0
         for item in categorical:
-            item[0, 4] = 1000.0
+            item[padded_row, padded_position] = 1000.0
         changed = replace(
             shared,
             node_type_logits=node,
@@ -423,8 +437,8 @@ class PredictionLossAndCheckpointTests(C5TensorTestCase):
             changed, target, profiles, frozen_encoder_config("flat")
         )
         torch.testing.assert_close(
-            observed.per_example["total"][0],
-            baseline.per_example["total"][0],
+            observed.per_example["total"][padded_row],
+            baseline.per_example["total"][padded_row],
             rtol=0.0,
             atol=0.0,
         )

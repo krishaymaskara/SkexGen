@@ -2,7 +2,7 @@
 
 | Field | Frozen value |
 |---|---|
-| Status | Implemented in C5; authoritative Python 3.8/PyTorch 1.11 CPU validation pending |
+| Status | Implemented in C5; initial authoritative attempt failed test assertions; corrected exact-commit rerun pending |
 | Scope | Stage 3 shared-decoder extraction and parity proof only |
 | Model identity | `GE1-MODEL-v1` |
 | Decoder identity | `GE1-SHARED-TYPED-EDGE-DECODER-V1` |
@@ -173,3 +173,12 @@ editing, or a position-aware graph encoder. It does not authorize or access RR,
 ER, IID, history-depth, geometry-extrapolation, a corpus manifest, or a CAD
 history payload. Authoritative C5 runtime acceptance remains pending until the
 new real-PyTorch tests pass under Python 3.8 and PyTorch 1.11 on CPU.
+
+Initial Adroit job `3344278` at commit
+`ffa6091cfecb37aa648ed3590f591f247a776754` ran all 22 focused tests with zero
+skips and zero errors; 19 passed and three test-contract assertions failed.
+The [attempt record](../experiments/ge1_c5_cpu_validation_attempt_3344278.md)
+shows that the corrections concern only legacy VQ provenance normalization,
+authoritative conversion-result field names, and discovery of padded positions
+after canonical batch sorting. Production decoder and model behavior is
+unchanged. The failed attempt is not C5 runtime acceptance.
