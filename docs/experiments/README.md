@@ -22,7 +22,7 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was updated on August 3, 2026 from branch
+This inventory was updated on August 7, 2026 from branch
 `graph-v1-experiment-record`. The documentation commit's literal hash is not
 embedded because it would be self-referential. The audit used:
 
@@ -62,6 +62,7 @@ frozen archive described below is now the primary evidence.
 | Graph V1 engineering readiness and C1 validation | Initial series `6484579`-`089b9f3`; C1 `0cd09ed` | failures `3338803`, `3338863`, `3338945`, `3339188`, `3339644`, `3339787`, `3340201`, `3341971`; passes `3339745`, `3341940`, `3341972` | Scheduler evidence and incomplete pilot namespace in complete recovery archive | Bounded fixtures plus one incomplete train epoch; systematic/test false | `verified-local` | [Record](b0_graph_v1_engineering_readiness.md) |
 | Initial Graph V1 | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` | `3341942` | Complete recovery archive plus lightweight metrics/log archive | 544 train / 68 IID validation; systematic/test false | `verified-local` | [Record](b0_graph_v1_initial.md) |
 | Graph V1 directed-position C1 | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` | validation `3341972`; pilot `3341974` | Complete recovery archive plus lightweight metrics/log archive | 544 train / 68 IID validation; systematic/test false | `verified-local` | [Record](b0_graph_v1_c1.md) |
+| GE1 C3 authoritative CPU compatibility validation | `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` | `3344235` | Local stdout/stderr and preserved runner listed in record | Fixture-only validation; authoritative manifest and CAD-history payloads not opened; systematic/test false | `verified-local` | [Record](ge1_c3_cpu_validation.md) |
 
 ### Current-through-August-3 coverage
 

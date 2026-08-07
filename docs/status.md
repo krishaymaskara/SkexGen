@@ -19,6 +19,7 @@ specifications or new decision records.
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
 | GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0 frozen; Stage 1 paired data path complete; neural model not begun |
+| GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -70,6 +71,8 @@ authorize Graph V1 C2.
 - Frozen commits and tags plus locally verified Graph V1 metrics/log archives.
 - GE1 C1 configuration and protected loading boundary, C2 position-free graph
   canonicalization, and C3 target-separated paired flat/graph batching.
+- Authoritative C3 compatibility validation under Python 3.8.13 and PyTorch
+  1.11.0 on Adroit CPU, including an unskipped real-PyTorch tensor smoke.
 
 ## Frozen comparison
 
@@ -159,10 +162,13 @@ preauthorized two-seed timing fallback. The
 the complete protocol, records the verified manifest and assignment hashes,
 and records zero protected payload access. C0 is complete. The Stage 1 paired
 data path is implemented and procedurally validated for all six controlled
-templates; neural encoder and model work has not begun. The immediate
-engineering gate is the position-free relational encoder unit, with
-bookkeeping restricted to addressing, membership, scatter/gather, masking,
-and graph-local pooling.
+templates. Its C3 production-environment compatibility gate passed on Adroit
+CPU as job `3344235`; the detailed evidence and provenance limitations are in
+the [C3 validation record](experiments/ge1_c3_cpu_validation.md). Neural
+encoder and model work has not begun. The immediate engineering gate is C4,
+the position-free relational encoder unit, with bookkeeping restricted to
+addressing, membership, scatter/gather, masking, and graph-local pooling. C4
+has not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

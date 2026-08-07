@@ -406,5 +406,9 @@ The non-C2 package boundary uses:
   capability exists.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
   closed throughout core GE1.
-- Actual Python 3.8 execution on Adroit remains the authoritative compatibility
-  check; local grammar parsing and compilation are preliminary checks only.
+- C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
+  check on Adroit as job `3344235`; see the
+  [validation record](../../docs/experiments/ge1_c3_cpu_validation.md).
+- C4 and every later implementation addition still require their own
+  production-environment validation; C3's result does not validate code that
+  does not yet exist.

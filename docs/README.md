@@ -110,6 +110,10 @@ the immediate next action changes.
 - [Graph V1 directed-position
   C1](experiments/b0_graph_v1_c1.md) — the single authorized correction,
   improved edge metrics, unchanged complete validity, and freeze decision.
+- [GE1 C3 authoritative CPU
+  validation](experiments/ge1_c3_cpu_validation.md) — exact-commit Python
+  3.8/PyTorch 1.11 fixture validation of target-separated paired batching on
+  Adroit CPU, with zero corpus or protected-partition access.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
