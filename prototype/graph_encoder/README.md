@@ -468,10 +468,9 @@ typed receptive field.
 The exact module counts, parameter-object disjointness, direction and edge-type
 sensitivity, batch isolation, continuous flat parity, quantizer non-invocation,
 finite gradients, and float32/float64 permutation properties are covered by
-`tests/test_encoders.py`. The current macOS Python environment has no PyTorch,
-so those real-tensor checks remain pending in the authoritative Python
-3.8/PyTorch 1.11 Adroit environment rather than being reported as local
-passes.
+`tests/test_encoders.py`. Authoritative C4 CPU validation on `adroit-h11n3`
+passed all 26 targeted C4 tests and all 85 graph-encoder tests with zero skips;
+see the [validation record](../../docs/experiments/ge1_c4_cpu_validation.md).
 
 ## Frozen identities and training policy
 
@@ -543,7 +542,7 @@ The non-C2 package boundary uses:
 - C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
   check on Adroit as job `3344235`; see the
   [validation record](../../docs/experiments/ge1_c3_cpu_validation.md).
-- C4 and every later implementation addition still require their own
-  production-environment validation. C4's real-PyTorch validation is pending;
-  C3's result does not validate the new encoder code.
+- C4 passed its authoritative real-PyTorch CPU validation. Every later
+  implementation addition still requires its own production-environment
+  validation; C4's result does not validate code that does not yet exist.
 - C5 and every later GE1 chunk have not begun.

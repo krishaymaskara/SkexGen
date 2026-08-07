@@ -114,6 +114,10 @@ the immediate next action changes.
   validation](experiments/ge1_c3_cpu_validation.md) — exact-commit Python
   3.8/PyTorch 1.11 fixture validation of target-separated paired batching on
   Adroit CPU, with zero corpus or protected-partition access.
+- [GE1 C4 authoritative CPU
+  validation](experiments/ge1_c4_cpu_validation.md) — exact-commit validation
+  of both standalone encoders, including continuous parity, capacity,
+  sensitivity, isolation, gradients, and permutation contracts.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

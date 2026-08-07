@@ -18,9 +18,9 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C3 complete; C4 standalone encoders implemented; C5 not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
-| GE1 C4 validation | Static/local checks passed; Python 3.8/PyTorch 1.11 real-tensor validation pending on Adroit |
+| GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -173,10 +173,11 @@ CPU as job `3344235`; the detailed evidence and provenance limitations are in
 the [C3 validation record](experiments/ge1_c3_cpu_validation.md). C4 now
 implements the two standalone continuous encoders with bookkeeping restricted
 to addressing, membership, scatter/gather, masking, and graph-local pooling.
-The local environment has no PyTorch, so the immediate engineering gate is the
-authoritative C4 Python 3.8/PyTorch 1.11 CPU validation of parity, gradients,
-sensitivity, isolation, parameter counts, and permutation properties. C5
-shared-decoder integration and every later chunk have not begun.
+Its authoritative Adroit CPU validation passed all targeted and complete-suite
+tests; the exact-commit evidence and environment limitations are recorded in
+the [C4 validation record](experiments/ge1_c4_cpu_validation.md). C5
+shared-decoder integration and every later chunk have not begun, and no
+next-stage work was performed while recording this result.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed
