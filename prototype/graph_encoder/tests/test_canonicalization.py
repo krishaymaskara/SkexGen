@@ -16,9 +16,11 @@ from prototype.controlled_data.identity import sample_id, source_family_id
 from prototype.graph_encoder.canonicalization import (
     AMBIGUOUS_OPERATION_CHAIN,
     AXIS_PROFILE_SKETCH_MISMATCH,
+    DEFENSIVE_ONLY_FAILURE_CODES,
     DISCONNECTED_OPERATION_CHAIN,
     DUPLICATE_EDGE,
     FAILURE_CODES,
+    REACHABLE_FAILURE_CODES,
     INCOMPATIBLE_TYPED_EDGE,
     INVALID_AXIS_SKETCH_TARGET_TYPE,
     INVALID_AXIS_TARGET_TYPE,
@@ -44,6 +46,8 @@ from prototype.graph_encoder.canonicalization import (
     UNSUPPORTED_PLANE_COUNT,
     UNASSIGNED_NODE,
     GraphCanonicalizationInput,
+    _assert_shared_plane,
+    _operation_order,
     canonicalize_graph,
 )
 from prototype.graph_encoder.errors import GraphEncoderError
@@ -179,6 +183,17 @@ def _edge_tuples(graph):
     return list(zip(graph.edge_index[0], graph.edge_index[1], graph.edge_type_ids))
 
 
+def _outgoing_to_by_source_type(outgoing):
+    """Adapt a plain operation-dependency map to the internal edge index."""
+
+    depends_on = EDGE_TYPES.id("depends_on")
+    return {
+        (source, depends_on): tuple(sorted(targets))
+        for source, targets in outgoing.items()
+        if targets
+    }
+
+
 def _with_edges(graph, edges):
     return replace(
         graph,
@@ -309,8 +324,6 @@ class CanonicalizationParityTests(unittest.TestCase):
                 + tuple(range(1, first_operation + 1))
             )
             named["second_group_first"] = group_swap
-            if template in ("EE", "RR"):
-                named["corresponding_group_member_swap"] = group_swap
             for name, permutation in sorted(named.items()):
                 with self.subTest(template=template, permutation=name):
                     _assert_parity(self, fixture, permutation)
@@ -492,6 +505,12 @@ class CanonicalizationRejectionTests(unittest.TestCase):
             unassigned, e_edges + [(unassigned_sketch, e_plane, placed_on)]
         )
 
+        scope_masking_cases = (
+            (UNSUPPORTED_OPERATION_COUNT, branch),
+            (UNSUPPORTED_OPERATION_COUNT, disconnected),
+            (UNSUPPORTED_PLANE_COUNT, wrong_plane),
+        )
+
         cases = (
             (MALFORMED_NODE_FIELDS, malformed_nodes),
             (INVALID_NODE_TYPE_ID, invalid_node),
@@ -503,9 +522,7 @@ class CanonicalizationRejectionTests(unittest.TestCase):
             (SELF_EDGE, self_edge),
             (UNSUPPORTED_PLANE_COUNT, no_plane),
             (UNSUPPORTED_OPERATION_COUNT, no_operation),
-            (OPERATION_CHAIN_BRANCHING, branch),
             (OPERATION_CHAIN_CYCLE, cycle),
-            (DISCONNECTED_OPERATION_CHAIN, disconnected),
             (AMBIGUOUS_OPERATION_CHAIN, ambiguous),
             (MISSING_OR_MULTIPLE_OPERATION_PROFILE, missing_profile),
             (INVALID_PROFILE_TARGET_TYPE, invalid_profile),
@@ -518,14 +535,62 @@ class CanonicalizationRejectionTests(unittest.TestCase):
             (AXIS_PROFILE_SKETCH_MISMATCH, mismatch),
             (MISSING_OR_MULTIPLE_SKETCH_PLACED_ON, missing_placement),
             (PLACEMENT_ON_NON_PLANE_NODE, nonplane_placement),
-            (PLACEMENT_ON_WRONG_SHARED_PLANE, wrong_plane),
             (MULTIPLY_ASSIGNED_NODE, multiply_assigned),
             (UNASSIGNED_NODE, unassigned),
         )
-        self.assertEqual({item[0] for item in cases}, set(FAILURE_CODES))
+        self.assertEqual({item[0] for item in cases}, set(REACHABLE_FAILURE_CODES))
+        self.assertEqual(
+            set(REACHABLE_FAILURE_CODES) | set(DEFENSIVE_ONLY_FAILURE_CODES),
+            set(FAILURE_CODES),
+        )
+        self.assertFalse(
+            set(REACHABLE_FAILURE_CODES) & set(DEFENSIVE_ONLY_FAILURE_CODES)
+        )
         for code, graph in cases:
             with self.subTest(code=code):
                 self.assertCode(graph, code)
+
+        # Requirement: an out-of-scope graph must report the scope violation
+        # rather than a downstream chain or placement defect.
+        for code, graph in scope_masking_cases:
+            with self.subTest(scope=code):
+                self.assertCode(graph, code)
+
+    def test_defensive_only_codes_are_unreachable_but_still_guarded(self):
+        """The three gated codes stay covered by calling the guards directly."""
+
+        operations = (0, 1, 2)
+        branching = {0: (), 1: (0,), 2: (0,)}
+        with self.assertRaises(GraphEncoderError) as raised:
+            _operation_order(operations, _outgoing_to_by_source_type(branching))
+        self.assertEqual(raised.exception.code, OPERATION_CHAIN_BRANCHING)
+
+        disconnected = {0: (), 1: (0,), 2: ()}
+        with self.assertRaises(GraphEncoderError) as raised:
+            _operation_order(operations, _outgoing_to_by_source_type(disconnected))
+        self.assertEqual(raised.exception.code, DISCONNECTED_OPERATION_CHAIN)
+
+        with self.assertRaises(GraphEncoderError) as raised:
+            _assert_shared_plane(0, (0, 1))
+        self.assertEqual(raised.exception.code, PLACEMENT_ON_WRONG_SHARED_PLANE)
+
+        with self.assertRaises(GraphEncoderError) as raised:
+            _assert_shared_plane(0, (1, 1))
+        self.assertEqual(raised.exception.code, PLACEMENT_ON_WRONG_SHARED_PLANE)
+
+    def test_controlled_scope_is_rejected_before_relational_recovery(self):
+        """Three operations are out of scope whether or not the chain is valid."""
+
+        ee = _fixture("EE").graph
+        ee_edges = _edge_tuples(ee)
+        operations = _indices(ee, "extrude")
+        third = _append_node(ee, NODE_TYPES.id("extrude"), operations[0])
+        third_operation = len(third.node_type_ids) - 1
+        valid_chain = _with_edges(
+            third, ee_edges + [(third_operation, operations[1], EDGE_TYPES.id("depends_on"))]
+        )
+        self.assertCode(valid_chain, UNSUPPORTED_OPERATION_COUNT)
+        self.assertCode(third, UNSUPPORTED_OPERATION_COUNT)
 
     def test_invalid_operation_chains_are_not_resolved_by_node_row_order(self):
         ee = _fixture("EE").graph
@@ -550,8 +615,11 @@ class CanonicalizationRejectionTests(unittest.TestCase):
             ee, [item for item in edges if item[2] != depends_on]
         )
 
+        # `branch` needs a third operation, so the controlled-scope gate now
+        # rejects it first. The point of this test is unchanged: whichever code
+        # applies must not depend on incoming node row order.
         for code, graph in (
-            (OPERATION_CHAIN_BRANCHING, branch),
+            (UNSUPPORTED_OPERATION_COUNT, branch),
             (OPERATION_CHAIN_CYCLE, cycle),
             (AMBIGUOUS_OPERATION_CHAIN, ambiguous),
         ):

@@ -62,7 +62,7 @@ The sole authorized manifest is the physical file:
 | Metadata field | Recorded value |
 |---|---|
 | Authoritative physical path identified from durable corpus record | `true` |
-| Metadata-only audit source | `/Users/krishaymaskara/Downloads/operation_template.json` |
+| Metadata-only audit source | local SHA-pinned copy, `/Users/krishaymaskara/Downloads/operation_template.json` |
 | Verified `train` families / samples | 407 / 814 |
 | Verified `validation` families / samples | 45 / 90 |
 | Verified `test` families / samples | 114 / 228 |
@@ -71,15 +71,27 @@ The sole authorized manifest is the physical file:
 | Unique family IDs / sample IDs | 680 / 1,360 |
 | Samples per family | exactly 2 |
 | Orphan samples / partition mismatches | 0 / 0 |
-| Physical counts verified | `true` |
-| Physical file SHA-256 | `a9ac86a6dede054fbbba57e0906b210bab26036c3f5c150b332038f78d2dadb7` |
+| Counts verified on the local SHA-pinned copy | `true` |
+| Runtime binding to the Adroit file | pending; enforced at first Stage 1 read |
+| Authoritative SHA-256 | `a9ac86a6dede054fbbba57e0906b210bab26036c3f5c150b332038f78d2dadb7` |
 
-The metadata-only audit reproduced the supplied file SHA-256 exactly and
-confirmed the declared and recomputed 407/45/114/114 family counts. It also
-confirmed 1,360 unique sample records, exactly two samples per family, and no
-orphan or partition-mismatched sample metadata. These values agree with the
-checked-in seed-2026 split contract and accepted ADR-0004. No referenced CAD
-history payload was opened.
+Two distinct claims are recorded separately, because the remote metadata
+connection failed during C0 and the physical Adroit file was never opened.
+
+**Verified now.** The audit ran against a local copy, reproduced the SHA-256
+above, and confirmed the declared and recomputed 407/45/114/114 family counts,
+1,360 unique sample records, exactly two samples per family, and no orphan or
+partition-mismatched sample metadata. These values agree with the checked-in
+seed-2026 split contract and accepted ADR-0004. No referenced CAD history
+payload was opened.
+
+**Not yet verified.** That the file at the authoritative Adroit path is
+byte-identical to the audited local copy. Nothing in C0 establishes this. The
+binding is deferred to runtime: `prototype.graph_encoder.partitions` hashes the
+physical manifest on every load and raises `manifest_authority_failure` on any
+mismatch, so the first Stage 1 read is what converts the local audit into a
+statement about the authoritative file. Until that read succeeds, every count
+and assignment hash in this section is a property of the local copy alone.
 
 Assignment hashes use SHA-256 over the UTF-8 bytes of lexicographically sorted
 `source_family_id` values, one per line with a final LF:
@@ -100,6 +112,14 @@ assignment, partition policy, experimental protocol, or access rule.
 Only `operation_template.train` and `operation_template.validation` payloads
 may be loaded after Stage 1 begins. RR may be opened once at Stage 7. ER remains
 closed throughout GE1. No partition from any other manifest is authorized.
+
+The C1 loader `prototype.graph_encoder.partitions` refuses every protected
+partition unconditionally and carries no authorization argument. The Stage 7 RR
+evaluation must therefore add a **new, explicitly named, separately audited
+entry point**. Relaxing, parameterizing, or adding an override to the existing
+C1 loader is prohibited: protected access must remain visible in the call graph
+and reviewable on its own, and the train/development path must stay incapable
+of reaching protected data by configuration.
 
 ### Stage 0 payload-access ledger
 
@@ -165,6 +185,40 @@ change in autonomous normalized longest executable operation prefix on the 45
 operation-template development families. It must be at least 0.10 after first
 computing a family mean within each retained seed and then averaging seeds.
 Development data cannot select checkpoints or hyperparameters.
+
+### Development composition and conditional subset sensitivity
+
+The 45 development families are recorded here so that the endpoint's resolution
+is fixed before any result exists:
+
+| Template | Operations | Families |
+|---|---:|---:|
+| `E` | 1 | 10 |
+| `R` | 1 | 7 |
+| `EE` | 2 | 13 |
+| `RE` | 2 | 15 |
+| Single-operation subtotal | 1 | 17 |
+| Two-operation subtotal | 2 | 28 |
+| Total | — | 45 |
+
+These counts were recomputed from the SHA-pinned manifest copy and inherit the
+runtime-binding caveat above.
+
+Single-operation families admit scores of `0` or `1`; two-operation families
+admit `0`, `0.5`, or `1`. Frozen Graph V1 solved every single-operation IID
+family, so single-operation families may exhibit little headroom. This is a
+**conditional sensitivity note, not an assumption**: no prior constrains the
+single-operation treatment effect, and it is not assumed to be zero.
+
+Stated conditionally: *if* the single-operation treatment effect is exactly
+zero, the overall 0.10 threshold requires a mean improvement of approximately
+`0.161` on the two-operation subset, since `0.10 x 45 / 28 = 0.160714...`. A
+nonzero single-operation effect in either direction changes the required
+two-operation improvement accordingly.
+
+The 0.10 threshold applies to the full 45-family mean and is unchanged by this
+note. Results must additionally be reported stratified by operation count so
+that the realized composition of the effect is visible rather than inferred.
 
 The one-time confirmatory endpoint is the same measure on 114 RR families,
 requiring all of:

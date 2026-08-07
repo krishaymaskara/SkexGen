@@ -77,6 +77,21 @@ FAILURE_CODES = (
     UNASSIGNED_NODE,
 )
 
+# Controlled-scope rejection precedes relational recovery, so these three codes
+# cannot be produced through `canonicalize_graph`. Every graph that could reach
+# them is rejected earlier as an unsupported plane or operation count. They are
+# retained as defensive guards in the recovery helpers and are exercised by
+# calling those helpers directly. A first-failure histogram built from
+# `FAILURE_CODES` must expect these buckets to remain empty.
+DEFENSIVE_ONLY_FAILURE_CODES = (
+    OPERATION_CHAIN_BRANCHING,
+    DISCONNECTED_OPERATION_CHAIN,
+    PLACEMENT_ON_WRONG_SHARED_PLANE,
+)
+REACHABLE_FAILURE_CODES = tuple(
+    code for code in FAILURE_CODES if code not in DEFENSIVE_ONLY_FAILURE_CODES
+)
+
 _PLANE = NODE_TYPES.id("reference_plane")
 _SKETCH = NODE_TYPES.id("sketch")
 _PROFILE = NODE_TYPES.id("profile")
@@ -135,14 +150,10 @@ def canonicalize_graph(graph):
         for index, value in enumerate(graph.node_type_ids)
         if value in _OPERATION_TYPES
     )
-    if not planes:
-        _fail(UNSUPPORTED_PLANE_COUNT, "controlled GE1 requires one plane")
-    if not operations:
-        _fail(UNSUPPORTED_OPERATION_COUNT, "controlled GE1 requires one operation")
+    _assert_controlled_scope(planes, operations)
+    shared_plane = planes[0]
 
     operation_order = _operation_order(operations, by_source_type)
-    if len(operations) not in (1, 2):
-        _fail(UNSUPPORTED_OPERATION_COUNT, "controlled GE1 supports one or two operations")
 
     groups = []
     placed_plane_targets = []
@@ -165,20 +176,7 @@ def canonicalize_graph(graph):
             _fail(PLACEMENT_ON_NON_PLANE_NODE, "placed_on must target a plane")
         placed_plane_targets.append(target)
 
-    distinct_placed_planes = tuple(sorted(set(placed_plane_targets)))
-    if len(distinct_placed_planes) > 1:
-        _fail(
-            PLACEMENT_ON_WRONG_SHARED_PLANE,
-            "controlled sketches do not share one reference plane",
-        )
-    if len(planes) != 1:
-        _fail(UNSUPPORTED_PLANE_COUNT, "controlled GE1 requires exactly one plane")
-    shared_plane = planes[0]
-    if any(target != shared_plane for target in placed_plane_targets):
-        _fail(
-            PLACEMENT_ON_WRONG_SHARED_PLANE,
-            "a sketch is not placed on the shared plane",
-        )
+    _assert_shared_plane(shared_plane, tuple(placed_plane_targets))
 
     assigned = {shared_plane}
     canonical_to_old = [shared_plane]
@@ -221,6 +219,41 @@ def canonicalize_graph(graph):
         tuple(item[1] for item in canonical_edges),
         tuple(operation_indices),
     )
+
+
+def _assert_controlled_scope(planes, operations):
+    """Reject out-of-scope graphs before any relational recovery runs.
+
+    Scope precedes recovery so that an unsupported plane or operation count is
+    never reported as a chain or placement defect in the first-failure
+    histogram.
+    """
+
+    if len(planes) != 1:
+        _fail(
+            UNSUPPORTED_PLANE_COUNT,
+            "controlled GE1 requires exactly one reference plane",
+        )
+    if len(operations) not in (1, 2):
+        _fail(
+            UNSUPPORTED_OPERATION_COUNT,
+            "controlled GE1 supports exactly one or two operations",
+        )
+
+
+def _assert_shared_plane(shared_plane, placed_plane_targets):
+    """Defensive placement guard; unreachable behind the controlled-scope gate."""
+
+    if len(set(placed_plane_targets)) > 1:
+        _fail(
+            PLACEMENT_ON_WRONG_SHARED_PLANE,
+            "controlled sketches do not share one reference plane",
+        )
+    if any(target != shared_plane for target in placed_plane_targets):
+        _fail(
+            PLACEMENT_ON_WRONG_SHARED_PLANE,
+            "a sketch is not placed on the shared plane",
+        )
 
 
 def _validate_node_fields(graph):
@@ -410,8 +443,6 @@ def _has_operation_cycle(operations, outgoing):
                 return True
             seen.add(current)
             current = outgoing[current][0]
-        if current in seen:
-            return True
     return False
 
 

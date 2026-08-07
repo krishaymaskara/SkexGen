@@ -16,6 +16,11 @@ from .errors import GraphEncoderError
 SPLIT_NAME = "operation_template"
 TRAIN_PARTITION = "train"
 DEVELOPMENT_PARTITION = "validation"
+LOADABLE_PARTITIONS = (TRAIN_PARTITION, DEVELOPMENT_PARTITION)
+# RR is opened once at Stage 7 and ER stays closed throughout GE1. Neither may
+# ever be reached by relaxing this loader. A future RR evaluation must add a
+# separate, explicitly named, separately audited entry point so that protected
+# access is visible in the call graph and reviewable on its own.
 PROTECTED_PARTITIONS = ("secondary_systematic_validation", "test")
 
 AUTHORITATIVE_RELATIVE_FILE = "manifests/operation_template.json"
@@ -104,7 +109,15 @@ def load_development(corpus_dir):
 
 
 def _load_partition(corpus_dir, partition, family_ids):
-    if partition not in (TRAIN_PARTITION, DEVELOPMENT_PARTITION):
+    if partition in PROTECTED_PARTITIONS:
+        raise GraphEncoderError(
+            code="protected_partition_access",
+            detail=(
+                "{!r} is protected; it requires a separate audited entry point, "
+                "never a relaxation of this loader".format(partition)
+            ),
+        )
+    if partition not in LOADABLE_PARTITIONS:
         raise GraphEncoderError(
             code="protected_partition_access",
             detail="GE1 C1 cannot load partition {!r}".format(partition),

@@ -1,4 +1,11 @@
-"""Prevent unrestricted model-data loaders from escaping C1 boundaries."""
+"""Prevent unrestricted model-data loaders from escaping C1 boundaries.
+
+This is an accident guard, not an airtight security boundary. It scans static
+import statements only, so `import prototype.model_data` followed by attribute
+access, `importlib`, or any other dynamic lookup would not be detected. Its
+purpose is to make an inadvertent widening of data access fail loudly in review,
+not to withstand a determined bypass.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +23,12 @@ FORBIDDEN_NAMES = {
     "load_physical_examples",
     "partition_family_ids",
 }
+
+# `partitions.py` is the single audited loader boundary and is exempt by design.
+EXEMPT_FILENAMES = {"partitions.py"}
+# Tests construct planted violations deliberately; caches and generated trees
+# are not source. Every other module, at any depth, must be scanned.
+EXCLUDED_DIRECTORIES = {"tests", "__pycache__", "adroit", "generated"}
 
 
 def _forbidden_imports(paths):
@@ -44,11 +57,25 @@ class ImportGuardTests(unittest.TestCase):
         package = Path(graph_encoder.__file__).parent
         paths = tuple(
             path
-            for path in package.glob("*.py")
-            if path.name != "partitions.py" and "cache" not in path.parts
+            for path in package.rglob("*.py")
+            if path.name not in EXEMPT_FILENAMES
+            and not (set(path.relative_to(package).parts) & EXCLUDED_DIRECTORIES)
         )
         self.assertTrue(paths)
         self.assertEqual(_forbidden_imports(paths), [])
+
+    def test_scan_is_recursive_and_excludes_only_declared_directories(self):
+        package = Path(graph_encoder.__file__).parent
+        scanned = {
+            path.relative_to(package).as_posix()
+            for path in package.rglob("*.py")
+            if path.name not in EXEMPT_FILENAMES
+            and not (set(path.relative_to(package).parts) & EXCLUDED_DIRECTORIES)
+        }
+        self.assertIn("canonicalization.py", scanned)
+        self.assertNotIn("partitions.py", scanned)
+        self.assertFalse({name for name in scanned if name.startswith("tests/")})
+        self.assertFalse({name for name in scanned if "__pycache__" in name})
 
     def test_scanner_detects_a_planted_violation(self):
         with tempfile.TemporaryDirectory() as temporary:

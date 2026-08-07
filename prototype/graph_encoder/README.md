@@ -47,6 +47,25 @@ The package deliberately does not re-export unrestricted model-data loaders.
 There is no API for RR, ER, IID, history-depth, geometry-extrapolation, or
 counterfactual payload access.
 
+### Future protected access is additive, never a relaxation
+
+`load_train` and `load_development` refuse every protected partition
+unconditionally and carry no authorization argument, override, or split
+parameter. The Stage 7 one-time RR evaluation must add a **new, explicitly
+named, separately audited entry point**. Relaxing, parameterizing, or adding a
+flag to the existing C1 loader is prohibited, so that protected access stays
+visible in the call graph, is reviewable in isolation, and cannot be reached
+from the train/development path by configuration alone.
+
+An AST guard (`tests/test_import_guard.py`) enforces that `partitions.py` is
+the only module importing an unrestricted model-data loader. It scans every
+module recursively, excluding only `tests`, `__pycache__`, `adroit`, and
+`generated`. It inspects static import statements, so it is an **accident
+guard, not an airtight security boundary**: dynamic lookup such as
+`import prototype.model_data` followed by attribute access would evade it. Its
+purpose is to make an inadvertent widening of data access fail loudly in
+review.
+
 ## C2 single-graph canonicalization
 
 `canonicalize_graph(graph)` accepts exactly one frozen
@@ -133,6 +152,27 @@ values:
 `GraphEncoderError.detail` remains concise diagnostic context; callers should
 branch on `code`, not exact detail text.
 
+### Reachable versus defensive-only codes
+
+Controlled-scope rejection runs before any relational recovery, so an
+unsupported plane or operation count can never be masked as a downstream chain
+or placement defect. A consequence is that three codes are **not reachable**
+through `canonicalize_graph`, because every graph that could produce them is
+rejected earlier by the scope gate:
+
+- `operation_chain_branching` — requires at least three operations;
+- `disconnected_operation_chain` — requires at least three operations;
+- `placement_on_wrong_shared_plane` — requires at least two planes.
+
+These are exported as `DEFENSIVE_ONLY_FAILURE_CODES`. They are retained as
+guards inside the recovery helpers, remain covered by tests that call those
+helpers directly, and would become reachable again if a later GE1 scope admits
+more operations or planes. `REACHABLE_FAILURE_CODES` is the complement.
+
+A first-failure histogram built from `FAILURE_CODES` must expect the three
+defensive buckets to stay empty; building it from `REACHABLE_FAILURE_CODES`
+avoids three permanently-zero categories.
+
 ## Procedural parity contract
 
 C2 tests construct E, R, EE, ER, RE, and RR fixtures entirely in memory. For
@@ -194,6 +234,11 @@ Before calling any physical-example payload loader, C1 reads only:
 ```text
 manifests/operation_template.json
 ```
+
+This hash check is also what binds the C0 audit, which ran against a local copy
+because the remote connection failed, to the authoritative Adroit file. Until
+the first successful Stage 1 read, the recorded counts and assignment hashes
+are properties of the local copy alone.
 
 It requires the exact frozen file SHA-256
 `a9ac86a6dede054fbbba57e0906b210bab26036c3f5c150b332038f78d2dadb7`,
