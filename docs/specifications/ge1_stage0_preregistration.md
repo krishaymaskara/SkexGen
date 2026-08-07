@@ -86,10 +86,16 @@ Assignment hashes use SHA-256 over the UTF-8 bytes of lexicographically sorted
 
 | Assignment | SHA-256 |
 |---|---|
-| `train` | `ef951258dc209010db68cce3d3f90b0dd63c604b535c84ac3511b5d6d078a93b` |
-| `validation` | `71c05cc072693f81b1f0becd072f3e6488ce65b347cb767444d89a00662fa6f8` |
-| `test` | `711817873071ef69e2e242821a71d2b5eafb69b5fe9e1dd234cab6beabf3c635` |
-| `secondary_systematic_validation` | `ce7a047b4a96ff66fc5097ca378fa48d707dc2f3c58a50a26150a89550f927b9` |
+| `train` | `42d61d2224ae1a2110279f66d374516f8b5f220271407913147d8be390c66595` |
+| `validation` | `9af48e34e0ae2e5fd266d2336b6adecdad543c75a2c470ea132b9c7a593afaf6` |
+| `test` | `b18df0bdf9cc95575cc79f6cd2bdded5f9559e0964305a525969a2702de22663` |
+| `secondary_systematic_validation` | `eb37468f4baf6540891add9293a66aee2077ecd7cb64d7cb486902a6eb58c494` |
+
+These four values received a reviewer-authorized factual correction on August
+7, 2026, after a metadata-only audit found that the earlier values had been
+computed with literal backslash-plus-`n` delimiters. The correction preserves
+the already documented actual-LF algorithm and changes no manifest bytes,
+assignment, partition policy, experimental protocol, or access rule.
 
 Only `operation_template.train` and `operation_template.validation` payloads
 may be loaded after Stage 1 begins. RR may be opened once at Stage 7. ER remains
