@@ -2,8 +2,10 @@
 
 ## Implemented scope
 
-This package implements **C1 only** for
-`GE1-SHARED-DECODER-ENCODER-COMPARISON`:
+This package implements the C1 boundary and the C2 position-free graph
+canonicalizer for `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
+
+C1 provides:
 
 - immutable, deterministic model and training configuration;
 - exact frozen identities and encoder-to-arm derivation;
@@ -12,18 +14,23 @@ This package implements **C1 only** for
 - unconditional protection of RR, ER, and every non-operation manifest; and
 - stable GE1 boundary errors.
 
-It does not implement an encoder, neural model, shared decoder, checkpoint,
-training loop, evaluation, or scientific result. The frozen
-`prototype.flat_baseline` and `prototype.graph_baseline` packages are reused by
-import only and remain unchanged.
+C2 provides structural validation and deterministic canonicalization of one
+controlled typed graph at a time. It does not implement batching, a neural
+encoder, a shared decoder, losses, checkpointing, training, evaluation, or a
+scientific result. The frozen `prototype.flat_baseline` and
+`prototype.graph_baseline` packages are reused by import only and remain
+unchanged.
 
 ## Public API
 
 ```python
 from prototype.graph_encoder import (
+    CanonicalizedGraph,
     GE1Config,
     GE1TrainingConfig,
+    GraphCanonicalizationInput,
     GraphEncoderError,
+    canonicalize_graph,
     load_development,
     load_train,
 )
@@ -37,10 +44,128 @@ complete 45-family development assignment. Neither function accepts a split
 or partition argument.
 
 The package deliberately does not re-export unrestricted model-data loaders.
-There is no C1 API for RR, ER, IID, history-depth, geometry-extrapolation, or
+There is no API for RR, ER, IID, history-depth, geometry-extrapolation, or
 counterfactual payload access.
 
-## Frozen identities
+## C2 single-graph canonicalization
+
+`canonicalize_graph(graph)` accepts exactly one frozen
+`GraphCanonicalizationInput`. Its six fields are the integer-ID and
+node-aligned tuple fields produced by the existing typed-graph adapter:
+
+- `node_type_ids`, using `prototype.model_data.vocab.NODE_TYPES`;
+- `edge_index` and `edge_type_ids`, using
+  `prototype.model_data.vocab.EDGE_TYPES`;
+- nine integer `categorical_attributes` per node;
+- 39 finite numeric `geometry` channels per node; and
+- 39 Boolean `geometry_mask` channels per node.
+
+The input has no operation sequence, reconstruction target, family/template,
+split, partition, node-ID string, position vector, padding, batch dimension,
+or graph-offset field. Incoming local node indices address tuple rows and edge
+endpoints only; they carry no semantic chronology.
+
+The frozen `CanonicalizedGraph` result contains:
+
+- `canonical_to_old` and `old_to_canonical` inverse index maps;
+- canonical node types, categorical attributes, geometry, and geometry masks;
+- relabeled canonical `edge_index` and `edge_type_ids`; and
+- the position-free derived `operation_sequence`.
+
+### Position-free recovery algorithm
+
+The C2 controlled scope requires exactly one shared reference plane and one or
+two operations. The canonicalizer:
+
+1. validates all aligned tuple shapes, integer vocabulary IDs, endpoints,
+   edge compatibility, and graph-local structural constraints;
+2. recovers the unique linear operation order from dependent-to-reference
+   `depends_on` relations;
+3. recovers each operation's sketch and profile through `uses_profile` and
+   `defined_in`;
+4. additionally recovers a revolve axis through `uses_axis` and `defined_in`,
+   requiring the profile and axis to use the same sketch;
+5. verifies that every recovered sketch is `placed_on` the one shared plane;
+6. rejects multiply assigned or unassigned nodes;
+7. emits the plane followed by each operation group in semantic execution
+   order, with group order `sketch, profile, optional axis, operation`; and
+8. relabels edges and sorts them by canonical source index, integer
+   `EDGE_TYPES` ID, and canonical destination index.
+
+No operation chronology is resolved using incoming row order, a node-ID
+spelling, a family label, or a runtime edge-name comparison. Edge sorting uses
+the model-data integer vocabulary, not `GRAPH_EDGE_CLASS_ORDER`.
+
+## C2 stable failure taxonomy
+
+Every C2 rejection raises `GraphEncoderError` with one of these stable `code`
+values:
+
+- `malformed_or_misaligned_node_fields`
+- `invalid_node_type_id`
+- `invalid_edge_type_id`
+- `malformed_edge_index`
+- `out_of_range_edge_endpoint`
+- `incompatible_typed_edge`
+- `duplicate_edge`
+- `self_edge`
+- `unsupported_plane_count_for_controlled_scope`
+- `unsupported_operation_count_for_controlled_scope`
+- `operation_chain_branching`
+- `operation_chain_cycle`
+- `disconnected_operation_chain`
+- `ambiguous_operation_chain`
+- `missing_or_multiple_operation_profile`
+- `invalid_profile_target_type`
+- `missing_or_multiple_profile_defined_in`
+- `invalid_profile_sketch_target_type`
+- `missing_forbidden_or_multiple_operation_axis`
+- `invalid_axis_target_type`
+- `missing_or_multiple_axis_defined_in`
+- `invalid_axis_sketch_target_type`
+- `axis_profile_sketch_mismatch`
+- `missing_or_multiple_sketch_placed_on`
+- `placement_on_non_plane_node`
+- `placement_on_wrong_shared_plane`
+- `multiply_assigned_node`
+- `unassigned_node`
+
+`GraphEncoderError.detail` remains concise diagnostic context; callers should
+branch on `code`, not exact detail text.
+
+## Procedural parity contract
+
+C2 tests construct E, R, EE, ER, RE, and RR fixtures entirely in memory. For
+each template they use `model_data.tests.fixtures.source`, build continuous
+and quantized histories, obtain authoritative nodes, edges, and reconstruction
+targets from `model_data.canonical`, create the physical-example metadata and
+identities with existing helpers, then call `adapt_typed_graph`. Only the six
+narrow graph-content fields are passed to C2; the adapter target and operation
+sequence are discarded.
+
+Expected canonical node order, edge order, and operation sequence are never
+handwritten. Parity is checked against the authoritative procedural target for
+the unpermuted graph and for consistently relabeled permutations of every
+node-aligned field and edge endpoint. The tests cover all 24 E permutations,
+all 120 R permutations, and 200 deterministic distributed lexicographic ranks
+for each of EE, ER, RE, and RR, plus named structural adversaries.
+
+The parity guarantee is intentionally limited to fully assigned, single-plane
+controlled graphs. Two behaviors deliberately differ from the general
+`prototype.model_data.canonical` helper:
+
+- multiple reference planes are rejected instead of being ordered by node ID;
+- leftover or unassigned nodes are rejected instead of being appended by node
+  ID.
+
+If a later GE1 scope admits multiple planes, their order must be represented
+or recovered semantically. C2 must not gain a node-ID tie-break.
+
+The procedural ER and RR fixtures do not access protected corpus families.
+ER stays closed throughout core GE1, and RR stays closed until a separately
+audited one-time RR systematic evaluation.
+
+## Frozen identities and training policy
 
 | Role | Literal |
 |---|---|
@@ -83,9 +208,9 @@ train subset to `prototype.model_data.loader.load_partition_physical_examples`.
 Malformed or inconsistent corpus data continues to raise the original
 `ModelDataError`; it is not hidden inside a GE1 error.
 
-## Error taxonomy
+## C1 boundary error taxonomy
 
-`GraphEncoderError` always exposes stable `code` and `detail` fields. C1 uses:
+The non-C2 package boundary uses:
 
 - `invalid_configuration` for malformed values;
 - `identity_mismatch` for altered frozen schema identities;
@@ -96,11 +221,12 @@ Malformed or inconsistent corpus data continues to raise the original
 
 ## Explicit limitations
 
-- C1 provides configuration and access control, not graph canonicalization or
-  paired flat/graph adapters.
-- No model or decoder class exists in this package yet.
-- No checkpoint or training artifact exists.
-- RR remains closed until a separately audited Stage 7 capability is added.
+- C2 canonicalizes one graph only; C3 batching, padding, and offset work has
+  not begun.
+- No relational or flat neural encoder, model, or decoder class exists in this
+  package yet.
+- No loss, training loop, checkpoint, evaluation, or systematic-access
+  capability exists.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
   closed throughout core GE1.
 - Actual Python 3.8 execution on Adroit remains the authoritative compatibility

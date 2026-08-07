@@ -36,6 +36,7 @@ prototype/
   model_data/README.md
   flat_baseline/README.md
   graph_baseline/README.md
+  graph_encoder/README.md
 tools/
   check_documentation.py
 ```
@@ -142,6 +143,7 @@ prototype/counterfactual_edits/README.md
 prototype/model_data/README.md
 prototype/flat_baseline/README.md
 prototype/graph_baseline/README.md
+prototype/graph_encoder/README.md
 ```
 
 These files describe the behavior of checked-in code. They contain API
