@@ -2,8 +2,9 @@
 
 ## Implemented scope
 
-This package implements the C1 boundary and the C2 position-free graph
-canonicalizer for `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
+This package implements the C1 boundary, C2 position-free graph canonicalizer,
+and C3 paired flat/graph batching for
+`GE1-SHARED-DECODER-ENCODER-COMPARISON`.
 
 C1 provides:
 
@@ -15,9 +16,14 @@ C1 provides:
 - stable GE1 boundary errors.
 
 C2 provides structural validation and deterministic canonicalization of one
-controlled typed graph at a time. It does not implement batching, a neural
-encoder, a shared decoder, losses, checkpointing, training, evaluation, or a
-scientific result. The frozen `prototype.flat_baseline` and
+controlled typed graph at a time.
+
+C3 provides deterministic paired-family sorting, target-separated flat and
+graph encoder inputs, graph bookkeeping, inherited flat/graph collation
+validation, and an explicit deterministic diagnostic permutation utility. It
+does not implement a neural encoder, shared decoder, losses, checkpointing,
+training, evaluation, or a scientific result. The frozen
+`prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
 unchanged.
 
@@ -26,13 +32,20 @@ unchanged.
 ```python
 from prototype.graph_encoder import (
     CanonicalizedGraph,
+    FlatEncoderInput,
     GE1Config,
     GE1TrainingConfig,
+    GraphBookkeeping,
     GraphCanonicalizationInput,
     GraphEncoderError,
+    GraphNodeContent,
+    GraphSemanticInput,
+    PairedBatch,
+    build_paired_batch,
     canonicalize_graph,
     load_development,
     load_train,
+    permute_graph,
 )
 ```
 
@@ -51,8 +64,9 @@ counterfactual payload access.
 
 `load_train` and `load_development` refuse every protected partition
 unconditionally and carry no authorization argument, override, or split
-parameter. The Stage 7 one-time RR evaluation must add a **new, explicitly
-named, separately audited entry point**. Relaxing, parameterizing, or adding a
+parameter. A separately audited one-time RR systematic evaluation must add a
+**new, explicitly named, separately audited entry point**. Relaxing,
+parameterizing, or adding a
 flag to the existing C1 loader is prohibited, so that protected access stays
 visible in the call graph, is reviewable in isolation, and cannot be reached
 from the train/development path by configuration alone.
@@ -205,6 +219,123 @@ The procedural ER and RR fixtures do not access protected corpus families.
 ER stays closed throughout core GE1, and RR stays closed until a separately
 audited one-time RR systematic evaluation.
 
+## C3 paired flat/graph batching
+
+`build_paired_batch(examples)` accepts an iterable of already-authorized
+`PhysicalExample` objects. C3 does not load or choose a partition. It rejects
+an empty iterable, non-physical records, invalid or duplicate family IDs, then
+sorts internally by `physical_family_id`. Forward, reversed, and arbitrary
+input order therefore produce the same immutable `PairedBatch`.
+
+For every sorted family, the builder:
+
+1. calls the inherited `adapt_flat_mixed` and `adapt_typed_graph` adapters;
+2. verifies family identity and complete per-example target equivalence using
+   UTF-8 bytes from `canonical_record_json`;
+3. constructs a narrow target-free `GraphCanonicalizationInput` and runs C2;
+4. requires every C2 semantic field and derived operation sequence to match
+   the authoritative `PhysicalExample.target` exactly;
+5. constructs the canonical typed view using C2 semantics and the already
+   verified authoritative target;
+6. calls the inherited `collate_flat` and `collate_graph` implementations;
+7. verifies identical collated family order and byte-equivalent complete
+   `ReconstructionBatch` targets; and
+8. returns one shared target separately from both encoder inputs.
+
+No comparison uses `repr`, pickle, object identity, approximate geometry, or a
+topology-only subset.
+
+### Paired-batch records and layouts
+
+```text
+PairedBatch
+  family_ids                 alignment/provenance only
+  flat_input                 FlatEncoderInput
+  graph_input                GraphSemanticInput
+    node_content             GraphNodeContent
+    edge_index
+    edge_type_ids
+  graph_bookkeeping          GraphBookkeeping
+  target                     one shared ReconstructionBatch
+```
+
+`FlatEncoderInput` contains padded `categorical_ids`, `geometry`,
+`geometry_mask`, and `padding_mask`. `GraphSemanticInput` contains concatenated
+node content plus canonical typed edges. `GraphBookkeeping` contains only
+`graph_offsets`, `edge_offsets`, `node_graph_ids`, and the dense `node_mask`.
+Family IDs remain on the outer record and never enter node content.
+
+`GraphNodeContent` is the future semantic node-feature boundary. Its
+constructor accepts only node type IDs, nine categorical attributes, geometry,
+and geometry masks. It cannot receive offsets, graph IDs, masks used for graph
+membership, padding positions, or family metadata. C3 establishes this API
+separation; it does not claim how the unimplemented C4 encoder will use
+bookkeeping.
+
+The builder validates flat padding against each true node count. It validates
+that graph and edge offsets start at zero, remain monotonic, end at the exact
+concatenated totals, and match every source family. Node graph IDs and dense
+node masks must reproduce those intervals exactly. Every edge is checked
+inside the node interval belonging to its edge-offset segment, so cross-family
+edges are terminal errors.
+
+Encoder inputs and bookkeeping have separate `to_torch()` methods. There is no
+combined `PairedBatch.to_torch()` method that could merge a target into an
+encoder dictionary. All methods use ordinary contiguous tensors compatible
+with the inherited PyTorch 1.11 boundary.
+
+### Explicit permutation diagnostics
+
+`permute_graph(graph, permutation)` accepts one narrow
+`GraphCanonicalizationInput` and an explicit bijection with the frozen
+convention:
+
+```text
+permutation[new_index] = old_index
+```
+
+It reorders every node-aligned semantic tuple, constructs the inverse
+old-to-new map, relabels both edge rows, and preserves edge-type alignment.
+Boolean entries, duplicates, wrong lengths, negative indices, and out-of-range
+indices are rejected. The function neither generates randomness nor accepts,
+copies, or inspects a target or operation sequence. The primary paired builder
+never calls it. Training-time permutation augmentation is not part of core
+GE1 and would require a separate frozen protocol decision.
+
+### Empty-edge boundary
+
+The inherited graph collator and C3's low-level validation/separation boundary
+correctly represent an empty edge set as `edge_index = ((), ())`, empty edge
+types, and stable zero edge offsets. This is an engineering property of the
+packing boundary, not a valid complete controlled CAD program. The production
+paired path always runs C2 first, so removing the required semantic relations
+remains terminal.
+
+## C3 stable failure taxonomy
+
+Every C3 production rejection uses one of these `GraphEncoderError.code`
+values:
+
+- `empty_paired_batch`
+- `invalid_physical_example`
+- `duplicate_family_id`
+- `family_alignment_mismatch`
+- `canonical_target_mismatch`
+- `flat_graph_target_mismatch`
+- `collated_target_mismatch`
+- `invalid_permutation`
+- `invalid_flat_padding`
+- `invalid_graph_offsets`
+- `invalid_edge_offsets`
+- `invalid_node_graph_ids`
+- `cross_graph_edge`
+- `invalid_node_mask`
+
+Every code has a focused negative test. Target and bookkeeping leakage are
+prevented structurally by distinct frozen record types and are tested through
+dataclass fields, signatures, and separate tensor dictionaries rather than by
+adding unreachable runtime error codes.
+
 ## Frozen identities and training policy
 
 | Role | Literal |
@@ -266,8 +397,9 @@ The non-C2 package boundary uses:
 
 ## Explicit limitations
 
-- C2 canonicalizes one graph only; C3 batching, padding, and offset work has
-  not begun.
+- C3 completes paired batching, target separation, padding/offset validation,
+  and explicit permutation diagnostics. C4 relational message passing has not
+  begun.
 - No relational or flat neural encoder, model, or decoder class exists in this
   package yet.
 - No loss, training loop, checkpoint, evaluation, or systematic-access

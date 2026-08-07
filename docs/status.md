@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0 complete and frozen; Stage 1 not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0 frozen; Stage 1 paired data path complete; neural model not begun |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -68,6 +68,8 @@ authorize Graph V1 C2.
 - One evidence-backed directed-position correction, C1.
 - Program-level, family-level, edge-level, and scoring-prior comparisons.
 - Frozen commits and tags plus locally verified Graph V1 metrics/log archives.
+- GE1 C1 configuration and protected loading boundary, C2 position-free graph
+  canonicalization, and C3 target-separated paired flat/graph batching.
 
 ## Frozen comparison
 
@@ -155,8 +157,12 @@ epoch-50 checkpoint selection. The acceptance did not remove ADR-0004's
 preauthorized two-seed timing fallback. The
 [Stage 0 preregistration](specifications/ge1_stage0_preregistration.md) freezes
 the complete protocol, records the verified manifest and assignment hashes,
-and records zero protected payload access. C0 is complete. GE1 model
-implementation and Stage 1 have not begun.
+and records zero protected payload access. C0 is complete. The Stage 1 paired
+data path is implemented and procedurally validated for all six controlled
+templates; neural encoder and model work has not begun. The immediate
+engineering gate is the position-free relational encoder unit, with
+bookkeeping restricted to addressing, membership, scatter/gather, masking,
+and graph-local pooling.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0 complete; Stage 1 and model implementation not begun |
+| Status | Accepted protocol; C0 and Stage 1 paired data path complete; neural model implementation not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -73,9 +73,9 @@ ADR-0004:
   budget.
 
 C0 is complete under the frozen
-[Stage 0 preregistration](ge1_stage0_preregistration.md). Stage 1 and model
-implementation have not begun. RR and ER payload access remains restricted by
-the accepted staged-access rules.
+[Stage 0 preregistration](ge1_stage0_preregistration.md). The Stage 1 paired
+data path is implemented; neural model implementation has not begun. RR and ER
+payload access remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 

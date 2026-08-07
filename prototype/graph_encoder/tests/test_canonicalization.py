@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import ast
 import hashlib
 import inspect
@@ -11,8 +11,6 @@ import math
 from pathlib import Path
 import unittest
 
-from prototype.controlled_data.builders import build_history
-from prototype.controlled_data.identity import sample_id, source_family_id
 from prototype.graph_encoder.canonicalization import (
     AMBIGUOUS_OPERATION_CHAIN,
     AXIS_PROFILE_SKETCH_MISMATCH,
@@ -51,17 +49,9 @@ from prototype.graph_encoder.canonicalization import (
     canonicalize_graph,
 )
 from prototype.graph_encoder.errors import GraphEncoderError
-from prototype.model_data.adapters import adapt_typed_graph
-from prototype.model_data.canonical import (
-    canonical_nodes_and_edges,
-    infer_metadata,
-    reconstruction_target,
-)
-from prototype.model_data.records import FamilyMetadata, PhysicalExample
-from prototype.model_data.tests.fixtures import source
 from prototype.model_data.vocab import EDGE_TYPES, NODE_TYPES
-from prototype.representation.model import GeometryEncoding
-from prototype.representation.serialization import history_to_json
+
+from prototype.graph_encoder.tests.fixtures import procedural_fixture as _fixture
 
 
 _RANK_DIGESTS = {
@@ -69,54 +59,6 @@ _RANK_DIGESTS = {
     8: "d95c521c159093f09de5a460d506050104f973c0605f9c46ed42fd6e94eb0fb5",
     9: "2b666713370a605d5d3bb6ddf4c70974ac250230251c296f5d8b3a8641486ac9",
 }
-
-
-@dataclass(frozen=True)
-class _Fixture:
-    graph: GraphCanonicalizationInput
-    target: object
-
-
-def _fixture(template):
-    physical = source(template)
-    continuous = build_history(physical, GeometryEncoding.CONTINUOUS)
-    quantized = build_history(physical, GeometryEncoding.QUANTIZED)
-    nodes, edges = canonical_nodes_and_edges(continuous)
-    target = reconstruction_target(
-        nodes, edges, continuous.structure.operation_sequence
-    )
-    operation_template, primitive_family, reference_plane = infer_metadata(continuous)
-    continuous_family = source_family_id(continuous)
-    if source_family_id(quantized) != continuous_family:
-        raise AssertionError("procedural encodings disagree on family identity")
-    example = PhysicalExample(
-        continuous_family,
-        FamilyMetadata(
-            operation_template,
-            primitive_family,
-            reference_plane,
-            len(continuous.structure.operation_sequence),
-            ("continuous", "quantized"),
-            tuple(sorted((sample_id(continuous), sample_id(quantized)))),
-        ),
-        "procedural_c2_fixture",
-        "procedural_only",
-        continuous.structure.operation_sequence,
-        nodes,
-        edges,
-        target,
-        history_to_json(continuous),
-    )
-    adapted = adapt_typed_graph(example)
-    graph = GraphCanonicalizationInput(
-        adapted.node_type_ids,
-        adapted.edge_index,
-        adapted.edge_type_ids,
-        adapted.categorical_attributes,
-        adapted.geometry,
-        adapted.geometry_mask,
-    )
-    return _Fixture(graph, target)
 
 
 def _permute(graph, permutation):
