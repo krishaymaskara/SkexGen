@@ -3,8 +3,8 @@
 ## Implemented scope
 
 This package implements the C1 boundary, C2 position-free graph canonicalizer,
-C3 paired flat/graph batching, and C4 continuous flat and position-free typed
-graph encoders for
+C3 paired flat/graph batching, C4 continuous flat and position-free typed
+graph encoders, and C5 shared decoder integration for
 `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
 
 C1 provides:
@@ -34,8 +34,17 @@ C4 provides:
   permutation-invariance tests; and
 - exact component and arm-level parameter accounting.
 
-C4 does not implement a shared decoder, losses, checkpointing, training,
-evaluation, or a scientific result. The frozen
+C5 provides:
+
+- one shared constrained-V6 node/geometry plus initial-Graph-V1-main decoder;
+- independent arm decoder objects copied from one canonical initialization;
+- explicit raw, constrained, and converted autonomous prediction levels;
+- one per-example normalized typed-graph loss;
+- a frozen decoder output-position inventory; and
+- strict `GE1-CHECKPOINT-v1` save and reload.
+
+C5 does not implement training, evaluation, C7 sufficiency gates, C8 decoder
+repair, or a scientific result. The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
 unchanged.
@@ -47,6 +56,7 @@ from prototype.graph_encoder import (
     CanonicalizedGraph,
     FlatEncoderInput,
     GE1Config,
+    GE1Model,
     GE1TrainingConfig,
     GraphBookkeeping,
     GraphCanonicalizationInput,
@@ -54,22 +64,29 @@ from prototype.graph_encoder import (
     GraphNodeContent,
     GraphSemanticInput,
     PairedBatch,
+    SharedGE1Decoder,
     build_paired_batch,
+    build_ge1_model,
+    build_matched_ge1_models,
     canonicalize_graph,
     capacity_difference_percent,
+    common_ge1_loss,
     default_encoder_config,
     encoder_parameter_report,
     frozen_encoder_config,
     frozen_feedforward_width,
     load_development,
+    load_ge1_checkpoint,
     load_train,
     permute_graph,
+    save_ge1_checkpoint,
 )
 ```
 
 When PyTorch is installed, the package additionally exports
-`EncodedMemory`, `FlatProgramEncoder`, `TypedGraphProgramEncoder`, and
-`shared_initialization_source`. The tuple-only C1-C3 API, including
+`EncodedMemory`, both encoders, `SharedGE1Decoder`, `GE1Model`, matched-model
+constructors, the common loss, parity diagnostics, and strict checkpoint
+helpers. The tuple-only C1-C3 API, including
 `frozen_encoder_config` and `frozen_feedforward_width`, remains importable
 without PyTorch.
 
@@ -372,7 +389,7 @@ memory:   [batch_size, 2, 32]
 `prequant` is exactly the continuous output of the inherited
 `to_codebook` projection. It is exposed for diagnostics only. `memory` is
 exactly `from_codebook(prequant)`, is contiguous, and is the only tensor
-intended for the future shared decoder. Neither arm owns or calls an EMA
+passed to the C5 shared decoder. Neither arm owns or calls an EMA
 quantizer, performs nearest-code assignment, or mutates codebook state.
 
 `FlatProgramEncoder` deep-copies only the inherited flat encoder's content
@@ -540,8 +557,11 @@ Transformer this shared source builds is discarded.
 supplied model remains authoritative for every component, which is what makes
 exact parity against it testable.
 
-When C5 introduces the shared decoder, the same rule should apply to it: shared
-components identical at a given seed, arm-specific components independent.
+C5 applies the same rule to the decoder. It constructs one canonical decoder
+before either arm and deep-copies its exact state into two independent decoder
+objects. Initial names, shapes, dtypes, parameter values, and buffer values are
+identical; live `Parameter` and buffer objects are disjoint. Encoder
+construction order therefore cannot change decoder initialization.
 
 The exact module counts, parameter-object disjointness, direction and edge-type
 sensitivity, batch isolation, continuous flat parity, quantizer non-invocation,
@@ -551,6 +571,96 @@ review fixes, authoritative Adroit CPU job `3344265` passed both new
 shared-initialization tests, all 28 C4 encoder tests, and all 88 graph-encoder
 tests with zero skips; see the [review-fix validation
 record](../../docs/experiments/ge1_c4_review_fix_cpu_validation.md).
+
+## C5 shared decoder
+
+`SharedGE1Decoder` consumes only C4's contiguous continuous
+`memory [B, 2, 32]`. Diagnostic `prequant [B, 2, 16]` never crosses the decoder
+boundary. `GE1Model` selects and calls the configured encoder first, then calls
+the same decoder `forward` implementation. The downstream call receives no
+arm identity and contains no encoder-dependent branch.
+
+The decoder inherits stable constrained V6 helpers for causal prefix decoding,
+node grammar, five categorical heads, compact profiles, canonical profile and
+reference-plane geometry, remaining normalized geometry, and revolve axes. It
+inherits the initial Graph V1 main pair-MLP formula and pair ordering for typed
+edges. The later C1 additive directed-position-bias modules are absent, and
+the main pair logits are the authoritative six-class edge logits.
+
+Decoder-component parity uses supplied common memory and bypasses both legacy
+and GE1 encoders. Exact retained constrained V6 intermediates and exact Graph
+V1 main pair logits are compared before constrained records and conversion.
+This does not claim complete GE1 flat-model equality to original width-64,
+discrete-VQ Flat V6; the current flat encoder is intentionally width 192 and
+continuous.
+
+### Autonomous result contract
+
+`SharedGE1Decoder.forward(memory, *, node_counts, node_count_source)` is
+target-free. It rolls out only predicted constrained prefix records and returns
+an immutable `SharedDecoderPrediction` with:
+
+- `raw_prediction`: direct prefix-decoder tensors and unmasked main pair logits;
+- `constrained_prediction`: frozen grammar/geometry/edge constraints and
+  validated canonical graph records; and
+- `converted_prediction`: authoritative Graph V1 conversion results or
+  explicit structured raised failures.
+
+The three records are separately allocated and are not overwritten during
+later processing. Continuous predictions publish no fictitious VQ codes.
+
+### Common loss
+
+`common_ge1_loss` is the only GE1 loss assembly for either arm. It preserves
+Graph V1's component definitions, weights, masks, valid-element behavior, and
+per-example normalization. Each component is normalized within each example,
+then example totals are averaged across the batch. Graph V1 already used this
+policy, so C5 introduces no intentional legacy aggregation difference. The
+continuous VQ commitment component is exactly zero.
+
+### Output-side position and bookkeeping
+
+The decoder receives exactly four semantic serialization-position signals,
+identically for both arms:
+
+1. learned absolute causal output-step embeddings added before the Transformer
+   decoder;
+2. learned source absolute output-position embeddings concatenated to ordered
+   pair features;
+3. learned destination absolute output-position embeddings concatenated to
+   ordered pair features; and
+4. constructed signed relative source-minus-destination position concatenated
+   to ordered pair features.
+
+Local pair indices address output rows and select or derive only these frozen
+signals. Output node masks control grammar activity, padding, and legal pairs.
+`graph_offsets` remains restricted to graph-local encoder validation, slicing,
+and pooling; edge offsets and graph IDs remain batching/alignment metadata.
+None is passed as an additional decoder feature. No output position enters
+either encoder, and the typed graph encoder still has no chronological or
+absolute position embedding.
+
+The complete field-level inventory and parity boundary are frozen in the
+[C5 shared-decoder contract](../../docs/specifications/ge1_shared_decoder_contract.md).
+
+### Strict checkpoint API
+
+`save_ge1_checkpoint` and `load_ge1_checkpoint` implement
+`GE1-CHECKPOINT-v1`. The payload records encoder identity and version, frozen
+feed-forward width and relation-basis count, shared-decoder and output-position
+versions, continuous-bottleneck status, full configuration plus SHA-256,
+architectural sizes, parameter and buffer inventories, decoder state-key
+namespace, source commit, authoritative operation-template manifest hash, and
+complete model state.
+
+Reload reconstructs the selected frozen arm and uses `strict=True`. Missing,
+unexpected, mislabeled, or incompatible metadata and state keys are terminal;
+there is no permissive fallback.
+
+C5 static tests pass locally. The real-tensor parity, autonomous, gradient,
+shared-state, and strict-reload tests require the authoritative Python
+3.8/PyTorch 1.11 CPU environment and remain pending until an Adroit validation
+record is supplied.
 
 ## Frozen identities and training policy
 
@@ -613,10 +723,9 @@ The non-C2 package boundary uses:
 
 ## Explicit limitations
 
-- C4 implements the two standalone encoder arms only. It does not connect them
-  to a shared decoder.
-- No loss, training loop, checkpoint, evaluation, or systematic-access
-  capability exists.
+- C5 connects both encoder arms to one decoder implementation and supplies a
+  common loss and strict model-only checkpoint. It does not supply a training
+  loop, optimizer state, evaluation runner, or systematic-access capability.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
   closed throughout core GE1.
 - C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
@@ -626,4 +735,5 @@ The non-C2 package boundary uses:
   authoritative real-PyTorch CPU validation. Every later implementation
   addition still requires its own production-environment validation; C4's
   result does not validate code that does not yet exist.
-- C5 and every later GE1 chunk have not begun.
+- C5 authoritative Python 3.8/PyTorch 1.11 runtime validation is pending.
+- C6, C7, C8, and every later GE1 chunk have not begun.

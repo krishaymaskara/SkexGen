@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C4 complete; C4 review fixes authoritatively revalidated as Adroit job `3344265`; C5 and later work not begun |
+| Status | Accepted protocol; C0-C4 complete; C5 shared-decoder implementation complete locally with authoritative Python 3.8/PyTorch 1.11 CPU validation pending; C6 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -80,8 +80,12 @@ and typed-graph encoders. Its original authoritative CPU validation passed,
 and the subsequent capacity-freezing and shared-initialization review fixes
 were authoritatively revalidated on `adroit-h11n3` as job `3344265`: both new
 tests, all 28 C4 encoder tests, and all 88 graph-encoder tests passed with zero
-skips. C5 and later implementation has not begun. RR and ER payload access
-remains restricted by the accepted staged-access rules.
+skips. C5 now implements the shared decoder, common loss, strict checkpoint,
+and additive frozen output-position contract. Its locally available static
+tests pass; its exact real-PyTorch parity and runtime tests remain pending in
+the authoritative Adroit environment. C6 and later implementation has not
+begun. RR and ER payload access remains restricted by the accepted
+staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -492,7 +496,8 @@ authoritative Adroit CPU job `3344265` passed both new shared-initialization
 tests, all 28 C4 encoder tests, and all 88 graph-encoder tests with zero skips.
 The [review-fix validation
 record](../experiments/ge1_c4_review_fix_cpu_validation.md) retains the
-exact-commit and artifact audit. Stage 3/C5 has not begun.
+exact-commit and artifact audit. Stage 3/C5 is now implemented locally and
+awaits its separate authoritative runtime validation.
 
 1. Implement relation-basis mixing and both edge orientations.
 2. Implement degree normalization with `index_add_`.
@@ -511,19 +516,39 @@ node numbering does not change treatment memory.
 
 ### Stage 3 — Shared decoder refactor
 
-1. Wrap the common latent-memory-to-history path.
-2. Prove flat-encoder parity on fixed inputs against the **inherited
-   implementation instantiated at the frozen GE1 flat feed-forward width of
-   192**, not against original Flat V6 at width 64. The C4 capacity match
-   widened the flat control's Transformer feed-forward layer, so Flat V6 is no
-   longer the parity reference; numerical equality with it is neither expected
-   nor required. Flat V6 remains frozen historical evidence.
-3. Route both encoders through the same decoder object type and output schema.
-4. Keep raw, constrained, and converted predictions separately observable.
+**Implementation status:** C5 implements this stage. The additive
+[shared-decoder contract](ge1_shared_decoder_contract.md) freezes the parity
+boundary and exact output-position inventory. Local static validation passes;
+authoritative Python 3.8/PyTorch 1.11 CPU validation is pending. This status is
+an implementation claim, not a parity-result claim until the unskipped Adroit
+tests pass.
 
-**Tests:** state-dict coverage, deterministic forward parity, identical decoder
-parameter names/shapes across conditions, strict checkpoint reload, autonomous
-conversion, and absence of target tensors in inference signatures.
+1. Wrap the common latent-memory-to-history path.
+2. Prove decoder-component parity on fixed common memory. The constrained V6
+   decoder is authoritative for node and geometry calculations, and the
+   initial Graph V1 main pair MLP is authoritative for typed-edge calculations.
+   The later C1 additive directed-position-bias branch is excluded by the
+   frozen Stage 0 choice. Complete GE1 flat-model equality to original Flat V6
+   is neither expected nor required: the GE1 flat encoder has width 192,
+   different initialization, and a continuous bottleneck, while original Flat
+   V6 used width 64 and VQ. Encoder-caused differences are outside decoder
+   parity.
+3. Route both encoders through the same decoder class, forward implementation,
+   output schema, and loss. Build one canonical initialization, then copy it
+   into independent arm-specific decoder instances with disjoint parameters
+   and buffers.
+4. Keep raw, constrained, and converted predictions separately observable.
+5. Freeze the four shared semantic output-position signals and distinguish
+   them from permitted bookkeeping and prohibited graph-encoder chronology.
+6. Define strict `GE1-CHECKPOINT-v1` reconstruction and state coverage.
+
+**Tests:** exact intermediate node/geometry and main-pair parity; constrained
+graph and conversion parity; first-difference diagnostics; state-dict coverage;
+same decoder implementation and matched initial values; disjoint parameters
+and buffers; arm-order-independent construction; common-memory-only routing;
+per-example loss normalization; strict checkpoint reload; autonomous
+raw/constrained/converted output; position-inventory routing; and absence of
+target tensors in inference signatures.
 
 **Exit:** swapping encoder choice changes only encoder modules and input
 adapter; the decoder path is byte-identical code.

@@ -41,6 +41,10 @@ the immediate next action changes.
 - [Research plan](research_plan.md) — project thesis, hypotheses, scope,
   milestones, and claims to avoid.
 - [Specifications](specifications/README.md)
+- [GE1 C5 shared decoder and output-position
+  contract](specifications/ge1_shared_decoder_contract.md) — additive frozen
+  record for decoder parity, position routing, autonomous output, loss, and
+  strict checkpoints.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

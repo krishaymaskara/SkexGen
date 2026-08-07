@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 implemented locally with authoritative runtime validation pending |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -80,6 +80,9 @@ authorize Graph V1 C2.
   explicit VQ bypass, and a common encoded-memory contract.
 - C4 arithmetic capacity match: 22,800 flat versus 23,468 graph encoder
   parameters, a 2.93% difference relative to the flat control.
+- C5 shared decoder extraction, thin common-memory model wrapper, common
+  per-example loss, frozen output-position inventory, autonomous
+  raw/constrained/converted result contract, and strict model checkpoint.
 
 ## Frozen comparison
 
@@ -191,8 +194,21 @@ encoder tests, and all 88 graph-encoder tests passed with zero skips; the
 exact-commit evidence is in the [C4 review-fix validation
 record](experiments/ge1_c4_review_fix_cpu_validation.md).
 
-C5 shared-decoder integration and every later chunk have not begun, and no
-next-stage work was performed while recording this result.
+C5 now connects either C4 encoder to the same decoder class and forward
+implementation. Its canonical decoder is constructed once and copied into
+independent arm models with matched initial state and disjoint mutable objects.
+The retained constrained V6 node/geometry path and initial Graph V1 main
+typed-edge MLP define the component-parity boundary; the later C1 additive
+position-bias branch is excluded. The exact four-signal output-position
+inventory, permitted bookkeeping routes, target-free autonomous result,
+common loss, and strict checkpoint are frozen in the
+[C5 shared-decoder contract](specifications/ge1_shared_decoder_contract.md).
+
+All locally available C5 static tests pass. This does **not** yet establish
+real-tensor parity or runtime acceptance because local Python has no PyTorch.
+The new C5 real-tensor tests must run without skips under Python 3.8 and
+PyTorch 1.11 on Adroit CPU before C5 is authoritatively validated. C6, C7,
+C8, training, evaluation, and protected access have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

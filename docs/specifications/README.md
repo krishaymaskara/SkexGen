@@ -12,6 +12,8 @@ succeeded.
   plan](graph_encoder_implementation_plan.md)
 - [GE1 frozen Stage 0 configuration and
   preregistration](ge1_stage0_preregistration.md)
+- [GE1 C5 shared decoder and output-position
+  contract](ge1_shared_decoder_contract.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

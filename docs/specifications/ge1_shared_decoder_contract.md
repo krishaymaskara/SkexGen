@@ -1,0 +1,175 @@
+# GE1 C5 Shared Decoder and Output-Position Contract
+
+| Field | Frozen value |
+|---|---|
+| Status | Implemented in C5; authoritative Python 3.8/PyTorch 1.11 CPU validation pending |
+| Scope | Stage 3 shared-decoder extraction and parity proof only |
+| Model identity | `GE1-MODEL-v1` |
+| Decoder identity | `GE1-SHARED-TYPED-EDGE-DECODER-V1` |
+| Checkpoint identity | `GE1-CHECKPOINT-v1` |
+| Output-position identity | `GE1-DECODER-OUTPUT-POSITIONS-v1` |
+| Common loss identity | `GE1-COMMON-GRAPH-LOSS-v1` |
+| Bottleneck | Continuous; decoder input is `memory [B, 2, 32]` |
+
+This additive record discharges frozen Stage 0 item 4 without rewriting the
+historical preregistration. It records the decoder and output-side position
+signals before any GE1 comparative result is inspected.
+
+## Parity authorities and boundary
+
+The shared decoder has two retained authorities:
+
+- constrained V6 is authoritative for causal node rollout, prefix grammar,
+  node masks, five categorical heads, profile-family and compact-profile
+  prediction, canonical profile reconstruction, reference-plane construction,
+  remaining normalized geometry, and revolve-axis construction;
+- the initial Graph V1 main ordered-pair MLP is authoritative for typed-edge
+  features, class logits, pair masking, graph records, and strict graph-to-CAD
+  conversion.
+
+The Graph V1 C1 additive directed-position-bias branch is excluded. C5 uses
+the initial main pair logits directly as its six-class typed-edge logits. It
+does not instantiate `source_position_factor`, `destination_position_factor`,
+or `position_class_projection`.
+
+Parity is established with fixed memory, masks, state, dtype, device,
+evaluation mode, and output positions. The constrained V6 node/geometry
+intermediates and initial Graph V1 main-pair logits must be exactly equal, not
+approximately equal. Constrained graph records and authoritative conversion
+results must then be equal for the same constrained graph. A parity failure
+reports the first tensor name, stage, shape, dtype, maximum absolute
+difference, and mean absolute difference.
+
+Complete GE1 flat-model equality to original Flat V6 is not part of this
+boundary. The current flat encoder has a frozen width-192 feed-forward layer,
+a different construction sequence, and a continuous bottleneck; original Flat
+V6 used width 64 and discrete VQ. Encoder differences must not be described as
+decoder-parity failures.
+
+## Shared implementation and independent instances
+
+Both arms instantiate `SharedGE1Decoder` and call the same `forward`
+implementation. A canonical decoder is constructed once from an
+arm-independent local random stream, then deep-copied into the separately
+trained arm models. The copies have:
+
+- identical parameter and buffer names, shapes, dtypes, and initial values;
+- distinct `Parameter` and buffer object identities;
+- independent mutable state; and
+- a decoder namespace independent of arm construction order.
+
+The complete arm models do not share live encoder or decoder parameters. The
+thin wrapper chooses and calls the encoder before the common-memory boundary.
+Only `EncodedMemory.memory`, never diagnostic `prequant`, is passed to the
+decoder. No code after that boundary receives or branches on encoder identity.
+
+## Prediction levels
+
+Autonomous `SharedGE1Decoder.forward` accepts only continuous memory, requested
+node counts, and a nonempty node-count provenance label. It does not accept a
+target, operation sequence, target nodes, geometry, edges, reference pointers,
+family/template/split identity, or an encoder-arm label.
+
+It returns one immutable `SharedDecoderPrediction` with three distinct tuples:
+
+1. `raw_prediction` contains direct causal-prefix decoder tensors and the
+   unmasked main pairwise typed-edge logits;
+2. `constrained_prediction` contains grammar-constrained nodes, geometry,
+   masked typed relationships, and a validated canonical graph record;
+3. `converted_prediction` contains the authoritative Graph V1 conversion
+   result or an explicit structured raised-failure record.
+
+Building a later level does not overwrite either earlier level. Autonomous
+prefix feedback uses only predicted constrained records. The compatibility
+placeholder needed by the retained V6 helper is removed from published
+prediction provenance: continuous GE1 predictions expose an empty latent-index
+tuple and `ge1_continuous_memory_from_codebook_projection` as their memory
+source.
+
+## Frozen output-side position inventory
+
+These are semantic serialized-output positions. Both arms receive them
+identically after the common memory boundary, and none enters either encoder.
+
+| Exact signal | Source and shape | Construction and decoder entry |
+|---|---|---|
+| `decoder_output_step_absolute_embedding` | `decoder_position_embedding(arange(output_length))`, `[1,L,32]`, floating point | Learned absolute output-step embedding; added to BOS/shifted prefix content before `decoder_input_norm` and the causal Transformer decoder |
+| `pair_source_absolute_embedding` | same embedding table at each source index, `[B,N,N,32]`, floating point | Learned absolute source serialization position; concatenated into the main pair-MLP input |
+| `pair_destination_absolute_embedding` | same table at each destination index, `[B,N,N,32]`, floating point | Learned absolute destination serialization position; concatenated into the main pair-MLP input |
+| `pair_signed_relative_serialized_position` | `(source-destination)/(max_nodes-1)`, `[B,N,N,1]`, floating point | Constructed signed relative position; concatenated into the main pair-MLP input |
+
+The main pair feature order remains exactly:
+
+```text
+source decoded state
+destination decoded state
+source constrained-node-type embedding
+destination constrained-node-type embedding
+source absolute output-position embedding
+destination absolute output-position embedding
+global mean of common continuous memory
+signed relative serialized output position
+```
+
+The first six blocks have width 32, global memory has width 32, and the final
+relative value has width one, for the retained `7 * 32 + 1` input width. The
+MLP remains `Linear(225,14) -> GELU -> Linear(14,6)`.
+
+No new neural position signal is introduced. In particular, the excluded C1
+rank-six source/destination factor branch is not part of C5.
+
+## Bookkeeping versus semantic position
+
+Local pair indices address output rows and form ordered source/destination
+pairs. They also select or derive the four frozen semantic decoder-position
+signals above; this is their only permitted neural influence. The dense output
+node mask controls requested-length grammar activity, padding exclusion, and
+active non-self pair masking, but is not embedded or projected.
+
+`graph_offsets` remains an encoder-side bookkeeping tensor used only for
+graph-boundary validation, graph-local slicing, and pooling. `edge_offsets`,
+`node_graph_ids`, and dense batching masks remain C3 validation and alignment
+metadata and do not cross the decoder interface. No bookkeeping value is
+declared harmless merely because it is stored separately: signatures, source
+routing, and tests enforce these uses.
+
+Chronological or absolute node-position embeddings remain prohibited in the
+typed graph encoder. Output serialization positions are allowed because they
+belong to the one decoder shared after both representations have already been
+encoded.
+
+## Common loss
+
+Both arms call `common_ge1_loss`, which delegates to the retained Graph V1
+per-example loss assembly. That authority already normalizes each active
+component within each example and then averages the example totals across the
+batch. C5 therefore has no intentional legacy aggregation difference.
+
+Separately observable components are node type, categorical attributes,
+reference-plane category, remaining geometry, profile family, profile
+parameters, typed graph edge, none class, positive edge/edge type, and VQ
+commitment. Component masks, ignore behavior, weights, and stabilizers are
+unchanged. The continuous bottleneck supplies an exactly zero per-example VQ
+term.
+
+## Strict checkpoint contract
+
+`GE1-CHECKPOINT-v1` records the arm and encoder identities, frozen feed-forward
+width, relation-basis count, shared-decoder and output-position versions,
+continuous-bottleneck status, full frozen configuration and its SHA-256,
+architectural sizes, parameter and buffer inventories, exact decoder key
+namespace, source commit, authoritative operation-template manifest hash, and
+complete model state.
+
+Reload reconstructs the frozen selected arm, rejects missing, unexpected,
+mislabeled, or incompatible metadata and state keys, and calls
+`load_state_dict(..., strict=True)`. There is no `strict=False` fallback.
+
+## Scope boundary
+
+C5 does not implement or run training, comparative development evaluation,
+the C7 train-only sufficiency or memory-use gates, any C8 decoder repair, VQ,
+editing, or a position-aware graph encoder. It does not authorize or access RR,
+ER, IID, history-depth, geometry-extrapolation, a corpus manifest, or a CAD
+history payload. Authoritative C5 runtime acceptance remains pending until the
+new real-PyTorch tests pass under Python 3.8 and PyTorch 1.11 on CPU.
