@@ -18,10 +18,11 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C4 complete; C5 implemented with a corrected exact-commit authoritative rerun pending |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C5 complete; C6 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
+| GE1 C5 authoritative validation | Passed as Adroit job `3344290` at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`: 22/22 focused and 110/110 complete-suite tests, both with zero skips |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -213,10 +214,13 @@ decoder or model source changed. The [failed-attempt
 record](experiments/ge1_c5_cpu_validation_attempt_3344278.md) preserves the
 exact evidence and protected-access audit.
 
-The test-only corrections pass all locally available C5 checks, but local
-Python has no PyTorch. The corrected exact commit must therefore rerun without
-skips under Python 3.8 and PyTorch 1.11 on Adroit CPU before C5 is
-authoritatively validated. C6, C7, C8, training, evaluation, and protected
+Corrected exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`
+passed authoritative Adroit job `3344290` under Python 3.8.13 and PyTorch
+1.11.0 on CPU. All 22 focused C5 tests and all 110 complete graph-encoder tests
+passed with zero skips. Every listed regression, documentation, compilation,
+grammar, exact-commit, and clean-tree gate also passed. The [C5 validation
+record](experiments/ge1_c5_cpu_validation.md) retains the exact evidence and
+limitations. C5 is complete. C6, C7, C8, training, evaluation, and protected
 access have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains

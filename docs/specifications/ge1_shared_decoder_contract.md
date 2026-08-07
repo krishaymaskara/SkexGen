@@ -2,7 +2,7 @@
 
 | Field | Frozen value |
 |---|---|
-| Status | Implemented in C5; initial authoritative attempt failed test assertions; corrected exact-commit rerun pending |
+| Status | Implemented and authoritatively validated in C5 at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` |
 | Scope | Stage 3 shared-decoder extraction and parity proof only |
 | Model identity | `GE1-MODEL-v1` |
 | Decoder identity | `GE1-SHARED-TYPED-EDGE-DECODER-V1` |
@@ -171,8 +171,9 @@ C5 does not implement or run training, comparative development evaluation,
 the C7 train-only sufficiency or memory-use gates, any C8 decoder repair, VQ,
 editing, or a position-aware graph encoder. It does not authorize or access RR,
 ER, IID, history-depth, geometry-extrapolation, a corpus manifest, or a CAD
-history payload. Authoritative C5 runtime acceptance remains pending until the
-new real-PyTorch tests pass under Python 3.8 and PyTorch 1.11 on CPU.
+history payload. Authoritative C5 runtime acceptance required the new
+real-PyTorch tests to pass under Python 3.8 and PyTorch 1.11 on CPU; that gate
+passed as Adroit job `3344290`.
 
 Initial Adroit job `3344278` at commit
 `ffa6091cfecb37aa648ed3590f591f247a776754` ran all 22 focused tests with zero
@@ -182,3 +183,10 @@ shows that the corrections concern only legacy VQ provenance normalization,
 authoritative conversion-result field names, and discovery of padded positions
 after canonical batch sorting. Production decoder and model behavior is
 unchanged. The failed attempt is not C5 runtime acceptance.
+
+Corrected exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`
+subsequently passed all 22 focused C5 tests and all 110 complete graph-encoder
+tests with zero skips under Python 3.8.13/PyTorch 1.11.0 on Adroit CPU. Every
+regression and repository gate also passed. The [authoritative validation
+record](../experiments/ge1_c5_cpu_validation.md) preserves the evidence and
+limitations.

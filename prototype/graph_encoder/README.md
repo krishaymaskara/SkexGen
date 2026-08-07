@@ -660,10 +660,13 @@ there is no permissive fallback.
 Initial authoritative Adroit job `3344278` ran all 22 focused C5 tests with
 zero skips and zero errors: 19 passed and three test assertions failed. Audit
 found legacy-VQ-provenance, conversion-field-name, and batch-row-order defects
-in the assertions, not production decoder behavior. The corrected tests pass
-locally where available, but local Python has no PyTorch. Real-tensor C5
-acceptance therefore remains pending until the corrected exact commit passes
-the complete Python 3.8/PyTorch 1.11 CPU validation gate.
+in the assertions, not production decoder behavior. Corrected exact commit
+`996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` passed the complete real-tensor
+Python 3.8/PyTorch 1.11 CPU gate as Adroit job `3344290`: all 22 focused C5
+and 110 complete graph-encoder tests passed with zero skips, followed by every
+regression and repository check. See the
+[authoritative validation
+record](../../docs/experiments/ge1_c5_cpu_validation.md).
 
 ## Frozen identities and training policy
 
@@ -738,5 +741,7 @@ The non-C2 package boundary uses:
   authoritative real-PyTorch CPU validation. Every later implementation
   addition still requires its own production-environment validation; C4's
   result does not validate code that does not yet exist.
-- C5 authoritative Python 3.8/PyTorch 1.11 runtime validation is pending.
+- C5 passed authoritative Python 3.8.13/PyTorch 1.11.0 CPU runtime validation
+  as Adroit job `3344290` at exact commit
+  `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
 - C6, C7, C8, and every later GE1 chunk have not begun.

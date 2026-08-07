@@ -128,8 +128,12 @@ the immediate next action changes.
   initialization, including all C4 and graph-encoder tests with zero skips.
 - [GE1 C5 authoritative CPU validation attempt
   3344278](experiments/ge1_c5_cpu_validation_attempt_3344278.md) — failed
-  focused-suite attempt traced to three test-contract assertions; C5 remains
-  unvalidated pending an exact-commit rerun.
+  focused-suite attempt traced to three test-contract assertions and retained
+  as historical evidence.
+- [GE1 C5 authoritative CPU
+  validation](experiments/ge1_c5_cpu_validation.md) — corrected exact-commit
+  validation of shared-decoder parity, common loss, autonomous output,
+  gradients, initialization isolation, and strict checkpoints.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

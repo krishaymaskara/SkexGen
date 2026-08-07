@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C4 complete; C5 shared-decoder implementation complete with a corrected exact-commit Python 3.8/PyTorch 1.11 CPU validation rerun pending; C6 and later work not begun |
+| Status | Accepted protocol; C0-C5 complete; C5 passed exact-commit Python 3.8/PyTorch 1.11 CPU validation; C6 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -84,9 +84,12 @@ skips. C5 now implements the shared decoder, common loss, strict checkpoint,
 and additive frozen output-position contract. Initial Adroit job `3344278` ran
 all 22 focused tests with zero skips and zero errors; 19 passed and three
 test-contract assertions failed. Those failures required test-only corrections
-and no production model change. A corrected exact-commit authoritative rerun
-is pending. C6 and later implementation has not begun. RR and ER payload
-access remains restricted by the accepted staged-access rules.
+and no production model change. Corrected exact commit
+`996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` then passed authoritative Adroit
+job `3344290`: all 22 focused C5 tests and all 110 graph-encoder tests passed
+with zero skips, followed by every regression and repository gate. C5 is
+complete. C6 and later implementation has not begun. RR and ER payload access
+remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -522,9 +525,11 @@ node numbering does not change treatment memory.
 boundary and exact output-position inventory. Authoritative Adroit job
 `3344278` reached all 22 focused tests with zero skips and zero errors, then
 failed three test-contract assertions. The assertions were corrected without
-changing production source; a corrected exact-commit rerun is pending. This
-status is an implementation claim, not a parity-result claim until every
-unskipped Adroit gate passes.
+changing production source. Corrected exact commit
+`996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` passed authoritative Adroit job
+`3344290`, including 22/22 focused and 110/110 complete graph-encoder tests
+with zero skips. The [validation
+record](../experiments/ge1_c5_cpu_validation.md) retains the exact evidence.
 
 1. Wrap the common latent-memory-to-history path.
 2. Prove decoder-component parity on fixed common memory. The constrained V6
