@@ -280,7 +280,9 @@ def _decode_condition(
     for row, source, memory in supplied:
         output = model.decoder(
             memory,
-            node_counts=(row.node_count,),
+            node_counts=torch.tensor(
+                (row.node_count,), dtype=torch.long, device=memory.device
+            ),
             node_count_source="target_free_input_node_count",
         )
         predictions.append(AutonomousPrediction(

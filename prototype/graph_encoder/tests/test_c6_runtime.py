@@ -436,6 +436,7 @@ class C6RuntimeTests(unittest.TestCase):
 
     def test_provenance_failure_prevents_checkpoint_publication(self):
         from prototype.graph_encoder.config import GE1TrainingConfig, frozen_encoder_config
+        from prototype.graph_encoder.errors import GraphEncoderError
         from prototype.graph_encoder.model import build_ge1_model
         from prototype.graph_encoder.provenance import training_partition_identity
         from prototype.graph_encoder.training import (

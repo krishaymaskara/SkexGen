@@ -355,6 +355,9 @@ class SourceAuditTests(unittest.TestCase):
         self.assertNotIn("encoder ==", text)
         self.assertNotIn("teacher_forced", text)
         self.assertNotIn("repair", text.lower())
+        self.assertIn("node_counts=torch.tensor", text)
+        self.assertIn("dtype=torch.long", text)
+        self.assertIn("device=memory.device", text)
 
     def test_fixed_checkpoint_selection_audit(self):
         source = (ROOT / "prototype/graph_encoder/training.py").read_text()

@@ -138,6 +138,10 @@ the immediate next action changes.
   validation](experiments/ge1_c5_cpu_validation.md) — corrected exact-commit
   validation of shared-decoder parity, common loss, autonomous output,
   gradients, initialization isolation, and strict checkpoints.
+- [GE1 C6 authoritative CPU validation attempt
+  3344337](experiments/ge1_c6_cpu_validation_attempt_3344337.md) — failed
+  focused-suite attempt identifying one autonomous node-count adapter defect
+  and one missing test import; no corpus smoke or payload access occurred.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

@@ -90,7 +90,11 @@ job `3344290`: all 22 focused C5 tests and all 110 graph-encoder tests passed
 with zero skips, followed by every regression and repository gate. C5 is
 complete. C6 implements the governed training, recovery, autonomous metrics,
 and intervention machinery but awaits the authoritative two-epoch train-only
-runtime gate. C7 and later implementation has not begun. RR and ER payload access
+runtime gate. Initial C6 Adroit job `3344337` failed the focused suite because
+the autonomous adapter passed a tuple instead of the C5-required local long
+node-count tensor and one test omitted an error-class import. The narrow C6
+correction requires a complete exact-commit rerun; the failed attempt reached
+no corpus access. C7 and later implementation has not begun. RR and ER payload access
 remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design

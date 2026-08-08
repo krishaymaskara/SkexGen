@@ -753,6 +753,15 @@ two-epoch 407-family `operation_template.train` smoke passes under Python 3.8
 and PyTorch 1.11 on Adroit. That smoke opens no development or protected
 partition and is not a scientific result.
 
+Initial Adroit job `3344337` at exact commit `ca6dd069ae700cff993c354c2116de11924930f8`
+ran all 37 focused C6 tests with zero skips: 33 passed and four errored. Three
+errors were the same C6 boundary defect—`node_counts` was a tuple instead of
+the C5-required device-local long tensor—and the fourth was a missing
+`GraphEncoderError` test import. The focused correction changes only those
+points. Fail-fast execution preceded the complete suite and both corpus
+smokes, so the manifest and every payload remained unopened. See the
+[failed-attempt record](../../docs/experiments/ge1_c6_cpu_validation_attempt_3344337.md).
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:
