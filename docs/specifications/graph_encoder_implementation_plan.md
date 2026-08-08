@@ -93,9 +93,12 @@ and intervention machinery but awaits the authoritative two-epoch train-only
 runtime gate. Initial C6 Adroit job `3344337` failed the focused suite because
 the autonomous adapter passed a tuple instead of the C5-required local long
 node-count tensor and one test omitted an error-class import. The narrow C6
-correction requires a complete exact-commit rerun; the failed attempt reached
-no corpus access. C7 and later implementation has not begun. RR and ER payload access
-remains restricted by the accepted staged-access rules.
+correction passed those paths in exact-commit job `3344363`; 36/37 focused
+tests passed with zero skips. Its sole error was a test-only generic equality
+check on tensor-bearing dataclasses. The tensor-aware, timing-neutral test
+correction requires a complete exact-commit rerun. Neither failed attempt
+reached corpus access. C7 and later implementation has not begun. RR and ER
+payload access remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 

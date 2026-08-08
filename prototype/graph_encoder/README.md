@@ -762,6 +762,15 @@ points. Fail-fast execution preceded the complete suite and both corpus
 smokes, so the manifest and every payload remained unopened. See the
 [failed-attempt record](../../docs/experiments/ge1_c6_cpu_validation_attempt_3344337.md).
 
+Corrected exact-commit job `3344363` confirmed both fixes and passed 36/37
+focused tests with zero skips. Its sole error was in the resume test itself:
+generic dataclass equality cannot reduce a multi-element PyTorch tensor to one
+Boolean. The pending test-only correction compares tensor-bearing predictions
+recursively and compares complete metric records after removing timing fields.
+The job again stopped before the complete suite and corpus smoke, so no
+manifest or payload was opened. See the [second failed-attempt
+record](../../docs/experiments/ge1_c6_cpu_validation_attempt_3344363.md).
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

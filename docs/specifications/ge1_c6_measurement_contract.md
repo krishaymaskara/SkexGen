@@ -2,9 +2,12 @@
 
 Status: additive frozen implementation contract; C6 code is implemented
 locally and awaits the authoritative Python 3.8/PyTorch 1.11 train-only smoke.
-Initial exact-commit job `3344337` failed in the procedural focused suite
-before corpus access; its narrow autonomous-adapter and test-import corrections
-require a complete rerun and do not modify this contract.
+Exact-commit jobs `3344337` and `3344363` failed in the procedural focused
+suite before corpus access. The first required one autonomous-adapter repair
+and one test import; the second passed those corrected paths and exposed only
+an invalid generic test comparison on tensor-bearing dataclasses. The pending
+test-only tensor-aware comparison and complete rerun do not modify this
+contract.
 
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,

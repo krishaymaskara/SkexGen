@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, is_dataclass, replace
 from pathlib import Path
 import subprocess
 import tempfile
@@ -98,6 +98,7 @@ class C6RuntimeTests(unittest.TestCase):
             autonomous_input_from_paired, run_autonomous_evaluation,
         )
         from prototype.graph_encoder.batching import build_paired_batch
+        from prototype.graph_encoder.metrics import score_condition
 
         continuous_model, continuous = self._train("flat", 2, "continuous")
         unused_epoch_one_model, epoch_one = self._train("flat", 1, "epoch-one")
@@ -115,8 +116,24 @@ class C6RuntimeTests(unittest.TestCase):
         )
 
         def equal_tree(left, right):
-            if torch.is_tensor(left):
-                return torch.equal(left, right)
+            if torch.is_tensor(left) or torch.is_tensor(right):
+                return (
+                    torch.is_tensor(left)
+                    and torch.is_tensor(right)
+                    and torch.equal(left, right)
+                )
+            if is_dataclass(left) or is_dataclass(right):
+                return (
+                    type(left) is type(right)
+                    and is_dataclass(left)
+                    and all(
+                        equal_tree(
+                            getattr(left, field.name),
+                            getattr(right, field.name),
+                        )
+                        for field in fields(left)
+                    )
+                )
             if isinstance(left, dict):
                 return list(left) == list(right) and all(
                     equal_tree(left[key], right[key]) for key in left
@@ -156,9 +173,24 @@ class C6RuntimeTests(unittest.TestCase):
         for expected, observed in zip(
             continuous_predictions.conditions, resumed_predictions.conditions
         ):
-            self.assertEqual(expected.condition, observed.condition)
-            self.assertEqual(expected.predictions, observed.predictions)
-            self.assertEqual(expected.memory_assignments, observed.memory_assignments)
+            expected_without_timing = replace(
+                expected, intervention_seconds=0.0, elapsed_seconds=0.0
+            )
+            observed_without_timing = replace(
+                observed, intervention_seconds=0.0, elapsed_seconds=0.0
+            )
+            self.assertTrue(equal_tree(
+                expected_without_timing, observed_without_timing
+            ))
+
+            targets = {
+                item.physical_family_id: item.target for item in self.examples
+            }
+            expected_metrics = score_condition(expected, targets)
+            observed_metrics = score_condition(observed, targets)
+            expected_metrics.pop("metric_computation_seconds")
+            observed_metrics.pop("metric_computation_seconds")
+            self.assertTrue(equal_tree(expected_metrics, observed_metrics))
 
     def test_strict_reload_restores_model_optimizer_counters_and_rng(self):
         from prototype.graph_encoder.config import GE1TrainingConfig, frozen_encoder_config

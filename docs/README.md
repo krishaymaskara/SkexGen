@@ -142,6 +142,11 @@ the immediate next action changes.
   3344337](experiments/ge1_c6_cpu_validation_attempt_3344337.md) — failed
   focused-suite attempt identifying one autonomous node-count adapter defect
   and one missing test import; no corpus smoke or payload access occurred.
+- [GE1 C6 authoritative CPU validation attempt
+  3344363](experiments/ge1_c6_cpu_validation_attempt_3344363.md) — corrected
+  exact-commit rerun in which 36/37 focused tests passed; the sole error was a
+  test-only generic equality check on tensor-bearing dataclasses, before any
+  corpus smoke or payload access.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

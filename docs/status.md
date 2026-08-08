@@ -23,7 +23,7 @@ specifications or new decision records.
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
 | GE1 C5 authoritative validation | Passed as Adroit job `3344290` at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`: 22/22 focused and 110/110 complete-suite tests, both with zero skips |
-| GE1 C6 validation attempt | Failed as Adroit job `3344337` at exact commit `ca6dd069ae700cff993c354c2116de11924930f8`: 33/37 passed, four errors, zero skips; corpus smoke not reached |
+| GE1 C6 validation attempts | Jobs `3344337` and `3344363` failed before corpus access. The corrected second attempt at exact commit `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` passed 36/37 focused tests with zero skips; its sole error was a test-only tensor/dataclass equality assertion |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -232,9 +232,13 @@ authoritative Python 3.8/PyTorch 1.11 two-epoch train-only smoke has not yet
 passed. Initial Adroit job `3344337` stopped in the focused suite: three tests
 exposed the same tuple-versus-local-long-tensor autonomous node-count adapter
 defect, and one test lacked its `GraphEncoderError` import. The focused
-correction changes only those two points and requires an exact-commit rerun.
-The job did not open the manifest, train payload, development, or any protected
-partition. C7, C8, development evaluation, and protected access have not begun.
+correction changed only those two points. Corrected exact-commit job `3344363`
+then passed 36/37 focused tests with zero skips and confirmed both prior fixes.
+Its sole error was a generic test comparison that asked Python to reduce a
+multi-element tensor equality to one Boolean. A test-only tensor-aware,
+timing-neutral comparison is pending authoritative rerun. Neither attempt
+reached the manifest, train payload, development, or any protected partition.
+C7, C8, development evaluation, and protected access have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed
