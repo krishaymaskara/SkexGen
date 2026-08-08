@@ -25,7 +25,7 @@ specifications or new decision records.
 | GE1 C5 authoritative validation | Passed as Adroit job `3344290` at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`: 22/22 focused and 110/110 complete-suite tests, both with zero skips |
 | GE1 C6 validation attempts | Jobs `3344337` and `3344363` failed before corpus access. The corrected second attempt at exact commit `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` passed 36/37 focused tests with zero skips; its sole error was a test-only tensor/dataclass equality assertion |
 | GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
-| GE1 C5/C6 review-fix revalidation | **Required and not yet run.** The accepted C5/C6 review fixes changed `shared_decoder.py`, `metrics.py`, `model.py`, `config.py`, and `c6_smoke.py` after the validated commits; the recorded C5 and C6 results no longer cover current source |
+| GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -267,10 +267,15 @@ retained unchanged.
 The canonical decoder's seed check is an explicit authorized-seed validator
 rather than a discarded configuration call. Those changes altered
 `shared_decoder.py`, `metrics.py`, `model.py`, `config.py`, `c6_smoke.py`, and
-the combined review-validation runner, so the recorded C5 and C6 validations
-no longer cover current source. Local
-no-PyTorch checks pass, but a new authoritative Python 3.8 / PyTorch 1.11
-Adroit CPU validation is required before C7 begins.
+the combined review-validation runner. Exact-commit Adroit CPU job `3344431`
+passed all 75 focused C5/C6 tests and all 163 graph-encoder tests with zero
+skips, every regression and repository gate, and both 407-family train-only
+arm smokes. Both artifacts used `GE1-C6-METRICS-v2` and
+`GE1-PRIMARY-REPORT-v1`; all five intervention fields and the required
+donor-agreement availability states were present. The [combined review-fix
+validation record](experiments/ge1_c5_c6_review_fix_cpu_validation.md)
+retains the exact evidence and limitations. Current C5/C6 source is therefore
+authoritatively covered. C7 and every later stage remain unstarted.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

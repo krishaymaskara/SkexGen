@@ -898,10 +898,13 @@ complete three-condition metrics records. C6 is runtime-complete. See the
 record](../../docs/experiments/ge1_c6_cpu_validation.md).
 
 The C5/C6 review fixes documented above were implemented after job `3344367`.
-They leave that historical result intact but require one new clean exact-commit
-Adroit revalidation of the combined C5/C6 tests and v2 train-only artifacts
-before C7. Current source is therefore implemented but not yet authoritatively
-covered.
+They leave that historical result intact. Clean exact-commit Adroit CPU job
+`3344431` passed all 75 focused C5/C6 tests and all 163 graph-encoder tests
+with zero skips, every regression and repository gate, and both v2 407-family
+train-only arm smokes. Current C5/C6 source is therefore authoritatively
+covered; see the [combined validation
+record](../../docs/experiments/ge1_c5_c6_review_fix_cpu_validation.md). C7
+remains unstarted.
 
 ## Manifest authority and access order
 
@@ -957,6 +960,7 @@ The non-C2 package boundary uses:
 - C5 passed authoritative Python 3.8.13/PyTorch 1.11.0 CPU runtime validation
   as Adroit job `3344290` at exact commit
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
-- C6 passed authoritative runtime validation as Adroit job `3344367`; current
-  post-validation C5/C6 review-fix source awaits its own exact-commit
-  revalidation. C7, C8, and every later GE1 chunk have not begun.
+- C6 passed authoritative runtime validation as Adroit job `3344367`; the
+  post-validation C5/C6 review-fix source and v2 artifacts passed combined
+  exact-commit revalidation as Adroit job `3344431`. C7, C8, and every later
+  GE1 chunk have not begun.

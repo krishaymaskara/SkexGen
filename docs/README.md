@@ -151,6 +151,11 @@ the immediate next action changes.
   validation](experiments/ge1_c6_cpu_validation.md) — corrected exact-commit
   validation of governed training, deterministic recovery, autonomous
   metrics, memory interventions, and both authorized train-only arm smokes.
+- [GE1 C5/C6 review-fix authoritative CPU
+  validation](experiments/ge1_c5_c6_review_fix_cpu_validation.md) — combined
+  exact-commit revalidation of shared-decoder provenance, prefix handling,
+  structured primary reporting, donor agreement, metrics v2, and both
+  authorized train-only arm smokes.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

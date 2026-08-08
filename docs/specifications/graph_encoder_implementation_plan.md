@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; post-C6 review fixes implemented and awaiting authoritative revalidation; C7 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; post-C6 review fixes authoritatively revalidated; C7 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -100,9 +100,15 @@ test correction, exact-commit job `3344367` passed all 37 focused tests and all
 147 graph-encoder tests with zero skips, every later runner gate, and both
 authorized 407-family train-only arm smokes. The [C6 validation
 record](../experiments/ge1_c6_cpu_validation.md) retains the complete evidence
-and limitations. C6 is complete. C7 and later implementation has not begun.
-RR and ER payload access remains restricted by the accepted staged-access
-rules.
+and limitations. The later C5/C6 review fixes were then revalidated together
+at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e` by Adroit CPU job
+`3344431`: 75/75 focused and 163/163 complete graph-encoder tests passed with
+zero skips, followed by every regression and repository gate and both v2
+407-family train-only arm smokes. The [combined validation
+record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md) retains the
+evidence and limitations. C6 is complete. C7 and later implementation has not
+begun. RR and ER payload access remains restricted by the accepted
+staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -634,9 +640,10 @@ reviewed two-epoch 407-family train-only Adroit smoke for both arms as job
 `3344367`.
 Post-validation C5/C6 review fixes and accepted
 [ADR-0005](../decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md)
-advance new metrics artifacts to v2 and require a new exact-commit C5/C6
-revalidation. Job `3344367` remains valid historical C6 evidence but does not
-cover current source. C7 stays blocked until the review-fix validation passes.
+advance new metrics artifacts to v2. Job `3344367` remains valid historical
+C6 evidence; combined exact-commit job `3344431` passed the required C5/C6
+review-fix revalidation, including both v2 train-only artifacts. C7 has not
+begun.
 
 ### Stage 5 — Train-only sufficiency and memory-use gates
 

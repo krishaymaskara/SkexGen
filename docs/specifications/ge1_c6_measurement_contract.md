@@ -13,8 +13,11 @@ intervention values must be finite numbers or reason-bearing structured nulls,
 `P_shuffle` reports donor-template agreement against the random-distinct-donor
 baseline, and `P_true`/`P_mean` report donor agreement as structurally
 unavailable. The validated job `3344367` v1 artifacts remain historical C6
-evidence; current review-fix source requires a separate authoritative
-revalidation before C7.
+evidence. Combined exact-commit Adroit CPU job `3344431` authoritatively
+revalidated the review-fix source and both v2 train-only artifacts; see the
+[combined validation
+record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md). C7 remains
+unstarted.
 
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,
@@ -143,3 +146,11 @@ closed. The smoke is not a scientific result and cannot tune any frozen
 choice. Job `3344367` passed this gate for both arms, and its evidence is in
 the [C6 validation record](../experiments/ge1_c6_cpu_validation.md). This
 completion record does not begin C7 or any later work.
+
+The later reporting, provenance, donor-agreement, prefix-envelope, and
+seed-validation review fixes passed their combined exact-commit C5/C6
+revalidation as Adroit CPU job `3344431`. Both arm smokes emitted and passed
+the `GE1-C6-METRICS-v2` and `GE1-PRIMARY-REPORT-v1` contract checks. The
+[combined validation
+record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md) preserves that
+evidence. This revalidation also does not begin C7 or any later work.
