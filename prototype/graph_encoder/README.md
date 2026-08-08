@@ -70,6 +70,7 @@ from prototype.graph_encoder import (
     GraphSemanticInput,
     MEMORY_CONDITIONS,
     METRICS_SCHEMA_VERSION,
+    PRIMARY_REPORTING_CONTRACT_VERSION,
     PairedBatch,
     SharedGE1Decoder,
     authorize_c6_provenance,
@@ -668,6 +669,53 @@ absolute position embedding.
 The complete field-level inventory and parity boundary are frozen in the
 [C5 shared-decoder contract](../../docs/specifications/ge1_shared_decoder_contract.md).
 
+Because the decoder is strongly position-aware while the typed graph encoder is
+position-free, a primary number cannot be interpreted on its own. The frozen
+Graph V1 position-only scoring prior reached 59/68 exact graphs, so a decoder
+carrying four position signals may recover much of this controlled topology
+regardless of what either encoder supplies. The memory-intervention values are
+therefore a reporting requirement; see "Primary reporting requirement" below.
+
+### Inherited V6 entry-point compatibility shim
+
+`greedy_decode_v6_from_memory` validates its `V6EncodedMemory` argument before
+decoding. That inherited validator requires `encoding_source` to equal the
+frozen literal `v6_encoder_quantized_memory` and `code_indices` to be a
+`[rows, latent_tokens]` long tensor inside the codebook range. Both exist to
+prove the memory came from the V6 encoder's quantizer.
+
+GE1 memory satisfies neither in fact. It is continuous and bypasses
+nearest-code assignment, so no code indices exist. `SharedGE1Decoder` therefore
+supplies two inert values, named rather than inlined, purely to pass an
+inherited entry-point check whose premise does not hold for GE1:
+
+| Supplied value | Why it is false for GE1 | Where it is corrected |
+|---|---|---|
+| `V6_ENTRY_POINT_COMPATIBILITY_SOURCE` | memory is continuous, not quantized | `encoded_memory_source` becomes `GE1_CONTINUOUS_MEMORY_SOURCE` |
+| zero `code_indices` from `_inert_compatibility_code_indices` | no nearest-code assignment occurred | `latent_indices` becomes `()` |
+
+`_corrected_memory_provenance` rewrites both fields immediately, before any
+scoring, conversion, metric, or checkpoint observes the record. Nothing that
+claims quantized-memory provenance escapes the decoder.
+
+Two consequences are deliberate and must not be treated as regressions:
+
+- The zero index tensor is byte-identical to what a fully collapsed
+  single-code VQ produces. Any future codebook diagnostic must read the
+  corrected record, never the shim.
+- Because the corrected record no longer carries the V6 literal, the inherited
+  `validate_and_convert_v6_autonomous_prediction` path **rejects GE1
+  predictions by design**. GE1 converts through
+  `prototype.graph_baseline.conversion.validate_and_convert_graph_prediction`.
+  That rejection is a loud, intended failure.
+
+The frozen inherited V6 implementation is not modified. `tests/test_c5_contract.py`
+pins the shim to the inherited literal without importing PyTorch, and
+`tests/test_c5_shared_decoder.py` asserts that returned records carry GE1
+provenance and empty latent indices, then passes an actual corrected prediction
+to the inherited V6 converter and requires the stable
+`invalid_v6_node_selection` provenance rejection.
+
 ### Strict checkpoint API
 
 `save_ge1_checkpoint` and `load_ge1_checkpoint` implement
@@ -746,6 +794,77 @@ structured nulls for undefined denominators. Exact graph/node, dependency,
 attachment, conversion, failure-stage, geometry, parameter, receptive-field,
 timing, and cumulative-process peak-memory records are included.
 
+### Prefix validation envelope
+
+Prefix construction retains the plane plus the first `k` complete canonical
+operation groups and discards later groups with their exclusively owned
+sketch, profile, and axis nodes. It never repairs, substitutes, or re-runs a
+prediction. The envelope is exact:
+
+| Field | Treatment |
+|---|---|
+| `node_type_id` | preserved per retained node |
+| `categorical_ids` | preserved per retained node |
+| `normalized_geometry` | preserved per retained node |
+| `derived_geometry_mask` | preserved per retained node |
+| directed typed edges | filtered to both-endpoints-retained; classes preserved |
+| node `position` | renumbered to the prefix row |
+| `legal_node_type_masks` | re-derived for the shorter requested length |
+| `grammar_state_evidence` | re-derived for the shorter requested length |
+| `RawDecodedEdge` presence scores | re-derived as inert `±1.0` markers |
+
+Only converter bookkeeping is re-derived, and only because it is a function of
+the requested sequence length: `legal_next_node_ids` receives the shortened
+total count, and the strict converter validates that bookkeeping against the
+length it is given. Recomputed masks can happen to equal the corresponding
+full-rollout masks, as they do for every retained position in the tested RR
+prefix; equality or difference is not the test of recomputation. The runtime
+test instead requires exact masks and `grammar_state_evidence` recomputed under
+the shortened count, and requires every mask to admit the emitted node. No
+semantic prediction content changes, so scoring behavior is unaffected.
+`tests/test_c6_runtime.py` pins this table field by field.
+
+### Primary reporting requirement
+
+Every primary result must publish the five memory-intervention values beside
+it: `P_true`, `P_shuffle`, `P_mean`, `R_shuffle`, and `R_mean`. This is a
+reporting requirement, not an optional diagnostic, because the shared decoder
+receives four output-side position signals and the frozen position-only prior
+reached 59/68 exact graphs; a primary number without memory evidence cannot
+distinguish encoder contribution from decoder position exploitation.
+
+`validate_primary_report` enforces the five keys and `complete_metrics_record`
+calls it before returning, so a metrics artifact cannot be emitted without
+them. Every value must be finite numeric evidence or a reason-bearing
+structured null of the form `{"value": null, "reason": "..."}`; bare `None`
+is rejected. This additive reporting obligation is accepted in
+[ADR-0005](../../docs/decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md),
+not inserted into the frozen Stage 0 record.
+
+New artifacts use `GE1-C6-METRICS-v2`, carry
+`primary_reporting_contract=GE1-PRIMARY-REPORT-v1`, and are emitted by
+`GE1-C6-TRAIN-ONLY-SMOKE-v2`. Historical v1 artifacts retain their original
+identity.
+
+### Donor/recipient template agreement
+
+The frozen `P_shuffle` intervention is a deterministic cyclic derangement over
+sorted family IDs, so donors sit at a fixed offset rather than being drawn
+uniformly. If sorted IDs correlate with operation template, donors may
+systematically share the recipient's template, which makes `P_shuffle` easier
+and pushes `R_shuffle` upward. That direction is conservative for the frozen
+ratio gate, but a borderline value cannot be interpreted without knowing the
+rate.
+
+`donor_template_agreement` therefore reports the assignment count, the
+same-template donor count, observed agreement, the chance baseline, and the
+excess over chance for `P_shuffle`. The baseline is conditioned on the frozen
+no-self rule: for recipient template counts `n_t` and `N` assignments it is
+`sum_t n_t(n_t-1) / (N(N-1))`. `P_true` uses recipient memory and `P_mean`
+uses synthetic `batch_mean:<identity>` memory, so both emit structured
+unavailable donor-agreement records rather than pretending those sources are
+families. This diagnostic does not change the derangement, ratios, or gates.
+
 The full additive contract is
 [GE1 C6 measurement](../../docs/specifications/ge1_c6_measurement_contract.md).
 The checked-in C6 implementation passed its two-epoch 407-family
@@ -777,6 +896,12 @@ both complete 407-family train-only arm smokes with strict epoch-2 reload and
 complete three-condition metrics records. C6 is runtime-complete. See the
 [authoritative validation
 record](../../docs/experiments/ge1_c6_cpu_validation.md).
+
+The C5/C6 review fixes documented above were implemented after job `3344367`.
+They leave that historical result intact but require one new clean exact-commit
+Adroit revalidation of the combined C5/C6 tests and v2 train-only artifacts
+before C7. Current source is therefore implemented but not yet authoritatively
+covered.
 
 ## Manifest authority and access order
 
@@ -832,5 +957,6 @@ The non-C2 package boundary uses:
 - C5 passed authoritative Python 3.8.13/PyTorch 1.11.0 CPU runtime validation
   as Adroit job `3344290` at exact commit
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
-- C6 passed authoritative runtime validation as Adroit job `3344367`. C7, C8,
-  and every later GE1 chunk have not begun.
+- C6 passed authoritative runtime validation as Adroit job `3344367`; current
+  post-validation C5/C6 review-fix source awaits its own exact-commit
+  revalidation. C7, C8, and every later GE1 chunk have not begun.

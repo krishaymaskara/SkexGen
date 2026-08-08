@@ -54,6 +54,43 @@ from .decoder_contract import (
 
 
 GE1_CONTINUOUS_MEMORY_SOURCE = "ge1_continuous_memory_from_codebook_projection"
+
+# --- Inherited V6 entry-point compatibility shim -----------------------------
+#
+# `greedy_decode_v6_from_memory` validates its `V6EncodedMemory` argument before
+# decoding. That validator requires `encoding_source` to equal the frozen V6
+# literal and `code_indices` to be a `[rows, latent_tokens]` long tensor inside
+# the codebook range. Both requirements exist to prove that the memory came from
+# the V6 encoder's quantizer.
+#
+# GE1 memory satisfies neither in fact: it is continuous and bypasses
+# nearest-code assignment entirely, so no code indices exist. The two values
+# below are therefore supplied only to pass an inherited entry-point check whose
+# premise does not hold for GE1. They are never read as evidence: every returned
+# node prediction is immediately rewritten with `latent_indices=()` and
+# `encoded_memory_source=GE1_CONTINUOUS_MEMORY_SOURCE` before any scoring,
+# conversion, metric, or checkpoint sees it.
+#
+# The zero index tensor is deliberately inert padding, not a measurement. It is
+# byte-identical to what a fully collapsed single-code VQ would produce, so any
+# future diagnostic that reads code indices must read the corrected record and
+# never the shim.
+#
+# Consequence, and the reason this is named rather than inlined: because the
+# corrected record no longer carries the V6 literal, the inherited
+# `validate_and_convert_v6_autonomous_prediction` path rejects GE1 predictions
+# by design. GE1 converts through
+# `prototype.graph_baseline.conversion.validate_and_convert_graph_prediction`
+# instead. That rejection is a loud, intended failure, not a regression.
+#
+# The frozen inherited V6 implementation is not modified.
+V6_ENTRY_POINT_COMPATIBILITY_SOURCE = "v6_encoder_quantized_memory"
+V6_ENTRY_POINT_COMPATIBILITY_RATIONALE = (
+    "inherited V6 entry-point validator requires quantized-memory provenance; "
+    "GE1 memory is continuous and VQ-bypassed, so the literal is supplied only "
+    "to satisfy that check and is overwritten in the returned record"
+)
+GE1_CORRECTED_LATENT_INDICES = ()
 _ENCODER_ONLY_MODULES = (
     "node_position_embedding",
     "input_norm",
@@ -126,6 +163,30 @@ class DecoderParityError(AssertionError):
             )
         )
         super().__init__(detail)
+
+
+def _inert_compatibility_code_indices(latent_tokens, device):
+    """Return the inert index tensor the inherited V6 validator demands.
+
+    GE1 performs no nearest-code assignment, so there are no code indices. The
+    zeros below carry no information and are never read as evidence.
+    """
+
+    return torch.zeros((1, int(latent_tokens)), dtype=torch.long, device=device)
+
+
+def _corrected_memory_provenance(node_prediction):
+    """Overwrite the compatibility shim with GE1's true memory provenance.
+
+    Every consumer downstream of this call sees the corrected record. Nothing
+    that claims quantized-memory provenance escapes the decoder.
+    """
+
+    return replace(
+        node_prediction,
+        latent_indices=GE1_CORRECTED_LATENT_INDICES,
+        encoded_memory_source=GE1_CONTINUOUS_MEMORY_SOURCE,
+    )
 
 
 def assert_exact_tensor_parity(expected, observed, *, stage, name):
@@ -221,14 +282,15 @@ class SharedGE1Decoder(GraphV1Model):
         converted = []
         for row, count in enumerate(counts):
             row_memory = memory[row:row + 1]
+            # See V6_ENTRY_POINT_COMPATIBILITY_SOURCE: these two fields are
+            # inert values supplied to pass the inherited entry-point validator,
+            # and are overwritten immediately below.
             compatibility_memory = V6EncodedMemory(
                 row_memory,
-                torch.zeros(
-                    (1, self.config.latent_tokens),
-                    dtype=torch.long,
-                    device=memory.device,
+                _inert_compatibility_code_indices(
+                    self.config.latent_tokens, memory.device
                 ),
-                "v6_encoder_quantized_memory",
+                V6_ENTRY_POINT_COMPATIBILITY_SOURCE,
                 self.config.model_name,
             )
             node_prediction = greedy_decode_v6_from_memory(
@@ -239,11 +301,7 @@ class SharedGE1Decoder(GraphV1Model):
                 ),
                 node_count_source=node_count_source,
             )[0]
-            node_prediction = replace(
-                node_prediction,
-                latent_indices=(),
-                encoded_memory_source=GE1_CONTINUOUS_MEMORY_SOURCE,
-            )
+            node_prediction = _corrected_memory_provenance(node_prediction)
             categories, geometry, geometry_mask = self._prefix_tensors(
                 node_prediction, row_memory
             )

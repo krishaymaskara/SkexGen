@@ -357,6 +357,146 @@ class C6RuntimeTests(unittest.TestCase):
             self.assertIn("primary", record["aggregates"])
             self.assertIn("geometry_error_by_channel_family", record["aggregates"])
 
+    def test_prefix_preserves_semantics_and_only_rederives_converter_bookkeeping(self):
+        """F3: pin the prefix validation envelope field by field.
+
+        Semantic prediction content must survive truncation unchanged. Only the
+        converter bookkeeping that is a function of the requested sequence
+        length may be re-derived, because the strict converter validates that
+        bookkeeping against the length it is given.
+        """
+
+        from prototype.controlled_data.builders import build_history
+        from prototype.flat_baseline.tests.test_constrained_v6 import (
+            V6GrammarTensorTests,
+        )
+        from prototype.graph_baseline.conversion import graph_prediction_from_evidence
+        from prototype.graph_baseline.graph_contract import (
+            graph_from_reconstruction_target,
+        )
+        from prototype.graph_encoder.canonicalization import (
+            GraphCanonicalizationInput, canonicalize_graph,
+        )
+        from prototype.graph_encoder.metrics import _canonical_prefix_prediction
+        from prototype.model_data.canonical import (
+            canonical_nodes_and_edges, reconstruction_target,
+        )
+        from prototype.model_data.tests.fixtures import source
+        from prototype.model_data.vocab import NODE_TYPES
+        from prototype.node_grammar import (
+            V5_NODE_GRAMMAR, grammar_state_evidence, legal_next_node_ids,
+        )
+        from prototype.representation.model import GeometryEncoding
+
+        node = V6GrammarTensorTests()._authoritative_v6_prediction("RR")
+        history = build_history(source("RR"), GeometryEncoding.CONTINUOUS)
+        nodes, edges = canonical_nodes_and_edges(history)
+        target = reconstruction_target(
+            nodes, edges, history.structure.operation_sequence
+        )
+        graph = graph_from_reconstruction_target(target)
+        classes = [[0] * graph.node_count for unused in range(graph.node_count)]
+        for edge in graph.directed_typed_edges:
+            classes[edge.source][edge.destination] = edge.edge_type_id
+        prediction = graph_prediction_from_evidence(
+            node, classes, classes,
+            [[False] * graph.node_count for unused in range(graph.node_count)],
+        )
+
+        from prototype.graph_baseline.graph_contract import (
+            model_data_edge_id_from_graph_class,
+        )
+        canonical = canonicalize_graph(GraphCanonicalizationInput(
+            prediction.graph.node_type_ids,
+            (
+                tuple(item.source for item in prediction.graph.directed_typed_edges),
+                tuple(item.destination for item in prediction.graph.directed_typed_edges),
+            ),
+            tuple(
+                model_data_edge_id_from_graph_class(item.edge_type_id)
+                for item in prediction.graph.directed_typed_edges
+            ),
+            tuple(item.categorical_ids for item in prediction.node_prediction.raw_nodes),
+            tuple(
+                item.normalized_geometry
+                for item in prediction.node_prediction.raw_nodes
+            ),
+            tuple(
+                item.derived_geometry_mask
+                for item in prediction.node_prediction.raw_nodes
+            ),
+        ))
+        stop = canonical.operation_sequence[0] + 1
+        retained = canonical.canonical_to_old[:stop]
+        prefix = _canonical_prefix_prediction(prediction, retained)
+
+        original_nodes = prediction.node_prediction.raw_nodes
+        prefix_nodes = prefix.node_prediction.raw_nodes
+        self.assertEqual(len(prefix_nodes), len(retained))
+
+        # Preserved exactly, per retained node, in canonical order.
+        for new, old in enumerate(retained):
+            for field_name in (
+                "node_type_id",
+                "categorical_ids",
+                "normalized_geometry",
+                "derived_geometry_mask",
+            ):
+                with self.subTest(node=new, field=field_name):
+                    self.assertEqual(
+                        getattr(prefix_nodes[new], field_name),
+                        getattr(original_nodes[old], field_name),
+                    )
+            # `position` is bookkeeping: it renumbers to the prefix row.
+            self.assertEqual(prefix_nodes[new].position, new)
+
+        # Edges are filtered, never invented or reclassified.
+        retained_set = set(retained)
+        expected_edges = {
+            (retained.index(item.source), retained.index(item.destination),
+             item.edge_type_id)
+            for item in prediction.graph.directed_typed_edges
+            if item.source in retained_set and item.destination in retained_set
+        }
+        observed_edges = {
+            (item.source, item.destination, item.edge_type_id)
+            for item in prefix.graph.directed_typed_edges
+        }
+        self.assertEqual(observed_edges, expected_edges)
+        self.assertTrue(observed_edges)
+
+        # Re-derived exactly under the shortened requested count. Recomputed
+        # values may equal their full-rollout counterparts for a given prefix;
+        # equality or difference is not evidence of whether recomputation ran.
+        prefix_masks = prefix.node_prediction.legal_node_type_masks
+        prefix_evidence = prefix.node_prediction.grammar_state_evidence
+        self.assertEqual(len(prefix_masks), len(retained))
+        expected_masks = []
+        expected_evidence = []
+        prefix_ids = ()
+        for position in range(len(retained)):
+            legal = legal_next_node_ids(
+                prefix_ids, len(retained), V5_NODE_GRAMMAR
+            )
+            expected_masks.append(tuple(
+                candidate in legal
+                for candidate in range(len(NODE_TYPES.tokens))
+            ))
+            expected_evidence.append(
+                grammar_state_evidence(prefix_ids, len(retained), legal)
+            )
+            prefix_ids = prefix_ids + (prefix_nodes[position].node_type_id,)
+        self.assertEqual(tuple(prefix_masks), tuple(expected_masks))
+        self.assertEqual(tuple(prefix_evidence), tuple(expected_evidence))
+        # Re-derivation must still be grammar-legal for what was emitted.
+        for position, mask in enumerate(prefix_masks):
+            emitted = prefix_nodes[position].node_type_id
+            with self.subTest(position=position):
+                self.assertTrue(mask[emitted])
+        self.assertEqual(
+            NODE_TYPES.tokens[prefix_nodes[0].node_type_id], "reference_plane"
+        )
+
     def test_production_prefix_exact_cases_permutation_and_missing_dependency(self):
         from prototype.controlled_data.builders import build_history
         from prototype.flat_baseline.autonomous import RawDecodedNode

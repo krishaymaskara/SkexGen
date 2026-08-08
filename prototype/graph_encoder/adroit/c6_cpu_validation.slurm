@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ge1-c6-cpu-validate
+#SBATCH --job-name=ge1-c5-c6-review
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -13,7 +13,7 @@ set -Eeuo pipefail
 terminal_failure() {
   status=$?
   trap - ERR
-  printf '{"event":"c6_cpu_validation_terminal_failure","commit":"%s","job_id":"%s","exit_status":%s,"operation_template_manifest_accessed":"not_confirmed_on_failure","operation_template_train_payload_accessed":"not_confirmed_on_failure","development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"engineering_smoke_completed":false,"c7_or_later_performed":false}\n' \
+  printf '{"event":"c5_c6_review_cpu_validation_terminal_failure","commit":"%s","job_id":"%s","exit_status":%s,"operation_template_manifest_accessed":"not_confirmed_on_failure","operation_template_train_payload_accessed":"not_confirmed_on_failure","development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"engineering_smoke_completed":false,"c7_or_later_performed":false}\n' \
     "${EXPECTED_COMMIT:-unresolved}" "${SLURM_JOB_ID:-unresolved}" "$status" >&2
   exit "$status"
 }
@@ -58,7 +58,7 @@ SOURCE_STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 test "$CHECKED_OUT_COMMIT" = "$EXPECTED_COMMIT"
 test -z "$SOURCE_STATUS"
 
-printf '{"event":"c6_cpu_validation_start","commit":"%s","job_id":"%s","host":"%s","container":"%s","source_clean":true,"execution_device":"cpu","authorized_partition":"operation_template.train","development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"c7_or_later_performed":false}\n' \
+printf '{"event":"c5_c6_review_cpu_validation_start","commit":"%s","job_id":"%s","host":"%s","container":"%s","source_clean":true,"execution_device":"cpu","authorized_partition":"operation_template.train","development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"c7_or_later_performed":false}\n' \
   "$CHECKED_OUT_COMMIT" "$SLURM_JOB_ID" "$(hostname)" "$CONTAINER"
 
 container_python -B - <<'PY'
@@ -71,7 +71,7 @@ assert sys.version_info[:2] == (3, 8), "Python 3.8 required"
 assert torch.__version__.split("+")[0] == "1.11.0", "PyTorch 1.11.0 required"
 assert not torch.cuda.is_available(), "CUDA must be unavailable"
 print(json.dumps({
-    "event": "c6_cpu_validation_environment",
+    "event": "c5_c6_review_cpu_validation_environment",
     "python_version": sys.version.split()[0],
     "python_implementation": platform.python_implementation(),
     "pytorch_version": torch.__version__,
@@ -87,6 +87,8 @@ import json
 import unittest
 
 names = (
+    "prototype.graph_encoder.tests.test_c5_contract",
+    "prototype.graph_encoder.tests.test_c5_shared_decoder",
     "prototype.graph_encoder.tests.test_c6_contract",
     "prototype.graph_encoder.tests.test_c6_runtime",
 )
@@ -95,14 +97,14 @@ suite = unittest.TestSuite(
 )
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 print(json.dumps({
-    "event": "c6_focused_suite",
+    "event": "c5_c6_review_focused_suite",
     "tests_run": result.testsRun,
     "failures": len(result.failures),
     "errors": len(result.errors),
     "skipped": len(result.skipped),
 }, sort_keys=True, separators=(",", ":")), flush=True)
-if result.testsRun < 33 or not result.wasSuccessful() or result.skipped:
-    raise SystemExit("focused C6 suite must pass with zero skips")
+if result.testsRun < 75 or not result.wasSuccessful() or result.skipped:
+    raise SystemExit("focused C5/C6 review suite must pass with zero skips")
 PY
 
 container_python -B - <<'PY'
@@ -112,13 +114,13 @@ import unittest
 suite = unittest.defaultTestLoader.discover("prototype/graph_encoder/tests")
 result = unittest.TextTestRunner(verbosity=1).run(suite)
 print(json.dumps({
-    "event": "c6_complete_graph_encoder_suite",
+    "event": "c5_c6_review_complete_graph_encoder_suite",
     "tests_run": result.testsRun,
     "failures": len(result.failures),
     "errors": len(result.errors),
     "skipped": len(result.skipped),
 }, sort_keys=True, separators=(",", ":")), flush=True)
-if result.testsRun < 143 or not result.wasSuccessful() or result.skipped:
+if result.testsRun < 163 or not result.wasSuccessful() or result.skipped:
     raise SystemExit("complete graph_encoder suite must pass with zero skips")
 PY
 
@@ -150,11 +152,11 @@ import ast
 from pathlib import Path
 
 paths = tuple(sorted(Path("prototype/graph_encoder").glob("*.py"))) + tuple(
-    sorted(Path("prototype/graph_encoder/tests").glob("test_c6_*.py"))
+    sorted(Path("prototype/graph_encoder/tests").glob("test_c[56]_*.py"))
 )
 for path in paths:
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path), feature_version=(3, 8))
-print("C6_PYTHON38_GRAMMAR_OK {}".format(len(paths)), flush=True)
+print("C5_C6_PYTHON38_GRAMMAR_OK {}".format(len(paths)), flush=True)
 PY
 
 container_python -B - <<'PY'
@@ -192,6 +194,65 @@ for arm in flat typed_graph; do
     --arm "$arm" \
     --seed 2026
   test -s "$RUN_ROOT/$arm/c6_metrics.json"
+  container_python -B - "$RUN_ROOT/$arm/c6_metrics.json" "$arm" <<'PY'
+import json
+import math
+import sys
+
+path, expected_arm = sys.argv[1:]
+with open(path, "r", encoding="utf-8") as stream:
+    record = json.load(stream)
+
+assert record["schema_version"] == "GE1-C6-METRICS-v2"
+assert record["smoke_version"] == "GE1-C6-TRAIN-ONLY-SMOKE-v2"
+assert record["primary_reporting_contract"] == "GE1-PRIMARY-REPORT-v1"
+assert record["arm"] == expected_arm
+assert record["physical_family_count"] == 407
+
+required = ("P_true", "P_shuffle", "P_mean", "R_shuffle", "R_mean")
+ratios = record["intervention_ratios"]
+assert all(name in ratios for name in required)
+for name in required:
+    value = ratios[name]
+    defined = (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+    reasoned = (
+        isinstance(value, dict)
+        and value.get("value") is None
+        and isinstance(value.get("reason"), str)
+        and bool(value["reason"].strip())
+    )
+    assert defined or reasoned, (name, value)
+
+donor = {
+    item["condition"]: item
+    for item in record["donor_template_agreement"]
+}
+assert set(donor) == {"P_true", "P_shuffle", "P_mean"}
+assert donor["P_shuffle"]["available"] is True
+assert donor["P_shuffle"]["assignment_count"] == 407
+assert donor["P_shuffle"]["chance_baseline"] == "random_distinct_family_donor"
+for name in ("P_true", "P_mean"):
+    assert donor[name]["available"] is False
+    assert isinstance(donor[name]["unavailable_reason"], str)
+    assert donor[name]["unavailable_reason"].strip()
+    assert donor[name]["observed_agreement"] is None
+
+print(json.dumps({
+    "event": "c5_c6_review_metrics_artifact_contract",
+    "arm": expected_arm,
+    "schema_version": record["schema_version"],
+    "primary_reporting_contract": record["primary_reporting_contract"],
+    "required_intervention_values": list(required),
+    "p_shuffle_donor_agreement_available": True,
+    "p_true_donor_agreement_available": False,
+    "p_mean_donor_agreement_available": False,
+    "physical_family_count": record["physical_family_count"],
+}, sort_keys=True, separators=(",", ":")), flush=True)
+PY
   printf 'c6_two_epoch_train_only_smoke_%s=PASS\n' "$arm"
 done
 
@@ -199,5 +260,5 @@ git diff --check
 test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-printf '{"event":"c6_cpu_validation_terminal_success","commit":"%s","job_id":"%s","python":"3.8","pytorch":"1.11.0","execution_device":"cpu","focused_c6_minimum_tests":33,"complete_graph_encoder_minimum_tests":143,"all_pytorch_related_skips":0,"two_epoch_train_only_smoke_arms":["flat","typed_graph"],"complete_metrics_records":2,"operation_template_manifest_accessed":true,"operation_template_train_payload_accessed":true,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"engineering_smoke_performed":true,"c7_or_later_performed":false,"run_root":"%s"}\n' \
+printf '{"event":"c5_c6_review_cpu_validation_terminal_success","commit":"%s","job_id":"%s","python":"3.8","pytorch":"1.11.0","execution_device":"cpu","focused_c5_c6_tests":75,"complete_graph_encoder_tests":163,"all_pytorch_related_skips":0,"metrics_schema":"GE1-C6-METRICS-v2","primary_reporting_contract":"GE1-PRIMARY-REPORT-v1","metrics_artifact_contract_checks":2,"two_epoch_train_only_smoke_arms":["flat","typed_graph"],"complete_metrics_records":2,"operation_template_manifest_accessed":true,"operation_template_train_payload_accessed":true,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"scientific_training_performed":false,"engineering_smoke_performed":true,"c7_or_later_performed":false,"run_root":"%s"}\n' \
   "$EXPECTED_COMMIT" "$SLURM_JOB_ID" "$RUN_ROOT"

@@ -38,3 +38,9 @@ it superseded by a later ADR.
   accepted by designated reviewer Krishay Maskara; freezes the
   operation-template-only protocol, core continuous encoder comparison,
   fixed epoch-50 selection, training controls, and endpoints.
+- [ADR-0005: GE1 primary reporting and metrics v2
+  addendum](ADR-0005-ge1-primary-reporting-and-metrics-v2.md) — accepted by
+  designated reviewer Krishay Maskara; requires complete reason-bearing
+  memory-intervention reporting, defines donor-template semantics and the
+  no-self chance baseline, and versions new metrics artifacts as v2 without
+  rewriting the frozen Stage 0 record.

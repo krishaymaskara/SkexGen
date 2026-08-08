@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; C7 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; post-C6 review fixes implemented and awaiting authoritative revalidation; C7 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -632,6 +632,11 @@ stage safely. This is not a claim that the full six-run experiment, Stage 5,
 development evaluation, or protected evaluation has begun. C6 passed its
 reviewed two-epoch 407-family train-only Adroit smoke for both arms as job
 `3344367`.
+Post-validation C5/C6 review fixes and accepted
+[ADR-0005](../decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md)
+advance new metrics artifacts to v2 and require a new exact-commit C5/C6
+revalidation. Job `3344367` remains valid historical C6 evidence but does not
+cover current source. C7 stays blocked until the review-fix validation passes.
 
 ### Stage 5 — Train-only sufficiency and memory-use gates
 

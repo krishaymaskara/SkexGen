@@ -60,6 +60,24 @@ CAPACITY_ADJUSTMENT_FIELDS = (
 )
 
 
+def validate_authorized_seed(seed):
+    """Reject any seed outside the frozen authorized set and return it.
+
+    Callers that need only the seed check must use this rather than building a
+    configuration for its validation side effect.
+    """
+
+    _integer(seed, "seed", positive=True)
+    if seed not in AUTHORIZED_SEEDS:
+        raise GraphEncoderError(
+            "unauthorized_configuration",
+            "seed must be one of {}".format(
+                ", ".join(str(item) for item in AUTHORIZED_SEEDS)
+            ),
+        )
+    return seed
+
+
 def frozen_feedforward_width(encoder):
     """Return the frozen encoder feed-forward width for one arm."""
 

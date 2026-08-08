@@ -25,6 +25,7 @@ specifications or new decision records.
 | GE1 C5 authoritative validation | Passed as Adroit job `3344290` at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`: 22/22 focused and 110/110 complete-suite tests, both with zero skips |
 | GE1 C6 validation attempts | Jobs `3344337` and `3344363` failed before corpus access. The corrected second attempt at exact commit `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` passed 36/37 focused tests with zero skips; its sole error was a test-only tensor/dataclass equality assertion |
 | GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
+| GE1 C5/C6 review-fix revalidation | **Required and not yet run.** The accepted C5/C6 review fixes changed `shared_decoder.py`, `metrics.py`, `model.py`, `config.py`, and `c6_smoke.py` after the validated commits; the recorded C5 and C6 results no longer cover current source |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -242,6 +243,34 @@ strict reload and complete metrics records. The [C6 validation
 record](experiments/ge1_c6_cpu_validation.md) retains the evidence and
 limitations. C6 is complete. Development, RR, ER, C7, C8, and later work have
 not begun.
+
+A subsequent C5/C6 implementation review produced five accepted fixes. The
+reporting and artifact-version decisions are governed by accepted
+[ADR-0005](decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md), which
+leaves the frozen `GE1-STAGE0-PREREG-v1` record unchanged. The inherited V6
+entry-point compatibility shim is now named, documented, and
+tested, with its corrected GE1 provenance pinned and the deliberate closure of
+the inherited V6 autonomous conversion path recorded; decoder behavior is
+unchanged and the frozen inherited V6 implementation is untouched. Every
+primary result must now publish `P_true`, `P_shuffle`, `P_mean`, `R_shuffle`,
+and `R_mean`, enforced as finite values or reason-bearing structured nulls by
+`validate_primary_report`, because the shared
+decoder's four output-side position signals and the frozen 59/68 position-only
+prior make a primary number uninterpretable without memory evidence. New
+artifacts use `GE1-C6-METRICS-v2` and the train-only smoke identity v2. The
+prefix validation envelope is documented and tested field by field, separating
+preserved semantic content from exactly recomputed converter bookkeeping, with
+no scoring change. Donor/recipient template agreement is available for
+`P_shuffle` against the random-distinct-donor baseline; `P_true` and `P_mean`
+carry structured unavailable records while the frozen cyclic derangement is
+retained unchanged.
+The canonical decoder's seed check is an explicit authorized-seed validator
+rather than a discarded configuration call. Those changes altered
+`shared_decoder.py`, `metrics.py`, `model.py`, `config.py`, `c6_smoke.py`, and
+the combined review-validation runner, so the recorded C5 and C6 validations
+no longer cover current source. Local
+no-PyTorch checks pass, but a new authoritative Python 3.8 / PyTorch 1.11
+Adroit CPU validation is required before C7 begins.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

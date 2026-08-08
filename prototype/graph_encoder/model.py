@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from .config import GE1Config, frozen_encoder_config
+from .config import GE1Config, frozen_encoder_config, validate_authorized_seed
 from .encoders import FlatProgramEncoder, TypedGraphProgramEncoder
 from .shared_decoder import SharedGE1Decoder, copied_shared_decoder
 
@@ -77,7 +77,7 @@ def _construct_with_local_seed(seed, constructor):
 def canonical_shared_decoder(seed):
     """Construct the arm-independent canonical decoder exactly once."""
 
-    frozen_encoder_config("flat", seed)
+    validate_authorized_seed(seed)
     return _construct_with_local_seed(seed, SharedGE1Decoder)
 
 

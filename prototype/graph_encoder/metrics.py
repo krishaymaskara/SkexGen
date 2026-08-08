@@ -19,7 +19,23 @@ from prototype.model_data.vocab import EDGE_TYPES, NODE_TYPES
 from .errors import GraphEncoderError
 
 
-METRICS_SCHEMA_VERSION = "GE1-C6-METRICS-v1"
+METRICS_SCHEMA_VERSION = "GE1-C6-METRICS-v2"
+DONOR_TEMPLATE_AGREEMENT_VERSION = "GE1-C6-DONOR-TEMPLATE-AGREEMENT-v1"
+PRIMARY_REPORTING_CONTRACT_VERSION = "GE1-PRIMARY-REPORT-v1"
+
+# Every primary result must publish the memory-intervention evidence beside it.
+# The shared decoder receives four output-side serialized-position signals, and
+# the frozen Graph V1 position-only prior reached 59/68 exact graphs, so a
+# primary number is uninterpretable without the accompanying evidence that the
+# decoder used encoder memory at all. These five values are therefore a
+# reporting requirement, not an optional diagnostic.
+PRIMARY_REPORT_REQUIRED_INTERVENTION_KEYS = (
+    "P_true",
+    "P_shuffle",
+    "P_mean",
+    "R_shuffle",
+    "R_mean",
+)
 PREFIX_SCORER_VERSION = "GE1-C6-EXECUTABLE-PREFIX-v1"
 AGGREGATION_VERSION = "GE1-C6-PHYSICAL-FAMILY-MACRO-v1"
 FIRST_FAILURE_STAGES = (
@@ -690,6 +706,169 @@ def intervention_ratios(condition_metrics):
     }
 
 
+def validate_primary_report(record):
+    """Reject any primary result that omits the memory-intervention evidence.
+
+    Every value must be finite numeric evidence or a structured undefined value
+    with a nonempty reason. Bare ``None`` is ambiguous and is rejected.
+    """
+
+    ratios = record.get("intervention_ratios")
+    if not isinstance(ratios, dict):
+        raise GraphEncoderError(
+            "incomplete_primary_report",
+            "a primary result must carry an intervention_ratios block",
+        )
+    missing = tuple(
+        name
+        for name in PRIMARY_REPORT_REQUIRED_INTERVENTION_KEYS
+        if name not in ratios
+    )
+    if missing:
+        raise GraphEncoderError(
+            "incomplete_primary_report",
+            "primary report omits {}".format(", ".join(missing)),
+        )
+    malformed = tuple(
+        name
+        for name in PRIMARY_REPORT_REQUIRED_INTERVENTION_KEYS
+        if not _valid_reported_metric(ratios[name])
+    )
+    if malformed:
+        raise GraphEncoderError(
+            "incomplete_primary_report",
+            "primary report has unreasoned or nonfinite values for {}".format(
+                ", ".join(malformed)
+            ),
+        )
+    return record
+
+
+def _valid_reported_metric(value):
+    if (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    ):
+        return True
+    return (
+        isinstance(value, dict)
+        and value.get("value") is None
+        and isinstance(value.get("reason"), str)
+        and bool(value["reason"].strip())
+    )
+
+
+def _unavailable_donor_agreement(condition, reason, assignment_count):
+    return {
+        "version": DONOR_TEMPLATE_AGREEMENT_VERSION,
+        "condition": condition,
+        "available": False,
+        "unavailable_reason": reason,
+        "assignment_count": int(assignment_count),
+        "same_template_donor_count": None,
+        "observed_agreement": None,
+        "chance_agreement": None,
+        "agreement_excess_over_chance": None,
+        "recipient_template_counts": {},
+        "chance_baseline": "random_distinct_family_donor",
+    }
+
+
+def donor_template_agreement(memory_assignments, templates_by_family, *, condition):
+    """Report how often a shuffled family donor shares its recipient's template.
+
+    The frozen intervention is a deterministic cyclic derangement over sorted
+    family IDs, so donors sit at a fixed offset rather than being drawn
+    uniformly. If sorted IDs correlate with operation template, donors may
+    systematically share the recipient's template, which makes `P_shuffle`
+    easier and pushes `R_shuffle` upward. That direction is conservative for the
+    frozen ratio gate, but a borderline value cannot be interpreted without
+    knowing the agreement rate, so it is reported rather than assumed. The
+    chance baseline conditions on the frozen no-self-donor constraint.
+
+    P_true has no distinct donor and P_mean has a synthetic batch-mean source;
+    both are reported as structurally unavailable instead of being resolved
+    through the physical-family template map.
+
+    This is a diagnostic only. It does not alter the derangement, the ratios, or
+    any gate.
+    """
+
+    raw_assignments = tuple(memory_assignments)
+    if condition == "P_true":
+        return _unavailable_donor_agreement(
+            condition,
+            "recipient memory has no distinct donor family",
+            len(raw_assignments),
+        )
+    if condition == "P_mean":
+        return _unavailable_donor_agreement(
+            condition,
+            "batch-mean memory is synthetic and has no donor family",
+            len(raw_assignments),
+        )
+    if condition != "P_shuffle":
+        raise GraphEncoderError(
+            "metric_target_alignment_failure",
+            "donor agreement received an unknown memory condition",
+        )
+    if not raw_assignments:
+        return _unavailable_donor_agreement(
+            condition, "shuffle condition is unavailable", 0
+        )
+    if any(
+        donor is None or donor == recipient
+        for recipient, donor in raw_assignments
+    ):
+        raise GraphEncoderError(
+            "metric_target_alignment_failure",
+            "P_shuffle donor agreement requires one distinct family donor per row",
+        )
+    assignments = raw_assignments
+    unknown = tuple(
+        name
+        for pair in assignments
+        for name in pair
+        if name not in templates_by_family
+    )
+    if unknown:
+        raise GraphEncoderError(
+            "metric_target_alignment_failure",
+            "donor agreement requires a template for every assigned family",
+        )
+    same = sum(
+        1
+        for recipient, donor in assignments
+        if templates_by_family[recipient] == templates_by_family[donor]
+    )
+    counts = Counter(templates_by_family[recipient] for recipient, _ in assignments)
+    assignment_count = len(assignments)
+    if assignment_count < 2:
+        raise GraphEncoderError(
+            "metric_target_alignment_failure",
+            "P_shuffle donor agreement requires at least two assignments",
+        )
+    total = float(assignment_count)
+    chance = sum(
+        value * (value - 1)
+        for value in counts.values()
+    ) / (total * (total - 1.0))
+    return {
+        "version": DONOR_TEMPLATE_AGREEMENT_VERSION,
+        "condition": condition,
+        "available": True,
+        "unavailable_reason": None,
+        "assignment_count": assignment_count,
+        "same_template_donor_count": same,
+        "observed_agreement": same / total,
+        "chance_agreement": chance,
+        "agreement_excess_over_chance": (same / total) - chance,
+        "recipient_template_counts": dict(sorted(counts.items())),
+        "chance_baseline": "random_distinct_family_donor",
+    }
+
+
 def _aggregate_primary(record):
     if not record or not record.get("available"):
         return undefined("condition_unavailable")
@@ -805,9 +984,13 @@ def peak_memory_record():
 def complete_metrics_record(
     *, arm, seed, epoch, checkpoint_identity, training_result,
     autonomous_result, condition_metrics, parameter_counts,
-    strict_checkpoint_reload, total_run_seconds
+    strict_checkpoint_reload, total_run_seconds, templates_by_family
 ):
-    """Build the complete versioned C6 smoke artifact."""
+    """Build the complete versioned C6 smoke artifact.
+
+    `templates_by_family` is required so that donor/recipient template
+    agreement is reported alongside the frozen intervention ratios.
+    """
 
     timings = {
         "monotonic_clock": "time.perf_counter",
@@ -833,8 +1016,10 @@ def complete_metrics_record(
         "total_run_seconds": float(total_run_seconds),
         "queue_wait_included": False,
     }
-    return {
+    templates = dict(templates_by_family)
+    record = {
         "schema_version": METRICS_SCHEMA_VERSION,
+        "primary_reporting_contract": PRIMARY_REPORTING_CONTRACT_VERSION,
         "run_identity": training_result.run_identity,
         "arm": arm,
         "seed": int(seed),
@@ -850,11 +1035,18 @@ def complete_metrics_record(
         "peak_memory": peak_memory_record(),
         "conditions": list(condition_metrics),
         "intervention_ratios": intervention_ratios(condition_metrics),
+        "donor_template_agreement": [
+            donor_template_agreement(
+                item.memory_assignments, templates, condition=item.condition
+            )
+            for item in autonomous_result.conditions
+        ],
         "strict_checkpoint_reload": bool(strict_checkpoint_reload),
         "protected_partition_access": False,
         "development_access": False,
         "c7_or_later_performed": False,
     }
+    return validate_primary_report(record)
 
 
 def _broad_failure_stage(conversion_stage):

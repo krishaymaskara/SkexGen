@@ -11,14 +11,23 @@ import unittest
 from unittest import mock
 
 from prototype.graph_encoder.autonomous import deterministic_derangement
-from prototype.graph_encoder.config import GE1TrainingConfig
+from prototype.graph_encoder.config import (
+    GE1TrainingConfig, validate_authorized_seed,
+)
 from prototype.graph_encoder.errors import GraphEncoderError
 from prototype.graph_encoder.metrics import (
     FIRST_FAILURE_STAGES,
+    METRICS_SCHEMA_VERSION,
+    PRIMARY_REPORT_REQUIRED_INTERVENTION_KEYS,
+    PRIMARY_REPORTING_CONTRACT_VERSION,
     PrefixAttempt,
+    complete_metrics_record,
+    donor_template_agreement,
     intervention_ratios,
     prefix_score_from_outcomes,
     receptive_field_record,
+    undefined,
+    validate_primary_report,
 )
 from prototype.graph_encoder.provenance import (
     authorize_c6_provenance,
@@ -129,6 +138,250 @@ class InterventionTests(unittest.TestCase):
             metric("P_mean", 0.0),
         ))
         self.assertEqual(zero["R_shuffle"]["reason"], "zero_true_denominator")
+
+
+class PrimaryReportingRequirementTests(unittest.TestCase):
+    """F2: a primary number may never be published without memory evidence."""
+
+    def test_required_keys_are_the_five_intervention_values(self):
+        self.assertEqual(
+            PRIMARY_REPORT_REQUIRED_INTERVENTION_KEYS,
+            ("P_true", "P_shuffle", "P_mean", "R_shuffle", "R_mean"),
+        )
+
+    def test_complete_block_requires_reasoned_structured_undefined_values(self):
+        record = {
+            "intervention_ratios": {
+                "P_true": 0.5,
+                "P_shuffle": 0.1,
+                "P_mean": undefined("condition_unavailable"),
+                "R_shuffle": 0.2,
+                "R_mean": undefined("numerator_unavailable"),
+            }
+        }
+        self.assertIs(validate_primary_report(record), record)
+
+    def test_bare_none_unreasoned_null_and_nonfinite_values_are_rejected(self):
+        base = {
+            "P_true": 0.5,
+            "P_shuffle": 0.1,
+            "P_mean": 0.1,
+            "R_shuffle": 0.2,
+            "R_mean": 0.2,
+        }
+        for malformed in (
+            None,
+            {"value": None},
+            {"value": None, "reason": ""},
+            float("nan"),
+            float("inf"),
+            True,
+        ):
+            ratios = dict(base, P_mean=malformed)
+            with self.subTest(value=malformed):
+                with self.assertRaises(GraphEncoderError) as caught:
+                    validate_primary_report({"intervention_ratios": ratios})
+                self.assertEqual(caught.exception.code, "incomplete_primary_report")
+
+    def test_missing_key_or_block_is_a_structured_failure(self):
+        for ratios in (
+            {"P_true": 0.5, "P_shuffle": 0.1, "P_mean": 0.1, "R_shuffle": 0.2},
+            {"P_true": 0.5, "P_shuffle": 0.1, "P_mean": 0.1, "R_mean": 0.2},
+            {},
+        ):
+            with self.subTest(ratios=sorted(ratios)):
+                with self.assertRaises(GraphEncoderError) as caught:
+                    validate_primary_report({"intervention_ratios": ratios})
+                self.assertEqual(caught.exception.code, "incomplete_primary_report")
+        for record in ({}, {"intervention_ratios": None}):
+            with self.subTest(record=record):
+                with self.assertRaises(GraphEncoderError) as caught:
+                    validate_primary_report(record)
+                self.assertEqual(caught.exception.code, "incomplete_primary_report")
+
+
+class DonorTemplateAgreementTests(unittest.TestCase):
+    """F4: report donor/recipient agreement; the derangement itself is frozen."""
+
+    def test_agreement_counts_and_chance_baseline(self):
+        templates = {"a": "E", "b": "E", "c": "RE", "d": "RE"}
+        assignments = (("a", "b"), ("b", "c"), ("c", "d"), ("d", "a"))
+        report = donor_template_agreement(
+            assignments, templates, condition="P_shuffle"
+        )
+        self.assertTrue(report["available"])
+        self.assertEqual(report["assignment_count"], 4)
+        self.assertEqual(report["same_template_donor_count"], 2)
+        self.assertAlmostEqual(report["observed_agreement"], 0.5)
+        self.assertAlmostEqual(report["chance_agreement"], 1.0 / 3.0)
+        self.assertAlmostEqual(
+            report["agreement_excess_over_chance"], 1.0 / 6.0
+        )
+        self.assertEqual(report["recipient_template_counts"], {"E": 2, "RE": 2})
+        self.assertEqual(
+            report["chance_baseline"], "random_distinct_family_donor"
+        )
+
+    def test_fully_aligned_donors_are_visible_as_excess_over_chance(self):
+        templates = {"a": "E", "b": "E", "c": "RE", "d": "RE"}
+        assignments = (("a", "b"), ("b", "a"), ("c", "d"), ("d", "c"))
+        report = donor_template_agreement(
+            assignments, templates, condition="P_shuffle"
+        )
+        self.assertAlmostEqual(report["observed_agreement"], 1.0)
+        self.assertAlmostEqual(report["chance_agreement"], 1.0 / 3.0)
+        self.assertAlmostEqual(
+            report["agreement_excess_over_chance"], 2.0 / 3.0
+        )
+
+    def test_conditions_without_distinct_donors_are_unavailable(self):
+        templates = {"a": "E", "b": "E"}
+        cases = (
+            ("P_true", (("a", "a"), ("b", "b"))),
+            (
+                "P_mean",
+                (
+                    ("a", "batch_mean:0123456789abcdef"),
+                    ("b", "batch_mean:0123456789abcdef"),
+                ),
+            ),
+            ("P_shuffle", ()),
+        )
+        for condition, assignments in cases:
+            with self.subTest(condition=condition):
+                report = donor_template_agreement(
+                    assignments, templates, condition=condition
+                )
+                self.assertFalse(report["available"])
+                expected_word = "shuffle" if condition == "P_shuffle" else "donor"
+                self.assertIn(expected_word, report["unavailable_reason"])
+                self.assertIsNone(report["observed_agreement"])
+
+    def test_unknown_template_is_a_structured_failure(self):
+        with self.assertRaises(GraphEncoderError) as caught:
+            donor_template_agreement(
+                (("a", "b"),), {"a": "E"}, condition="P_shuffle"
+            )
+        self.assertEqual(
+            caught.exception.code, "metric_target_alignment_failure"
+        )
+
+    def test_complete_record_reports_v2_contract_and_condition_semantics(self):
+        from types import SimpleNamespace
+
+        families = ("a", "b", "c", "d")
+        templates = {"a": "E", "b": "E", "c": "RE", "d": "RE"}
+        assignments = {
+            "P_true": tuple((item, item) for item in families),
+            "P_shuffle": (
+                ("a", "b"), ("b", "c"), ("c", "d"), ("d", "a")
+            ),
+            "P_mean": tuple(
+                (item, "batch_mean:0123456789abcdef") for item in families
+            ),
+        }
+        conditions = tuple(
+            SimpleNamespace(
+                condition=name,
+                elapsed_seconds=0.0,
+                intervention_seconds=0.0,
+                memory_assignments=assignments[name],
+            )
+            for name in ("P_true", "P_shuffle", "P_mean")
+        )
+        metrics = tuple(
+            {
+                "condition": name,
+                "available": True,
+                "aggregates": {"primary": {"value": value}},
+                "metric_computation_seconds": 0.0,
+            }
+            for name, value in (
+                ("P_true", 0.5), ("P_shuffle", 0.25), ("P_mean", 0.125)
+            )
+        )
+        training = SimpleNamespace(
+            run_identity="procedural",
+            provenance=SimpleNamespace(checkpoint_schema="GE1-CHECKPOINT-v1"),
+            timing=(
+                ("data_preparation_seconds", 0.0),
+                ("training_seconds", 0.0),
+                ("checkpoint_and_provenance_seconds", 0.0),
+            ),
+            to_dict=lambda: {},
+        )
+        record = complete_metrics_record(
+            arm="flat",
+            seed=2026,
+            epoch=2,
+            checkpoint_identity="procedural.pt",
+            training_result=training,
+            autonomous_result=SimpleNamespace(
+                encoding_seconds=0.0, conditions=conditions
+            ),
+            condition_metrics=metrics,
+            parameter_counts={},
+            strict_checkpoint_reload=True,
+            total_run_seconds=0.0,
+            templates_by_family=templates,
+        )
+        self.assertEqual(METRICS_SCHEMA_VERSION, "GE1-C6-METRICS-v2")
+        self.assertEqual(record["schema_version"], METRICS_SCHEMA_VERSION)
+        self.assertEqual(
+            record["primary_reporting_contract"],
+            PRIMARY_REPORTING_CONTRACT_VERSION,
+        )
+        self.assertIs(validate_primary_report(record), record)
+        donor = {
+            item["condition"]: item
+            for item in record["donor_template_agreement"]
+        }
+        self.assertTrue(donor["P_shuffle"]["available"])
+        self.assertAlmostEqual(
+            donor["P_shuffle"]["chance_agreement"], 1.0 / 3.0
+        )
+        self.assertFalse(donor["P_true"]["available"])
+        self.assertFalse(donor["P_mean"]["available"])
+
+
+class AuthorizedSeedValidatorTests(unittest.TestCase):
+    """F5: the seed check is explicit, not a discarded configuration call."""
+
+    def test_authorized_seeds_are_accepted_unchanged(self):
+        for seed in (2026, 2027, 2028):
+            self.assertEqual(validate_authorized_seed(seed), seed)
+
+    def test_unauthorized_and_malformed_seeds_are_rejected(self):
+        for seed, code in (
+            (2025, "unauthorized_configuration"),
+            (2029, "unauthorized_configuration"),
+            (True, "invalid_configuration"),
+            (0, "invalid_configuration"),
+            ("2026", "invalid_configuration"),
+        ):
+            with self.subTest(seed=seed):
+                with self.assertRaises(GraphEncoderError) as caught:
+                    validate_authorized_seed(seed)
+                self.assertEqual(caught.exception.code, code)
+
+    def test_canonical_decoder_no_longer_builds_a_flat_configuration(self):
+        source = (
+            ROOT / "prototype/graph_encoder/model.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "canonical_shared_decoder"
+        )
+        called = {
+            node.func.id
+            for node in ast.walk(function)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertIn("validate_authorized_seed", called)
+        self.assertNotIn("frozen_encoder_config", called)
 
 
 class PrefixCoreTests(unittest.TestCase):

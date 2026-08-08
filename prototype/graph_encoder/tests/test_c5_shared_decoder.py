@@ -323,6 +323,62 @@ class SharedDecoderIdentityTests(C5TensorTestCase):
 
 
 class PredictionLossAndCheckpointTests(C5TensorTestCase):
+    def test_returned_records_carry_ge1_provenance_not_the_v6_shim(self):
+        """F1: the compatibility literal must never escape the decoder."""
+
+        from prototype.flat_baseline.constrained_v6_autonomous import (
+            V6_ENCODED_MEMORY_SOURCE,
+            validate_and_convert_v6_autonomous_prediction,
+        )
+        from prototype.graph_encoder.shared_decoder import (
+            GE1_CONTINUOUS_MEMORY_SOURCE,
+            V6_ENTRY_POINT_COMPATIBILITY_SOURCE,
+        )
+        from prototype.node_grammar import NodeGrammarError
+
+        decoder = self._reference_and_decoder()[1]
+        prediction = decoder(
+            torch.zeros(2, 2, 32),
+            node_counts=torch.tensor((4, 5), dtype=torch.long),
+            node_count_source="procedural_test",
+        )
+        constrained = prediction.constrained_prediction
+        self.assertTrue(constrained)
+        for index, item in enumerate(constrained):
+            node_prediction = item.node_prediction
+            with self.subTest(row=index):
+                # Corrected to GE1's true, continuous provenance.
+                self.assertEqual(
+                    node_prediction.encoded_memory_source,
+                    GE1_CONTINUOUS_MEMORY_SOURCE,
+                )
+                # The inherited literal must not survive into any record.
+                self.assertNotEqual(
+                    node_prediction.encoded_memory_source,
+                    V6_ENTRY_POINT_COMPATIBILITY_SOURCE,
+                )
+                self.assertNotEqual(
+                    node_prediction.encoded_memory_source,
+                    V6_ENCODED_MEMORY_SOURCE,
+                )
+                # No nearest-code assignment occurred, so no indices exist. The
+                # inert zeros handed to the inherited validator are discarded
+                # rather than reported as a collapsed codebook.
+                self.assertEqual(node_prediction.latent_indices, ())
+                with self.assertRaises(NodeGrammarError) as caught:
+                    validate_and_convert_v6_autonomous_prediction(
+                        node_prediction,
+                        max_operations=2,
+                    )
+                self.assertEqual(
+                    getattr(caught.exception, "code", None),
+                    "invalid_v6_node_selection",
+                )
+                self.assertEqual(
+                    getattr(caught.exception, "detail", None),
+                    "encoded memory provenance is wrong",
+                )
+
     def test_autonomous_levels_are_separate_target_free_and_deterministic(self):
         decoder = self._reference_and_decoder()[1]
         memory = torch.zeros(2, 2, 32)

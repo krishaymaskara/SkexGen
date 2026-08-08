@@ -21,6 +21,9 @@ from prototype.graph_encoder.decoder_contract import (
 
 
 PACKAGE = Path(__file__).parents[1]
+INHERITED_V6_AUTONOMOUS = (
+    PACKAGE.parent / "flat_baseline" / "constrained_v6_autonomous.py"
+)
 PRODUCTION = (
     PACKAGE / "shared_decoder.py",
     PACKAGE / "model.py",
@@ -28,6 +31,30 @@ PRODUCTION = (
     PACKAGE / "checkpoint.py",
     PACKAGE / "decoder_contract.py",
 )
+
+
+def _module_constant(path, name):
+    """Read a module-level string constant without importing PyTorch."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        ):
+            if isinstance(node.value, ast.Constant):
+                return node.value.value
+    raise AssertionError("{} is not a module-level constant".format(name))
+
+
+def _assignment_line(tree, name):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        ):
+            return node.lineno
+    raise AssertionError("{} is not assigned in the module".format(name))
 
 
 class C5StaticContractTests(unittest.TestCase):
@@ -159,6 +186,64 @@ class C5StaticContractTests(unittest.TestCase):
         source = (PACKAGE / "checkpoint.py").read_text(encoding="utf-8")
         self.assertIn("load_state_dict(state, strict=True)", source)
         self.assertNotIn("strict=False", source)
+
+    def test_v6_compatibility_shim_is_named_and_matches_the_inherited_literal(self):
+        """F1: the shim must be explicit, and must still satisfy the frozen check."""
+
+        V6_ENCODED_MEMORY_SOURCE = _module_constant(
+            INHERITED_V6_AUTONOMOUS, "V6_ENCODED_MEMORY_SOURCE"
+        )
+        shared = PACKAGE / "shared_decoder.py"
+        V6_ENTRY_POINT_COMPATIBILITY_SOURCE = _module_constant(
+            shared, "V6_ENTRY_POINT_COMPATIBILITY_SOURCE"
+        )
+        GE1_CONTINUOUS_MEMORY_SOURCE = _module_constant(
+            shared, "GE1_CONTINUOUS_MEMORY_SOURCE"
+        )
+        V6_ENTRY_POINT_COMPATIBILITY_RATIONALE = _module_constant(
+            shared, "V6_ENTRY_POINT_COMPATIBILITY_RATIONALE"
+        )
+
+        # The shim value must track the inherited literal exactly, or the
+        # inherited entry-point validator would reject GE1 memory.
+        self.assertEqual(
+            V6_ENTRY_POINT_COMPATIBILITY_SOURCE, V6_ENCODED_MEMORY_SOURCE
+        )
+        # It must never be mistaken for GE1's true provenance.
+        self.assertNotEqual(
+            V6_ENTRY_POINT_COMPATIBILITY_SOURCE, GE1_CONTINUOUS_MEMORY_SOURCE
+        )
+        self.assertIn("continuous", V6_ENTRY_POINT_COMPATIBILITY_RATIONALE)
+
+        # The literal must not be inlined anywhere in production source.
+        source = (PACKAGE / "shared_decoder.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        inlined = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and node.value == V6_ENCODED_MEMORY_SOURCE
+            and node.lineno
+            > _assignment_line(tree, "V6_ENTRY_POINT_COMPATIBILITY_SOURCE")
+        ]
+        self.assertEqual(inlined, [])
+
+    def test_ge1_corrected_provenance_differs_from_inherited_v6_literal(self):
+        """F1 static identity check; the real converter rejection is runtime-tested."""
+
+        V6_ENCODED_MEMORY_SOURCE = _module_constant(
+            INHERITED_V6_AUTONOMOUS, "V6_ENCODED_MEMORY_SOURCE"
+        )
+        GE1_CONTINUOUS_MEMORY_SOURCE = _module_constant(
+            PACKAGE / "shared_decoder.py", "GE1_CONTINUOUS_MEMORY_SOURCE"
+        )
+
+        # GE1 converts through the graph path. The runtime suite routes an
+        # actual corrected prediction into the inherited V6 converter and
+        # requires the provenance rejection.
+        self.assertNotEqual(
+            GE1_CONTINUOUS_MEMORY_SOURCE, V6_ENCODED_MEMORY_SOURCE
+        )
 
     def test_python_38_grammar_for_every_c5_source(self):
         for path in PRODUCTION:

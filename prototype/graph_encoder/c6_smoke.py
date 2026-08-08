@@ -24,7 +24,7 @@ from .partitions import load_train
 from .training import load_training_checkpoint, run_ge1_training
 
 
-C6_SMOKE_VERSION = "GE1-C6-TRAIN-ONLY-SMOKE-v1"
+C6_SMOKE_VERSION = "GE1-C6-TRAIN-ONLY-SMOKE-v2"
 
 
 def main(argv=None):
@@ -142,6 +142,10 @@ def run_smoke(
         parameter_counts=parameter_counts,
         strict_checkpoint_reload=True,
         total_run_seconds=time.perf_counter() - started,
+        templates_by_family={
+            item.physical_family_id: item.metadata.operation_template
+            for item in ordered
+        },
     )
     record["smoke_version"] = C6_SMOKE_VERSION
     record["authorized_partition"] = "operation_template.train"

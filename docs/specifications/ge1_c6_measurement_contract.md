@@ -6,6 +6,16 @@ commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`. Earlier exact-commit jobs
 `3344337` and `3344363` failed in the procedural focused suite before corpus
 access; their narrow corrections did not modify this contract.
 
+Post-validation [ADR-0005](../decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md)
+adds a reporting-only contract without rewriting this frozen record. New
+artifacts use `GE1-C6-METRICS-v2` and `GE1-PRIMARY-REPORT-v1`: all five
+intervention values must be finite numbers or reason-bearing structured nulls,
+`P_shuffle` reports donor-template agreement against the random-distinct-donor
+baseline, and `P_true`/`P_mean` report donor agreement as structurally
+unavailable. The validated job `3344367` v1 artifacts remain historical C6
+evidence; current review-fix source requires a separate authoritative
+revalidation before C7.
+
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,
 partitions, endpoints, training budget, or decision rules.
