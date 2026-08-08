@@ -49,6 +49,10 @@ the immediate next action changes.
   contract](specifications/ge1_c6_measurement_contract.md) — additive frozen
   record for training, recovery, target-free evaluation, executable-prefix
   scoring, family-macro aggregation, interventions, and resource reporting.
+- [ADR-0006: GE1 C7 sufficiency execution
+  contract](decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md) —
+  accepted additive record for metadata-only train cohorts, fresh matched
+  gate models, epoch-50 autonomous decisions, and immutable C7 artifacts.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

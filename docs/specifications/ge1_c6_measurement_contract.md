@@ -16,8 +16,10 @@ unavailable. The validated job `3344367` v1 artifacts remain historical C6
 evidence. Combined exact-commit Adroit CPU job `3344431` authoritatively
 revalidated the review-fix source and both v2 train-only artifacts; see the
 [combined validation
-record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md). C7 remains
-unstarted.
+record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md). The later C7
+implementation is governed separately by accepted
+[ADR-0006](../decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md);
+its formal train-only pilot has not run and has no scientific result.
 
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,

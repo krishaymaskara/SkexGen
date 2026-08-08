@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C6 complete; C7 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C6 complete; C7 implementation exists but the formal C7 gate has not run; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -26,6 +26,7 @@ specifications or new decision records.
 | GE1 C6 validation attempts | Jobs `3344337` and `3344363` failed before corpus access. The corrected second attempt at exact commit `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` passed 36/37 focused tests with zero skips; its sole error was a test-only tensor/dataclass equality assertion |
 | GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
+| GE1 C7 implementation | Implemented under accepted ADR-0006 with metadata-only tiny/scaled selection, fresh seed-2026 matched models, epoch-50 autonomous exact and memory gates, immutable artifacts, and a CPU runner; formal C7 has not run and has no scientific result |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -241,8 +242,8 @@ tests and all 147 graph-encoder tests with zero skips, every regression and
 repository gate, and both two-epoch 407-family train-only arm smokes with
 strict reload and complete metrics records. The [C6 validation
 record](experiments/ge1_c6_cpu_validation.md) retains the evidence and
-limitations. C6 is complete. Development, RR, ER, C7, C8, and later work have
-not begun.
+limitations. C6 is complete. Development, RR, ER, the formal C7 pilot, C8,
+and later work have not begun.
 
 A subsequent C5/C6 implementation review produced five accepted fixes. The
 reporting and artifact-version decisions are governed by accepted
@@ -275,7 +276,23 @@ arm smokes. Both artifacts used `GE1-C6-METRICS-v2` and
 donor-agreement availability states were present. The [combined review-fix
 validation record](experiments/ge1_c5_c6_review_fix_cpu_validation.md)
 retains the exact evidence and limitations. Current C5/C6 source is therefore
-authoritatively covered. C7 and every later stage remain unstarted.
+authoritatively covered. The formal C7 pilot and every later stage remain
+unstarted.
+
+Accepted
+[ADR-0006](decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md)
+now freezes the C7 execution details without changing Stage 0, ADR-0004, or
+ADR-0005. The checked-in C7 implementation deterministically selects nested
+4/32-family `E/R/EE/RE` cohorts from authoritative manifest metadata, builds
+fresh matched seed-2026 model pairs per subset, trains only under the frozen
+50-epoch recipe, requires strict epoch-50 autonomous exactness, applies the
+scaled 0.80 memory-use gates, and publishes a self-verifying atomic artifact.
+Its focused tests use only synthetic metadata, procedural fixtures, and
+temporary artifacts. The formal C7 train-only pilot has not run, so no C7
+pass/fail result exists. Stage 6 is not authorized unless a finalized formal
+C7 artifact reports `stage6_authorized_by_c7=true`. Development, RR, ER, IID,
+history-depth, and geometry-extrapolation data remain unopened by C7. The
+hierarchical repair is not implemented or invoked, and C8 has not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

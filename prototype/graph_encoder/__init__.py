@@ -23,7 +23,14 @@ from .config import (
     validate_authorized_seed,
 )
 from .errors import GraphEncoderError
-from .partitions import load_development, load_train
+from .partitions import (
+    C7SufficiencySelection,
+    c7_family_rank,
+    load_development,
+    load_train,
+    select_c7_sufficiency_subsets,
+    selected_family_ids_sha256,
+)
 from .autonomous import (
     MEMORY_CONDITIONS,
     AutonomousEvaluationResult,
@@ -87,8 +94,12 @@ __all__ = (
     "frozen_encoder_config",
     "frozen_feedforward_width",
     "validate_authorized_seed",
+    "C7SufficiencySelection",
+    "c7_family_rank",
     "load_development",
     "load_train",
+    "select_c7_sufficiency_subsets",
+    "selected_family_ids_sha256",
     "permute_graph",
     "MEMORY_CONDITIONS",
     "METRICS_SCHEMA_VERSION",

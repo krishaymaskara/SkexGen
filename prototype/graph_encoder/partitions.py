@@ -63,6 +63,11 @@ PARTITION_TEMPLATES = (
     ("validation", ("E", "EE", "R", "RE")),
 )
 
+C7_SELECTION_VERSION = "GE1-C7-SUFFICIENCY-v1"
+C7_ACCESSIBLE_TEMPLATES = ("E", "R", "EE", "RE")
+C7_TINY_PER_TEMPLATE = 1
+C7_SCALED_PER_TEMPLATE = 8
+
 
 @dataclass(frozen=True)
 class _ManifestAuthority:
@@ -86,6 +91,62 @@ class _VerifiedManifest:
         return dict(self.family_templates)
 
 
+@dataclass(frozen=True)
+class C7SufficiencySelection:
+    """Payload-free deterministic C7 tiny and scaled train cohorts."""
+
+    version: str
+    templates: tuple
+    tiny_family_ids: tuple
+    scaled_family_ids: tuple
+    tiny_family_ids_sha256: str
+    scaled_family_ids_sha256: str
+    selected_templates: tuple
+    ranking_records: tuple
+
+    def to_dict(self):
+        return {
+            "version": self.version,
+            "manifest_name": SPLIT_NAME,
+            "manifest_sha256": AUTHORITATIVE_FILE_SHA256,
+            "partition": TRAIN_PARTITION,
+            "templates": list(self.templates),
+            "ranking_algorithm": "sha256_utf8_hex_then_source_family_id",
+            "ranking_hash_material": (
+                "GE1-C7-SUFFICIENCY-v1\\n"
+                "<operation_template>\\n<source_family_id>\\n"
+            ),
+            "ranking_hash_material_encoding": "UTF-8",
+            "ranking_hash_material_line_ending": "LF_with_final_LF",
+            "tiny_per_template": C7_TINY_PER_TEMPLATE,
+            "scaled_per_template": C7_SCALED_PER_TEMPLATE,
+            "tiny_family_ids": list(self.tiny_family_ids),
+            "scaled_family_ids": list(self.scaled_family_ids),
+            "tiny_family_ids_sha256": self.tiny_family_ids_sha256,
+            "scaled_family_ids_sha256": self.scaled_family_ids_sha256,
+            "tiny_nested_in_scaled": set(self.tiny_family_ids).issubset(
+                self.scaled_family_ids
+            ),
+            "selected_templates": dict(self.selected_templates),
+            "ranking_records": [
+                {
+                    "operation_template": template,
+                    "source_family_id": family_id,
+                    "rank_sha256": rank,
+                }
+                for template, family_id, rank in self.ranking_records
+            ],
+            "metadata_only": True,
+            "cad_history_payload_accessed": False,
+            "development_accessed": False,
+            "systematic_rr_accessed": False,
+            "test_er_accessed": False,
+            "iid_accessed": False,
+            "history_depth_accessed": False,
+            "geometry_extrapolation_accessed": False,
+        }
+
+
 FROZEN_MANIFEST_AUTHORITY = _ManifestAuthority(
     AUTHORITATIVE_RELATIVE_FILE,
     AUTHORITATIVE_FILE_SHA256,
@@ -106,6 +167,131 @@ def load_development(corpus_dir):
     """Load the complete frozen 45-family development assignment."""
 
     return _load_partition(corpus_dir, DEVELOPMENT_PARTITION, None)
+
+
+def c7_family_rank(operation_template, source_family_id):
+    """Return the exact accepted metadata-only C7 family rank."""
+
+    if operation_template not in C7_ACCESSIBLE_TEMPLATES:
+        raise GraphEncoderError(
+            "invalid_c7_template",
+            "C7 template must be one of E, R, EE, RE",
+        )
+    if not isinstance(source_family_id, str) or not source_family_id:
+        raise GraphEncoderError(
+            "invalid_c7_family_id", "C7 family ID must be a nonempty string"
+        )
+    material = (
+        C7_SELECTION_VERSION
+        + "\n"
+        + operation_template
+        + "\n"
+        + source_family_id
+        + "\n"
+    ).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
+
+
+def selected_family_ids_sha256(family_ids):
+    """Hash unique sorted IDs, one UTF-8 ID per LF-terminated line."""
+
+    values = tuple(family_ids)
+    if (
+        not values
+        or values != tuple(sorted(values))
+        or len(values) != len(set(values))
+        or any(not isinstance(item, str) or not item for item in values)
+    ):
+        raise GraphEncoderError(
+            "invalid_c7_selection",
+            "selected family IDs must be nonempty, unique, and sorted",
+        )
+    return hashlib.sha256(("\n".join(values) + "\n").encode("utf-8")).hexdigest()
+
+
+def select_c7_sufficiency_subsets(corpus_dir):
+    """Verify manifest authority and select C7 cohorts without payload access."""
+
+    verified = _verify_authoritative_manifest(corpus_dir)
+    return _select_c7_from_verified(verified)
+
+
+def _select_c7_from_verified(verified):
+    if not isinstance(verified, _VerifiedManifest):
+        raise TypeError("verified must be _VerifiedManifest")
+    train_ids = verified.family_ids(TRAIN_PARTITION)
+    template_by_family = verified.template_by_family()
+    candidates = {template: [] for template in C7_ACCESSIBLE_TEMPLATES}
+    for family_id in train_ids:
+        template = template_by_family.get(family_id)
+        if template not in candidates:
+            raise GraphEncoderError(
+                "invalid_c7_template_composition",
+                "operation_template.train contains a non-C7 template",
+            )
+        candidates[template].append(
+            (c7_family_rank(template, family_id), family_id)
+        )
+    if any(len(candidates[template]) < C7_SCALED_PER_TEMPLATE
+           for template in C7_ACCESSIBLE_TEMPLATES):
+        raise GraphEncoderError(
+            "invalid_c7_template_composition",
+            "each C7 train template requires at least eight families",
+        )
+
+    tiny = []
+    scaled = []
+    ranking_records = []
+    for template in C7_ACCESSIBLE_TEMPLATES:
+        ranked = tuple(sorted(candidates[template]))
+        tiny.extend(family_id for unused_rank, family_id in ranked[:1])
+        scaled.extend(
+            family_id
+            for unused_rank, family_id in ranked[:C7_SCALED_PER_TEMPLATE]
+        )
+        ranking_records.extend(
+            (template, family_id, rank)
+            for rank, family_id in ranked[:C7_SCALED_PER_TEMPLATE]
+        )
+    tiny = tuple(sorted(tiny))
+    scaled = tuple(sorted(scaled))
+    if len(tiny) != 4 or len(set(tiny)) != 4:
+        raise GraphEncoderError(
+            "invalid_c7_selection", "tiny C7 set must contain four families"
+        )
+    if len(scaled) != 32 or len(set(scaled)) != 32:
+        raise GraphEncoderError(
+            "invalid_c7_selection", "scaled C7 set must contain 32 families"
+        )
+    if not set(tiny).issubset(scaled):
+        raise GraphEncoderError(
+            "invalid_c7_selection", "tiny C7 set must be nested in scaled"
+        )
+    selected_templates = tuple(sorted(
+        (family_id, template_by_family[family_id]) for family_id in scaled
+    ))
+    tiny_counts = Counter(template_by_family[item] for item in tiny)
+    scaled_counts = Counter(template_by_family[item] for item in scaled)
+    if tiny_counts != Counter({item: 1 for item in C7_ACCESSIBLE_TEMPLATES}):
+        raise GraphEncoderError(
+            "invalid_c7_template_composition",
+            "tiny set must contain one family per C7 template",
+        )
+    if scaled_counts != Counter({item: 8 for item in C7_ACCESSIBLE_TEMPLATES}):
+        raise GraphEncoderError(
+            "invalid_c7_template_composition",
+            "scaled set must contain eight families per C7 template",
+        )
+    return C7SufficiencySelection(
+        C7_SELECTION_VERSION,
+        C7_ACCESSIBLE_TEMPLATES,
+        tiny,
+        scaled,
+        selected_family_ids_sha256(tiny),
+        selected_family_ids_sha256(scaled),
+        selected_templates,
+        tuple(ranking_records),
+    )
 
 
 def _load_partition(corpus_dir, partition, family_ids):

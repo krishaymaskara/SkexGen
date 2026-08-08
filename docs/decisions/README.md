@@ -44,3 +44,9 @@ it superseded by a later ADR.
   memory-intervention reporting, defines donor-template semantics and the
   no-self chance baseline, and versions new metrics artifacts as v2 without
   rewriting the frozen Stage 0 record.
+- [ADR-0006: GE1 C7 sufficiency execution
+  contract](ADR-0006-ge1-c7-sufficiency-execution-contract.md) — accepted by
+  designated reviewer Krishay Maskara; freezes metadata-only cohorts, fresh
+  matched gate models, epoch-50 autonomous sufficiency and memory-use gates,
+  scientific-failure handling, and immutable C7 artifacts without opening a
+  protected partition or rewriting the frozen Stage 0 record.

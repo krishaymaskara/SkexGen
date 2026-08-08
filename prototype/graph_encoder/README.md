@@ -4,8 +4,8 @@
 
 This package implements the C1 boundary, C2 position-free graph canonicalizer,
 C3 paired flat/graph batching, C4 continuous flat and position-free typed
-graph encoders, C5 shared decoder integration, and C6 training/measurement
-machinery for
+graph encoders, C5 shared decoder integration, C6 training/measurement
+machinery, and the C7 train-only sufficiency/memory gate implementation for
 `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
 
 C1 provides:
@@ -46,9 +46,22 @@ C5 provides:
 
 C6 provides the common training loop, full recovery checkpoints, provenance,
 target-free autonomous interventions, executable-prefix and secondary metrics,
-family-macro aggregation, and resource measurements. It does not implement
-C7 sufficiency gates, C8 decoder repair, protected evaluation access, or a
-scientific result. The frozen
+family-macro aggregation, and resource measurements.
+
+C7 provides:
+
+- authoritative-metadata-only nested 4/32-family `E/R/EE/RE` selection;
+- fresh matched seed-2026 model pairs for tiny and scaled gates;
+- strict epoch-50 autonomous per-family exactness and scaled memory-use gates;
+- explicit pass/fail/not-run dependency and Stage 6/repair decisions;
+- a C7-native metrics envelope without mutating the C6 smoke identity;
+- atomic self-verifying artifacts with complete checkpoints; and
+- a fail-fast Python 3.8.13/PyTorch 1.11 CPU Slurm runner.
+
+The formal C7 pilot has not run, so this package records no C7 scientific
+pass/fail result and does not authorize Stage 6. It does not implement C8
+decoder repair, protected evaluation access, or a later scientific result.
+The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
 unchanged.
@@ -57,6 +70,7 @@ unchanged.
 
 ```python
 from prototype.graph_encoder import (
+    C7SufficiencySelection,
     CanonicalizedGraph,
     C6TrainingError,
     FlatEncoderInput,
@@ -80,6 +94,7 @@ from prototype.graph_encoder import (
     build_matched_ge1_models,
     canonicalize_graph,
     capacity_difference_percent,
+    c7_family_rank,
     common_ge1_loss,
     default_encoder_config,
     encoder_parameter_report,
@@ -102,6 +117,8 @@ from prototype.graph_encoder import (
     save_training_checkpoint,
     score_condition,
     score_prediction_prefix,
+    select_c7_sufficiency_subsets,
+    selected_family_ids_sha256,
     training_contract_metadata,
     training_partition_identity,
     verify_c6_provenance,
@@ -904,7 +921,40 @@ with zero skips, every regression and repository gate, and both v2 407-family
 train-only arm smokes. Current C5/C6 source is therefore authoritatively
 covered; see the [combined validation
 record](../../docs/experiments/ge1_c5_c6_review_fix_cpu_validation.md). C7
-remains unstarted.
+implementation was added afterward under accepted ADR-0006. Its formal pilot
+has not run and the C5/C6 result does not validate the new C7 runtime path.
+
+## C7 train-only sufficiency and memory-use gates
+
+`select_c7_sufficiency_subsets(corpus_dir)` verifies the existing manifest
+authority and ranks only train-assignment metadata using the frozen
+`GE1-C7-SUFFICIENCY-v1` hash material. It returns lexicographically sorted,
+nested four- and 32-family selections with exactly one or eight families from
+each of `E`, `R`, `EE`, and `RE`. The selector never opens a CAD-history
+payload.
+
+`pilot.py` builds a fresh matched seed-2026 arm pair separately for each
+subset, runs the frozen 50-epoch recipe, strictly reloads epoch 50, and scores
+only fully autonomous outputs. Tiny exact failure skips that arm's scaled
+work; scaled exact failure still permits the governed memory interventions to
+run. Completed scientific failures finalize normally, while environment,
+provenance, access, malformed-metric, strict-reload, and integrity failures
+remain nonzero infrastructure failures.
+
+Scaled memory use requires finite unrounded `P_true > 0`,
+`P_shuffle / P_true <= 0.80`, and `P_mean / P_true <= 0.80`. Overall passage
+requires both exact gates and the memory gate for both arms. Only that outcome
+sets `stage6_authorized_by_c7=true`; exact failure can record the already
+preauthorized repair trigger, but C7 neither implements nor invokes repair.
+
+The C7 CLI has only the corpus directory, new external output directory,
+repository root, and expected commit as arguments. It stages a self-verifying
+artifact beside the requested final path and atomically publishes
+`resolved_config.json`, `metrics.jsonl`, complete checkpoints, an artifact
+manifest, and `SHA256SUMS`. The CPU Slurm runner validates the exact clean
+source and complete test/regression suite before any corpus access. The
+formal runner has not been submitted, no C7 artifact or scientific result
+exists, and Stage 6 remains unauthorized.
 
 ## Manifest authority and access order
 
@@ -962,5 +1012,6 @@ The non-C2 package boundary uses:
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
 - C6 passed authoritative runtime validation as Adroit job `3344367`; the
   post-validation C5/C6 review-fix source and v2 artifacts passed combined
-  exact-commit revalidation as Adroit job `3344431`. C7, C8, and every later
-  GE1 chunk have not begun.
+  exact-commit revalidation as Adroit job `3344431`. The C7 implementation
+  exists but has not received a formal corpus pilot or production-environment
+  validation; C8 and every later GE1 chunk have not begun.
