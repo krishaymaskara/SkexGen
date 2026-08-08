@@ -4,7 +4,8 @@
 
 This package implements the C1 boundary, C2 position-free graph canonicalizer,
 C3 paired flat/graph batching, C4 continuous flat and position-free typed
-graph encoders, and C5 shared decoder integration for
+graph encoders, C5 shared decoder integration, and C6 training/measurement
+machinery for
 `GE1-SHARED-DECODER-ENCODER-COMPARISON`.
 
 C1 provides:
@@ -43,8 +44,11 @@ C5 provides:
 - a frozen decoder output-position inventory; and
 - strict `GE1-CHECKPOINT-v1` save and reload.
 
-C5 does not implement training, evaluation, C7 sufficiency gates, C8 decoder
-repair, or a scientific result. The frozen
+C6 provides the common training loop, full recovery checkpoints, provenance,
+target-free autonomous interventions, executable-prefix and secondary metrics,
+family-macro aggregation, and resource measurements. It does not implement
+C7 sufficiency gates, C8 decoder repair, protected evaluation access, or a
+scientific result. The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
 unchanged.
@@ -54,6 +58,7 @@ unchanged.
 ```python
 from prototype.graph_encoder import (
     CanonicalizedGraph,
+    C6TrainingError,
     FlatEncoderInput,
     GE1Config,
     GE1Model,
@@ -63,8 +68,12 @@ from prototype.graph_encoder import (
     GraphEncoderError,
     GraphNodeContent,
     GraphSemanticInput,
+    MEMORY_CONDITIONS,
+    METRICS_SCHEMA_VERSION,
     PairedBatch,
     SharedGE1Decoder,
+    authorize_c6_provenance,
+    autonomous_input_from_paired,
     build_paired_batch,
     build_ge1_model,
     build_matched_ge1_models,
@@ -75,18 +84,34 @@ from prototype.graph_encoder import (
     encoder_parameter_report,
     frozen_encoder_config,
     frozen_feedforward_width,
+    intervention_ratios,
+    load_training_checkpoint,
     load_development,
     load_ge1_checkpoint,
     load_train,
     permute_graph,
+    plateau_state,
+    parameter_count_record,
+    peak_memory_record,
+    prefix_score_from_outcomes,
+    receptive_field_record,
+    run_autonomous_evaluation,
+    run_ge1_training,
     save_ge1_checkpoint,
+    save_training_checkpoint,
+    score_condition,
+    score_prediction_prefix,
+    training_contract_metadata,
+    training_partition_identity,
+    verify_c6_provenance,
 )
 ```
 
 When PyTorch is installed, the package additionally exports
 `EncodedMemory`, both encoders, `SharedGE1Decoder`, `GE1Model`, matched-model
 constructors, the common loss, parity diagnostics, and strict checkpoint
-helpers. The tuple-only C1-C3 API, including
+helpers. The tuple-only C1-C3 API plus the pure C6 configuration, plateau,
+derangement, prefix, aggregation, and provenance contracts, including
 `frozen_encoder_config` and `frozen_feedforward_width`, remains importable
 without PyTorch.
 
@@ -690,6 +715,44 @@ only capacity fields that may later be adjusted.
 checkpoint selection, plateau definition, train-ceiling tolerances, planned
 three seeds, and the exact preauthorized two-seed timing fallback.
 
+## C6 training and autonomous measurement
+
+C6 adds `training.py`, `autonomous.py`, `metrics.py`, and the train-only
+`c6_smoke.py` runner. One common training loop uses paired C3 batches, the
+selected permitted input, the C5 model/loss, finite-value enforcement, global
+norm clipping at 1.0, and atomic recovery checkpoints after every completed
+epoch. For a fixed seed, family order, batch boundaries, optimizer steps,
+example presentations, and checkpoint opportunities are identical by arm.
+The experimental checkpoint remains fixed epoch 50; earlier checkpoints
+cannot be selected by training loss, development behavior, or plateau.
+
+`training_example_presentations` is cumulative actual physical examples in
+successful optimizer batches. The plateau diagnostic compares two adjacent
+five-epoch moving-best windows starting at epoch 10, with denominator epsilon
+`1e-12` and a strict less-than-1% threshold. It records only and never changes
+training.
+
+`run_autonomous_evaluation` accepts target-free input batches, encodes once,
+and uses one post-memory decoder helper for `P_true`, the complete-set
+seed-pinned `P_shuffle` derangement, and deterministic batch-local `P_mean`.
+Targets enter only in `score_condition`, after generation. Raw, constrained,
+and explicit conversion outcomes remain separate.
+
+The primary scorer uses C2 to recover generated graph order. Ambiguity scores
+zero without row-order or target fallback. It strictly converts unchanged
+complete-operation prefixes and requires analytic validity. Metrics aggregate
+within physical family before an equal-weight family macro mean and use
+structured nulls for undefined denominators. Exact graph/node, dependency,
+attachment, conversion, failure-stage, geometry, parameter, receptive-field,
+timing, and cumulative-process peak-memory records are included.
+
+The full additive contract is
+[GE1 C6 measurement](../../docs/specifications/ge1_c6_measurement_contract.md).
+The checked-in C6 implementation is not accepted as runtime-complete until its
+two-epoch 407-family `operation_template.train` smoke passes under Python 3.8
+and PyTorch 1.11 on Adroit. That smoke opens no development or protected
+partition and is not a scientific result.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:
@@ -729,9 +792,9 @@ The non-C2 package boundary uses:
 
 ## Explicit limitations
 
-- C5 connects both encoder arms to one decoder implementation and supplies a
-  common loss and strict model-only checkpoint. It does not supply a training
-  loop, optimizer state, evaluation runner, or systematic-access capability.
+- C6 supplies the common training/recovery and train-only autonomous
+  measurement machinery. It does not supply development, systematic, or test
+  access, and its authoritative runtime smoke remains pending.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
   closed throughout core GE1.
 - C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
@@ -744,4 +807,5 @@ The non-C2 package boundary uses:
 - C5 passed authoritative Python 3.8.13/PyTorch 1.11.0 CPU runtime validation
   as Adroit job `3344290` at exact commit
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
-- C6, C7, C8, and every later GE1 chunk have not begun.
+- C6 is implemented locally and awaits authoritative runtime validation. C7,
+  C8, and every later GE1 chunk have not begun.

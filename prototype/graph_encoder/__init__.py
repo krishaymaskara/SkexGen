@@ -23,6 +23,40 @@ from .config import (
 )
 from .errors import GraphEncoderError
 from .partitions import load_development, load_train
+from .autonomous import (
+    MEMORY_CONDITIONS,
+    AutonomousEvaluationResult,
+    AutonomousInputBatch,
+    autonomous_input_from_paired,
+    deterministic_derangement,
+    run_autonomous_evaluation,
+)
+from .metrics import (
+    METRICS_SCHEMA_VERSION,
+    PrefixAttempt,
+    PrefixScore,
+    complete_metrics_record,
+    intervention_ratios,
+    parameter_count_record,
+    peak_memory_record,
+    prefix_score_from_outcomes,
+    receptive_field_record,
+    score_condition,
+    score_prediction_prefix,
+)
+from .provenance import (
+    authorize_c6_provenance,
+    training_partition_identity,
+    verify_c6_provenance,
+)
+from .training import (
+    C6TrainingError,
+    load_training_checkpoint,
+    plateau_state,
+    run_ge1_training,
+    save_training_checkpoint,
+    training_contract_metadata,
+)
 from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
     BOOKKEEPING_ONLY_VALUES,
@@ -51,6 +85,32 @@ __all__ = (
     "load_development",
     "load_train",
     "permute_graph",
+    "MEMORY_CONDITIONS",
+    "METRICS_SCHEMA_VERSION",
+    "AutonomousEvaluationResult",
+    "AutonomousInputBatch",
+    "C6TrainingError",
+    "PrefixAttempt",
+    "PrefixScore",
+    "authorize_c6_provenance",
+    "autonomous_input_from_paired",
+    "complete_metrics_record",
+    "deterministic_derangement",
+    "intervention_ratios",
+    "load_training_checkpoint",
+    "parameter_count_record",
+    "peak_memory_record",
+    "plateau_state",
+    "prefix_score_from_outcomes",
+    "receptive_field_record",
+    "run_autonomous_evaluation",
+    "run_ge1_training",
+    "save_training_checkpoint",
+    "score_condition",
+    "score_prediction_prefix",
+    "training_contract_metadata",
+    "training_partition_identity",
+    "verify_c6_provenance",
     "AUTONOMOUS_OUTPUT_VERSION",
     "BOOKKEEPING_ONLY_VALUES",
     "COMMON_LOSS_VERSION",

@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C5 complete; C6 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C5 complete; C6 implemented locally and awaiting authoritative runtime validation; C7 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -84,6 +84,11 @@ authorize Graph V1 C2.
 - C5 shared decoder extraction, thin common-memory model wrapper, common
   per-example loss, frozen output-position inventory, autonomous
   raw/constrained/converted result contract, and strict model checkpoint.
+- C6 common deterministic training loop, atomic optimizer/RNG recovery,
+  provenance revalidation, target-free three-condition autonomous inference,
+  executable-prefix and family-macro metrics, parameter/receptive-field
+  reports, and timing/peak-memory measurement. Authoritative runtime validation
+  is still pending, so this is an implementation claim only.
 
 ## Frozen comparison
 
@@ -220,8 +225,10 @@ passed authoritative Adroit job `3344290` under Python 3.8.13 and PyTorch
 passed with zero skips. Every listed regression, documentation, compilation,
 grammar, exact-commit, and clean-tree gate also passed. The [C5 validation
 record](experiments/ge1_c5_cpu_validation.md) retains the exact evidence and
-limitations. C5 is complete. C6, C7, C8, training, evaluation, and protected
-access have not begun.
+limitations. C5 is complete. The C6 training, recovery, autonomous evaluation,
+metrics, and intervention implementation is now locally complete, but its
+authoritative Python 3.8/PyTorch 1.11 two-epoch train-only smoke has not yet
+run. C7, C8, development evaluation, and protected access have not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

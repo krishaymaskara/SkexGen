@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C5 complete; C5 passed exact-commit Python 3.8/PyTorch 1.11 CPU validation; C6 and later work not begun |
+| Status | Accepted protocol; C0-C5 complete; C6 measurement machinery implemented locally and awaiting its authoritative train-only runtime gate; C7 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -88,7 +88,9 @@ and no production model change. Corrected exact commit
 `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` then passed authoritative Adroit
 job `3344290`: all 22 focused C5 tests and all 110 graph-encoder tests passed
 with zero skips, followed by every regression and repository gate. C5 is
-complete. C6 and later implementation has not begun. RR and ER payload access
+complete. C6 implements the governed training, recovery, autonomous metrics,
+and intervention machinery but awaits the authoritative two-epoch train-only
+runtime gate. C7 and later implementation has not begun. RR and ER payload access
 remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
@@ -609,6 +611,16 @@ adapter; the decoder path is byte-identical code.
 
 **Exit:** the capacity table and training budgets are frozen before the first
 comparative pilot.
+
+**C6 implementation status:** the measurement machinery for items 1, 3, and
+8 is checked in under the additive
+[C6 measurement contract](ge1_c6_measurement_contract.md). It also implements
+the already frozen common loop, epoch checkpoints, diagnostic plateau formula,
+autonomous train metrics, and recovery/provenance mechanics needed to test the
+stage safely. This is not a claim that the full six-run experiment, Stage 5,
+development evaluation, or protected evaluation has begun. C6 remains pending
+until the reviewed two-epoch 407-family train-only Adroit smoke produces its
+complete record.
 
 ### Stage 5 — Train-only sufficiency and memory-use gates
 

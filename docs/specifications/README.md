@@ -14,6 +14,8 @@ succeeded.
   preregistration](ge1_stage0_preregistration.md)
 - [GE1 C5 shared decoder and output-position
   contract](ge1_shared_decoder_contract.md)
+- [GE1 C6 training, autonomous measurement, and intervention
+  contract](ge1_c6_measurement_contract.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

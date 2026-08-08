@@ -45,6 +45,10 @@ the immediate next action changes.
   contract](specifications/ge1_shared_decoder_contract.md) — additive frozen
   record for decoder parity, position routing, autonomous output, loss, and
   strict checkpoints.
+- [GE1 C6 measurement
+  contract](specifications/ge1_c6_measurement_contract.md) — additive frozen
+  record for training, recovery, target-free evaluation, executable-prefix
+  scoring, family-macro aggregation, interventions, and resource reporting.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
