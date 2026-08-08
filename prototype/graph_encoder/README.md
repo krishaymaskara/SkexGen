@@ -748,9 +748,9 @@ timing, and cumulative-process peak-memory records are included.
 
 The full additive contract is
 [GE1 C6 measurement](../../docs/specifications/ge1_c6_measurement_contract.md).
-The checked-in C6 implementation is not accepted as runtime-complete until its
-two-epoch 407-family `operation_template.train` smoke passes under Python 3.8
-and PyTorch 1.11 on Adroit. That smoke opens no development or protected
+The checked-in C6 implementation passed its two-epoch 407-family
+`operation_template.train` runtime smoke under Python 3.8 and PyTorch 1.11 on
+Adroit as job `3344367`. That smoke opened no development or protected
 partition and is not a scientific result.
 
 Initial Adroit job `3344337` at exact commit `ca6dd069ae700cff993c354c2116de11924930f8`
@@ -770,6 +770,13 @@ recursively and compares complete metric records after removing timing fields.
 The job again stopped before the complete suite and corpus smoke, so no
 manifest or payload was opened. See the [second failed-attempt
 record](../../docs/experiments/ge1_c6_cpu_validation_attempt_3344363.md).
+
+Final exact-commit job `3344367` passed all 37 focused C6 tests and all 147
+graph-encoder tests with zero skips, every regression and repository gate, and
+both complete 407-family train-only arm smokes with strict epoch-2 reload and
+complete three-condition metrics records. C6 is runtime-complete. See the
+[authoritative validation
+record](../../docs/experiments/ge1_c6_cpu_validation.md).
 
 ## Manifest authority and access order
 
@@ -811,8 +818,8 @@ The non-C2 package boundary uses:
 ## Explicit limitations
 
 - C6 supplies the common training/recovery and train-only autonomous
-  measurement machinery. It does not supply development, systematic, or test
-  access, and its authoritative runtime smoke remains pending.
+  measurement machinery and passed its authoritative runtime smoke. It does
+  not supply development, systematic, or test access.
 - ER and all IID, history-depth, and geometry-extrapolation partitions remain
   closed throughout core GE1.
 - C3 passed its authoritative Python 3.8.13/PyTorch 1.11.0 CPU compatibility
@@ -825,5 +832,5 @@ The non-C2 package boundary uses:
 - C5 passed authoritative Python 3.8.13/PyTorch 1.11.0 CPU runtime validation
   as Adroit job `3344290` at exact commit
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
-- C6 is implemented locally and awaits authoritative runtime validation. C7,
-  C8, and every later GE1 chunk have not begun.
+- C6 passed authoritative runtime validation as Adroit job `3344367`. C7, C8,
+  and every later GE1 chunk have not begun.

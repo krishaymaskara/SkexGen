@@ -14,16 +14,17 @@ specifications or new decision records.
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 7, 2026 |
+| Status recorded | August 8, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C5 complete; C6 implemented locally and awaiting authoritative runtime validation; C7 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C6 complete; C7 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
 | GE1 C5 authoritative validation | Passed as Adroit job `3344290` at exact commit `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`: 22/22 focused and 110/110 complete-suite tests, both with zero skips |
 | GE1 C6 validation attempts | Jobs `3344337` and `3344363` failed before corpus access. The corrected second attempt at exact commit `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` passed 36/37 focused tests with zero skips; its sole error was a test-only tensor/dataclass equality assertion |
+| GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -88,8 +89,8 @@ authorize Graph V1 C2.
 - C6 common deterministic training loop, atomic optimizer/RNG recovery,
   provenance revalidation, target-free three-condition autonomous inference,
   executable-prefix and family-macro metrics, parameter/receptive-field
-  reports, and timing/peak-memory measurement. Authoritative runtime validation
-  is still pending, so this is an implementation claim only.
+  reports, and timing/peak-memory measurement, authoritatively validated under
+  Python 3.8.13 and PyTorch 1.11.0 on Adroit CPU.
 
 ## Frozen comparison
 
@@ -226,19 +227,21 @@ passed authoritative Adroit job `3344290` under Python 3.8.13 and PyTorch
 passed with zero skips. Every listed regression, documentation, compilation,
 grammar, exact-commit, and clean-tree gate also passed. The [C5 validation
 record](experiments/ge1_c5_cpu_validation.md) retains the exact evidence and
-limitations. C5 is complete. The C6 training, recovery, autonomous evaluation,
-metrics, and intervention implementation is now locally complete, but its
-authoritative Python 3.8/PyTorch 1.11 two-epoch train-only smoke has not yet
-passed. Initial Adroit job `3344337` stopped in the focused suite: three tests
+limitations. C5 is complete. Initial C6 Adroit job `3344337` stopped in the
+focused suite: three tests
 exposed the same tuple-versus-local-long-tensor autonomous node-count adapter
 defect, and one test lacked its `GraphEncoderError` import. The focused
 correction changed only those two points. Corrected exact-commit job `3344363`
 then passed 36/37 focused tests with zero skips and confirmed both prior fixes.
 Its sole error was a generic test comparison that asked Python to reduce a
-multi-element tensor equality to one Boolean. A test-only tensor-aware,
-timing-neutral comparison is pending authoritative rerun. Neither attempt
-reached the manifest, train payload, development, or any protected partition.
-C7, C8, development evaluation, and protected access have not begun.
+multi-element tensor equality to one Boolean. After the test-only tensor-aware,
+timing-neutral correction, exact-commit job `3344367` passed all 37 focused C6
+tests and all 147 graph-encoder tests with zero skips, every regression and
+repository gate, and both two-epoch 407-family train-only arm smokes with
+strict reload and complete metrics records. The [C6 validation
+record](experiments/ge1_c6_cpu_validation.md) retains the evidence and
+limitations. C6 is complete. Development, RR, ER, C7, C8, and later work have
+not begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

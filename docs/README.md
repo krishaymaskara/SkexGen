@@ -147,6 +147,10 @@ the immediate next action changes.
   exact-commit rerun in which 36/37 focused tests passed; the sole error was a
   test-only generic equality check on tensor-bearing dataclasses, before any
   corpus smoke or payload access.
+- [GE1 C6 authoritative CPU
+  validation](experiments/ge1_c6_cpu_validation.md) — corrected exact-commit
+  validation of governed training, deterministic recovery, autonomous
+  metrics, memory interventions, and both authorized train-only arm smokes.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

@@ -1,13 +1,10 @@
 # GE1 C6 Measurement Contract
 
-Status: additive frozen implementation contract; C6 code is implemented
-locally and awaits the authoritative Python 3.8/PyTorch 1.11 train-only smoke.
-Exact-commit jobs `3344337` and `3344363` failed in the procedural focused
-suite before corpus access. The first required one autonomous-adapter repair
-and one test import; the second passed those corrected paths and exposed only
-an invalid generic test comparison on tensor-bearing dataclasses. The pending
-test-only tensor-aware comparison and complete rerun do not modify this
-contract.
+Status: additive frozen implementation contract; C6 passed its authoritative
+Python 3.8/PyTorch 1.11 train-only smoke as Adroit job `3344367` at exact
+commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`. Earlier exact-commit jobs
+`3344337` and `3344363` failed in the procedural focused suite before corpus
+access; their narrow corrections did not modify this contract.
 
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,
@@ -133,4 +130,6 @@ the 407 `operation_template.train` families through the C1 loader, followed by
 strict epoch-2 reload and the complete three-condition metrics record.
 Development, ER, RR, IID, history-depth, and geometry-extrapolation data remain
 closed. The smoke is not a scientific result and cannot tune any frozen
-choice. C7 and later work remain unauthorized until this gate is reviewed.
+choice. Job `3344367` passed this gate for both arms, and its evidence is in
+the [C6 validation record](../experiments/ge1_c6_cpu_validation.md). This
+completion record does not begin C7 or any later work.

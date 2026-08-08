@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C5 complete; C6 measurement machinery implemented locally and awaiting its authoritative train-only runtime gate; C7 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; C7 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -89,16 +89,20 @@ and no production model change. Corrected exact commit
 job `3344290`: all 22 focused C5 tests and all 110 graph-encoder tests passed
 with zero skips, followed by every regression and repository gate. C5 is
 complete. C6 implements the governed training, recovery, autonomous metrics,
-and intervention machinery but awaits the authoritative two-epoch train-only
-runtime gate. Initial C6 Adroit job `3344337` failed the focused suite because
+and intervention machinery. Initial C6 Adroit job `3344337` failed the focused
+suite because
 the autonomous adapter passed a tuple instead of the C5-required local long
 node-count tensor and one test omitted an error-class import. The narrow C6
 correction passed those paths in exact-commit job `3344363`; 36/37 focused
 tests passed with zero skips. Its sole error was a test-only generic equality
-check on tensor-bearing dataclasses. The tensor-aware, timing-neutral test
-correction requires a complete exact-commit rerun. Neither failed attempt
-reached corpus access. C7 and later implementation has not begun. RR and ER
-payload access remains restricted by the accepted staged-access rules.
+check on tensor-bearing dataclasses. After the tensor-aware, timing-neutral
+test correction, exact-commit job `3344367` passed all 37 focused tests and all
+147 graph-encoder tests with zero skips, every later runner gate, and both
+authorized 407-family train-only arm smokes. The [C6 validation
+record](../experiments/ge1_c6_cpu_validation.md) retains the complete evidence
+and limitations. C6 is complete. C7 and later implementation has not begun.
+RR and ER payload access remains restricted by the accepted staged-access
+rules.
 
 ## Evidence that constrains the design
 
@@ -509,8 +513,8 @@ authoritative Adroit CPU job `3344265` passed both new shared-initialization
 tests, all 28 C4 encoder tests, and all 88 graph-encoder tests with zero skips.
 The [review-fix validation
 record](../experiments/ge1_c4_review_fix_cpu_validation.md) retains the
-exact-commit and artifact audit. Stage 3/C5 is now implemented locally and
-awaits its separate authoritative runtime validation.
+exact-commit and artifact audit. Stage 3/C5 passed its separate authoritative
+runtime validation as Adroit job `3344290`.
 
 1. Implement relation-basis mixing and both edge orientations.
 2. Implement degree normalization with `index_add_`.
@@ -625,9 +629,9 @@ comparative pilot.
 the already frozen common loop, epoch checkpoints, diagnostic plateau formula,
 autonomous train metrics, and recovery/provenance mechanics needed to test the
 stage safely. This is not a claim that the full six-run experiment, Stage 5,
-development evaluation, or protected evaluation has begun. C6 remains pending
-until the reviewed two-epoch 407-family train-only Adroit smoke produces its
-complete record.
+development evaluation, or protected evaluation has begun. C6 passed its
+reviewed two-epoch 407-family train-only Adroit smoke for both arms as job
+`3344367`.
 
 ### Stage 5 — Train-only sufficiency and memory-use gates
 

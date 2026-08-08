@@ -22,7 +22,7 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was updated on August 7, 2026 from branch
+This inventory was updated on August 8, 2026 from branch
 `graph-v1-experiment-record`. The documentation commit's literal hash is not
 embedded because it would be self-referential. The audit used:
 
@@ -69,6 +69,7 @@ frozen archive described below is now the primary evidence.
 | GE1 C5 authoritative CPU validation | `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d` | `3344290` | Local stdout/stderr and incremental Git bundle listed in record | Procedural and synthetic fixtures only; authoritative manifest and CAD-history payloads not opened; systematic/test false | `verified-local` | [Record](ge1_c5_cpu_validation.md) |
 | GE1 C6 authoritative CPU validation attempt | `ca6dd069ae700cff993c354c2116de11924930f8` | `3344337` | Submitted terminal transcript and remote stdout/stderr paths listed in record | Focused procedural suite ended with three instances of one autonomous boundary error and one test-import error; corpus smoke not reached; all manifest/payload and protected access false | `verified-local` | [Record](ge1_c6_cpu_validation_attempt_3344337.md) |
 | GE1 C6 authoritative CPU validation attempt | `68c66ea4b4c1e1d01b9b9dc061ace1149bca7c5a` | `3344363` | Submitted terminal transcript and remote stdout/stderr paths listed in record | 36/37 focused procedural tests passed; the remaining test used invalid generic equality on tensor-bearing dataclasses; corpus smoke not reached; all manifest/payload and protected access false | `verified-local` | [Record](ge1_c6_cpu_validation_attempt_3344363.md) |
+| GE1 C6 authoritative CPU validation | `c88e967b96dd201fedcd495fa8d5ddaddd02caf3` | `3344367` | Submitted terminal transcript plus remote stdout/stderr and train-only run paths listed in record | Complete authorized 407-family train payload opened for two engineering smokes; development and all protected partitions remained closed | `verified-local` | [Record](ge1_c6_cpu_validation.md) |
 
 ### Current-through-August-3 coverage
 
