@@ -74,7 +74,7 @@ yielding `undertraining_supported_both_arms`. It did not change formal C7-v1,
 authorize Stage 6, invoke repair, or begin C8.
 
 Accepted ADR-0008 prospectively defines a separate fixed-epoch-200 C7-v2.
-This documentation commit does not yet implement or execute C7-v2. The
+The additive implementation is now present but has not been executed. The
 hierarchical repair remains deferred, not erased, and Stage 6 remains blocked.
 The frozen
 `prototype.flat_baseline` and
@@ -1028,6 +1028,39 @@ protected partition was opened. The audited
 [result record](../../docs/experiments/ge1_optimization_diagnostic.md) and
 frozen contract and runner requirements are in the
 [diagnostic specification](../../docs/specifications/ge1_c7_optimization_sufficiency_diagnostic.md).
+
+## Prospective C7-v2 protocol
+
+`c7_v2.py` implements the separately identified `GE1-C7-SUFFICIENCY-v2`,
+`GE1-C7-METRICS-v2`, and `GE1-C7-ARTIFACT-v2` protocol without mutating
+`pilot.py` or `optimization_diagnostic.py`. It reuses the exact immutable
+four- and 32-family C7-v1 cohorts, but constructs fresh matched seed-2026
+models and trains to a fixed epoch 200. The shared training loop exposes this
+through an opt-in `fixed_protocol_final_epoch`; existing callers omit it and
+retain their original behavior.
+
+Each arm retains only its selected epoch-200 checkpoint. The runner writes
+that checkpoint before autonomous evaluation, strictly reloads it into a
+fresh model, and records its commit, Slurm identity, and SHA-256. Neither an
+earlier checkpoint, C7-v1 checkpoint, nor optimization-diagnostic checkpoint
+can satisfy or initialize C7-v2. There is no early stopping,
+best-checkpoint selection, outcome-dependent extension, resume, or warm
+start.
+
+The scaled payload loader is reachable only after both tiny arm gates pass.
+If either tiny arm fails, every scaled gate is recorded `not_run` and scaled
+payload access remains false. Exact failure makes the already authorized
+decoder-repair path the next permitted work; memory-only failure is
+inconclusive. Only six passing arm gates may set
+`stage6_authorized_by_c7_v2=true`. Scientific failure still finalizes and
+exits zero, whereas infrastructure or artifact failure exits nonzero.
+
+`adroit/ge1_c7_v2_cpu.slurm` is the prepared, unsubmitted standalone-checkout
+CPU runner. It runs the focused C7-v2 tests with zero PyTorch skips, the full
+graph-encoder suite with zero skips, all regressions and repository checks,
+and only then permits metadata or train-payload access. It independently
+checks every selected checkpoint and artifact hash after execution. No C7-v2
+scientific execution has yet occurred; Stage 6, C8, and repair remain blocked.
 
 ## Manifest authority and access order
 

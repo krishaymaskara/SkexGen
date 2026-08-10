@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | This documentation update; its literal hash is intentionally not embedded |
+| Current reviewed revision | This prospective C7-v2 implementation update; its literal hash is intentionally not embedded |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus prospective accepted ADR-0008; C0-C6 complete; formal C7-v1 failed; C7-v2 is approved but not implemented or run; Stage 6 remains unauthorized; C8 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus prospective accepted ADR-0008; C0-C6 complete; formal C7-v1 failed; C7-v2 is implemented but not run; Stage 6 remains unauthorized; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -28,7 +28,7 @@ specifications or new decision records.
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 C7 formal pilot | Adroit job `3344505` at exact commit `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` completed with valid artifacts and failed both tiny autonomous exact gates; all scaled gates were `not_run`, repair was triggered procedurally, and Stage 6 was not authorized |
 | GE1 post-C7 optimization diagnostic | Job `3344907` at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed; both unchanged arms first passed autonomous exact sufficiency at update 200, yielding `undertraining_supported_both_arms`; Stage 6 was not authorized and protected partitions remained closed |
-| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; fixed epoch 200 for tiny, scaled, and eventual authorized Stage 6 training; implementation and execution pending; decoder repair deferred, not erased |
+| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; additive implementation and unsubmitted standalone-checkout CPU runner prepared; execution pending; decoder repair deferred, not erased |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -323,8 +323,10 @@ budget for tiny and scaled gates. The same 200 epochs become the eventual
 Stage 6 budget only if a finalized C7-v2 artifact explicitly records
 `stage6_authorized_by_c7_v2=true`. C7-v1 and the diagnostic remain immutable.
 The hierarchical repair path remains triggered in C7-v1 history but is
-deferred while C7-v2 tests the evidence-based budget. C7-v2 implementation
-and execution have not begun in this documentation commit.
+deferred while C7-v2 tests the evidence-based budget. The additive
+`prototype/graph_encoder/c7_v2.py` implementation, focused tests, and
+standalone-checkout CPU runner are prepared. C7-v2 has not been submitted or
+executed, so Stage 6 remains unauthorized and no repair or C8 work has begun.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

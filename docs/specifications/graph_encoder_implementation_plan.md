@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; prospective C7-v2 fixed-epoch-200 protocol accepted but not implemented or run; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; prospective C7-v2 fixed-epoch-200 protocol implemented but not run; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -707,8 +707,9 @@ and 6,400 presentations per arm. The unchanged C7-v1 cohorts, criteria,
 memory thresholds, seed, models, decoder, losses, access rules, and failure
 rules remain in force. Tiny and scaled use separately fresh matched pairs.
 The decoder repair is deferred, not erased, and becomes the next permitted
-implementation path if C7-v2 exact sufficiency fails. C7-v2 is not yet
-implemented or run. See the [C7-v2 contract](ge1_c7_v2_execution_contract.md).
+implementation path if C7-v2 exact sufficiency fails. The additive runner,
+tests, and artifact contract are implemented, but C7-v2 has not been run. See
+the [C7-v2 contract](ge1_c7_v2_execution_contract.md).
 
 ### Stage 6 — Core continuous encoder pilot
 

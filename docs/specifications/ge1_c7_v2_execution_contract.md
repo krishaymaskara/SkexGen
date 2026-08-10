@@ -1,8 +1,9 @@
 # GE1 C7-v2 Prospective Execution Contract
 
 Status: accepted prospective protocol under
-[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md); implementation
-and scientific execution have not yet occurred.
+[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md); additive
+implementation and unsubmitted CPU runner prepared; scientific execution has
+not occurred.
 
 Reviewer: Krishay Maskara, August 10, 2026.
 
@@ -83,7 +84,9 @@ Only complete passage sets `stage6_authorized_by_c7_v2=true`. A scientific
 failure finalizes and exits zero. Infrastructure failure does not finalize,
 exits nonzero, and authorizes nothing.
 
-C7-v2 implementation and validation do not begin Stage 6, C8, or repair.
+C7-v2 implementation and validation do not begin Stage 6, C8, or repair. The
+implementation is `prototype/graph_encoder/c7_v2.py`; its distinct runner is
+`prototype/graph_encoder/adroit/ge1_c7_v2_cpu.slurm`.
 Development, RR, ER, IID, history-depth, and geometry-extrapolation remain
 closed.
 

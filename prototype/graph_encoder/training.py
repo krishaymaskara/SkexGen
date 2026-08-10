@@ -289,6 +289,7 @@ def run_ge1_training(
     provenance_verifier=verify_c6_provenance,
     checkpoint_epochs=None,
     extended_final_epoch=None,
+    fixed_protocol_final_epoch=None,
     checkpoint_coordinate="epoch",
     selected_checkpoint_epoch=CHECKPOINT_EPOCH,
 ):
@@ -297,6 +298,8 @@ def run_ge1_training(
     ``final_epoch`` may be 1 or 2 only for an explicitly labeled engineering
     smoke.  The additive post-C7 optimization diagnostic may instead pass an
     equal ``extended_final_epoch`` and an explicit sparse checkpoint schedule.
+    A prospectively governed protocol may pass an equal
+    ``fixed_protocol_final_epoch`` without changing any existing default.
     Defaults preserve the C6/formal-C7 every-epoch behavior and fixed epoch-50
     selection. The diagnostic explicitly supplies no selected checkpoint.
     """
@@ -310,7 +313,10 @@ def run_ge1_training(
     training_config.validate()
     model.config.validate()
     _validate_execution_epoch(
-        final_epoch, engineering_smoke, extended_final_epoch=extended_final_epoch
+        final_epoch,
+        engineering_smoke,
+        extended_final_epoch=extended_final_epoch,
+        fixed_protocol_final_epoch=fixed_protocol_final_epoch,
     )
     checkpoint_schedule = _validate_checkpoint_schedule(
         final_epoch, checkpoint_epochs, checkpoint_coordinate
@@ -825,10 +831,22 @@ def _training_tensors(paired, encoder):
 
 
 def _validate_execution_epoch(
-    final_epoch, engineering_smoke, *, extended_final_epoch=None
+    final_epoch,
+    engineering_smoke,
+    *,
+    extended_final_epoch=None,
+    fixed_protocol_final_epoch=None
 ):
     if isinstance(final_epoch, bool) or not isinstance(final_epoch, int):
         raise GraphEncoderError("invalid_training_budget", "final epoch must be integer")
+    if (
+        extended_final_epoch is not None
+        and fixed_protocol_final_epoch is not None
+    ):
+        raise GraphEncoderError(
+            "invalid_training_budget",
+            "diagnostic and fixed-protocol budgets are mutually exclusive",
+        )
     if extended_final_epoch is not None:
         if (
             isinstance(extended_final_epoch, bool)
@@ -840,6 +858,19 @@ def _validate_execution_epoch(
             raise GraphEncoderError(
                 "invalid_training_budget",
                 "extended final epoch must be an equal integer above epoch 50",
+            )
+        return
+    if fixed_protocol_final_epoch is not None:
+        if (
+            isinstance(fixed_protocol_final_epoch, bool)
+            or not isinstance(fixed_protocol_final_epoch, int)
+            or fixed_protocol_final_epoch <= TRAINING_EPOCHS
+            or final_epoch != fixed_protocol_final_epoch
+            or engineering_smoke
+        ):
+            raise GraphEncoderError(
+                "invalid_training_budget",
+                "fixed protocol final epoch must be an equal integer above epoch 50",
             )
         return
     allowed = (1, SMOKE_EPOCHS) if engineering_smoke else (TRAINING_EPOCHS,)
