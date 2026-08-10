@@ -1,7 +1,8 @@
 # GE1 C7 Optimization-Sufficiency Diagnostic Contract
 
-Status: accepted additive post-C7 contract; implementation exists; no
-diagnostic run or result exists yet.
+Status: accepted additive post-C7 contract; implementation exists; the first
+authoritative preflight failed before any manifest or payload access; no
+diagnostic execution or result exists yet.
 
 Authority: accepted
 [ADR-0007](../decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md),
@@ -139,3 +140,20 @@ sbatch --export=ALL,EXPECTED_COMMIT="$EXPECTED_COMMIT" \
 Implementation completion is not a diagnostic result. No local corpus access,
 diagnostic execution, Slurm submission, protected access, Stage 6
 authorization, repair invocation, or C8 work is part of this contract record.
+
+## Validation history
+
+Slurm job `3344896` at implementation commit
+`0837717a90eebcfd6aaa0c0ca9cd47f18ac52f88` failed in the focused preflight
+suite. The validator's `None` default conflated an omitted argument, which
+must read `SLURM_JOB_ID`, with an explicitly supplied invalid `None`. The
+ambient Slurm value therefore made the explicit-`None` regression assertion
+fail. The runner stopped before manifest or payload access, no diagnostic
+trajectory or finalized artifact was produced, and the attempt is only an
+infrastructure failure.
+
+The narrow implementation correction uses a private missing-argument
+sentinel. Omission still reads the environment; explicit `None`, empty,
+non-string, non-ASCII, and non-decimal values are rejected. No scientific,
+artifact, decision, or protected-access contract changes. The corrected exact
+commit requires a fresh authoritative validation.

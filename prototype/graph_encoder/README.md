@@ -1008,10 +1008,17 @@ python3 -m prototype.graph_encoder.optimization_diagnostic \
   --expected-commit <exact-commit>
 ```
 
-The implementation exists but has not run. There is no diagnostic result,
-Stage 6 remains unauthorized, repair is not invoked, C8 has not begun, and no
-protected partition has been opened. The frozen contract and runner
-requirements are in the
+The first authoritative-environment attempt, Slurm job `3344896` at commit
+`0837717a90eebcfd6aaa0c0ca9cd47f18ac52f88`, stopped in the focused preflight
+suite before manifest or payload access. An explicit `None` supplied to the
+Slurm-ID validator was incorrectly treated as an omitted argument and fell
+back to the ambient job ID. The implementation now uses a private sentinel:
+omitting the argument retains environment-based provenance, while explicitly
+supplying `None` is rejected. The corrected exact commit still requires an
+authoritative rerun. There is no diagnostic result, Stage 6 remains
+unauthorized, repair is not invoked, C8 has not begun, and no protected
+partition has been opened. The frozen contract and runner requirements are in
+the
 [diagnostic specification](../../docs/specifications/ge1_c7_optimization_sufficiency_diagnostic.md).
 
 ## Manifest authority and access order

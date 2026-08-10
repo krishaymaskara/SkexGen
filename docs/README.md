@@ -172,6 +172,10 @@ the immediate next action changes.
   pilot](experiments/ge1_c7_pilot.md) — completed exact-commit scientific gate
   failure: both arms failed four-family autonomous exact sufficiency, all
   scaled gates remained `not_run`, and Stage 6 remains unauthorized.
+- [GE1 optimization-diagnostic preflight attempt
+  3344896](experiments/ge1_optimization_diagnostic_preflight_attempt_3344896.md)
+  — focused-suite infrastructure failure before any manifest or payload
+  access; no diagnostic result or finalized artifact.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

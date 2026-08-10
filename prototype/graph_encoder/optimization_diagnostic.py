@@ -103,6 +103,7 @@ FORBIDDEN_DECISION_FIELDS = (
     "stage6_authorized_by_c7",
     "preauthorized_decoder_repair_triggered",
 )
+_MISSING_ARGUMENT = object()
 
 
 @dataclass
@@ -152,10 +153,14 @@ def diagnostic_training_arithmetic():
     }
 
 
-def validate_slurm_job_id(value=None):
+def validate_slurm_job_id(value=_MISSING_ARGUMENT):
     """Require the decimal Slurm identity that binds every artifact record."""
 
-    observed = os.environ.get("SLURM_JOB_ID") if value is None else value
+    observed = (
+        os.environ.get("SLURM_JOB_ID")
+        if value is _MISSING_ARGUMENT
+        else value
+    )
     if (
         not isinstance(observed, str)
         or not observed

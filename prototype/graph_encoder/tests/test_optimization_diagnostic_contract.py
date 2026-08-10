@@ -230,7 +230,11 @@ class FrozenContractTests(unittest.TestCase):
 
     def test_slurm_job_id_is_nonempty_decimal(self):
         self.assertEqual(diagnostic.validate_slurm_job_id("3344505"), "3344505")
-        for value in (None, "", "abc", "12-3", 123):
+        with mock.patch.dict(os.environ, {"SLURM_JOB_ID": "3344896"}):
+            self.assertEqual(diagnostic.validate_slurm_job_id(), "3344896")
+            with self.assertRaises(GraphEncoderError):
+                diagnostic.validate_slurm_job_id(None)
+        for value in (None, "", "abc", "12-3", "１２３", 123):
             with self.subTest(value=value), self.assertRaises(GraphEncoderError):
                 diagnostic.validate_slurm_job_id(value)
 
