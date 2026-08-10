@@ -9,7 +9,9 @@
   and [ADR-0005](ADR-0005-ge1-primary-reporting-and-metrics-v2.md)
 - Supersedes: no frozen scientific choice in ADR-0004, ADR-0005, or
   `GE1-STAGE0-PREREG-v1`
-- Superseded by: none
+- Superseded by: [ADR-0009](ADR-0009-ge1-positive-operation-magnitude-repair.md)
+  for the decoder-repair choice only; the completed C7-v1 contract and result
+  remain immutable
 
 ## Context
 

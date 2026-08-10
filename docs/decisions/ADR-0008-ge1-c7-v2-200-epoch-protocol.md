@@ -11,7 +11,9 @@
   `GE1-STAGE0-PREREG-v1`
 - Preserves without reinterpretation: formal C7-v1 and
   [ADR-0007](ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
-- Superseded by: none
+- Superseded by: [ADR-0009](ADR-0009-ge1-positive-operation-magnitude-repair.md)
+  for the deferred decoder-repair choice only; the completed C7-v2 protocol
+  and result remain immutable
 
 ## Context
 

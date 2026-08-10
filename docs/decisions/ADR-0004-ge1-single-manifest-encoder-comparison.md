@@ -6,7 +6,8 @@
 - Owner: project research team
 - Designated GE1 reviewer: Krishay Maskara
 - Supersedes: the next-phase-selection gate in [ADR-0003](ADR-0003-freeze-graph-v1.md) only
-- Superseded by: none
+- Superseded by: [ADR-0009](ADR-0009-ge1-positive-operation-magnitude-repair.md)
+  for the decoder-repair choice only; every other decision remains in force
 
 ## Context
 

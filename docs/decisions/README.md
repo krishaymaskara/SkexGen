@@ -60,3 +60,9 @@ it superseded by a later ADR.
   designated reviewer Krishay Maskara; prospectively replaces the inadequate
   C7 and eventual Stage 6 budget while preserving C7-v1 and the optimization
   diagnostic as immutable history.
+- [ADR-0009: GE1 positive operation-magnitude
+  repair](ADR-0009-ge1-positive-operation-magnitude-repair.md) — accepted by
+  designated reviewer Krishay Maskara; supersedes only the previously
+  authorized hierarchical structural repair with a prospective positive,
+  bounded extrusion/revolve magnitude mapping while preserving C7-v2 and its
+  diagnostic as immutable evidence.
