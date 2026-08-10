@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; prospective C7-v2 fixed-epoch-200 protocol implemented but not run; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; a read-only operation-parameter diagnostic is prepared; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -699,17 +699,32 @@ repair, authorize Stage 6, open protected data, or begin C8. See the
 [diagnostic contract](ge1_c7_optimization_sufficiency_diagnostic.md) and
 [result record](../experiments/ge1_optimization_diagnostic.md).
 
-**Prospective C7-v2 status:** accepted
+**C7-v2 status:** accepted
 [ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) freezes a
 separate `GE1-C7-SUFFICIENCY-v2` execution at epoch 200. Tiny arithmetic is
 200 updates and 800 presentations per arm; scaled arithmetic is 800 updates
 and 6,400 presentations per arm. The unchanged C7-v1 cohorts, criteria,
 memory thresholds, seed, models, decoder, losses, access rules, and failure
 rules remain in force. Tiny and scaled use separately fresh matched pairs.
-The decoder repair is deferred, not erased, and becomes the next permitted
-implementation path if C7-v2 exact sufficiency fails. The additive runner,
-tests, and artifact contract are implemented, but C7-v2 has not been run. See
-the [C7-v2 contract](ge1_c7_v2_execution_contract.md).
+Job `3344981` at commit
+`e325d5ad97957c08da4a19b4261560e8a4a472a4` passed both tiny gates, then
+failed scaled exact sufficiency only because two flat and three typed-graph
+families had analytic `invalid_operation_parameter` failures. Both scaled
+memory gates passed; all 64 arm-family node/graph/strict-conversion criteria
+and all applicable `depends_on` criteria were exact. The result blocks Stage
+6 and makes the decoder-repair path procedurally next without implementing
+repair. See the [C7-v2 contract](ge1_c7_v2_execution_contract.md).
+
+**Pre-repair diagnostic status:** Krishay Maskara authorized a separately
+versioned, train-only read-only diagnostic of those five failures. It loads
+the immutable scaled epoch-200 checkpoints, reproduces original `P_true`
+metrics before interpretation, and records both-arm scalar, mask, category,
+conversion, and analytic-validity traces. Because no CAD kernel is part of
+the evaluation contract, executor outcomes are structurally unavailable and
+legal-but-geometrically-incompatible values are unassessable. The
+[diagnostic contract](ge1_c7_v2_operation_parameter_diagnostic.md), focused
+tests, and non-submitting CPU runner are prepared. No authoritative diagnostic
+run, repair, Stage 6, C8, or protected-partition access has occurred.
 
 ### Stage 6 — Core continuous encoder pilot
 

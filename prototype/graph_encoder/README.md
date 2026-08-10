@@ -1055,12 +1055,11 @@ inconclusive. Only six passing arm gates may set
 `stage6_authorized_by_c7_v2=true`. Scientific failure still finalizes and
 exits zero, whereas infrastructure or artifact failure exits nonzero.
 
-`adroit/ge1_c7_v2_cpu.slurm` is the prepared, unsubmitted standalone-checkout
-CPU runner. It runs the focused C7-v2 tests with zero PyTorch skips, the full
-graph-encoder suite with zero skips, all regressions and repository checks,
-and only then permits metadata or train-payload access. It independently
-checks every selected checkpoint and artifact hash after execution. No C7-v2
-scientific execution has yet occurred; Stage 6, C8, and repair remain blocked.
+`adroit/ge1_c7_v2_cpu.slurm` is the standalone-checkout CPU runner. It runs
+the focused C7-v2 tests with zero PyTorch skips, the full graph-encoder suite
+with zero skips, all regressions and repository checks, and only then permits
+metadata or train-payload access. It independently checks every selected
+checkpoint and artifact hash after execution.
 
 The first authoritative preflight, Slurm job `3344975` at commit
 `99a4587d73e82a5df5f12a54130b105ae264b419`, passed the focused 28/28,
@@ -1073,6 +1072,43 @@ payload, performed no training, and produced no artifact; `/external/c7-v2`
 stdout lines were emitted by a mocked CLI unit test. The complete
 [preflight record](../../docs/experiments/ge1_c7_v2_preflight_attempt_3344975.md)
 is non-scientific.
+
+Corrected job `3344981` at exact commit
+`e325d5ad97957c08da4a19b4261560e8a4a472a4` completed C7-v2. Both tiny gates
+and both scaled memory gates passed. Each arm was exact on all scaled node
+sequences, typed graphs, strict conversions, and applicable `depends_on`
+relationships, but flat failed analytic complete validity on two families and
+typed graph failed it on three. Every failure was
+`invalid_operation_parameter`. The finalized result is a valid C7-v2 failure,
+does not authorize Stage 6, and makes the deferred repair path procedurally
+next without implementing it.
+
+## C7-v2 operation-parameter diagnostic
+
+`operation_parameter_diagnostic.py` implements the separately versioned
+read-only follow-up authorized before repair. It verifies job `3344981`'s
+artifact and exact scaled checkpoint hashes, reconstructs only the frozen
+32-family train cohort, strictly loads each checkpoint into a fresh model,
+and reproduces stable autonomous `P_true` metrics before extracting any
+diagnostic trace. Both arms are evaluated for all five failed families.
+
+The record separates strict conversion from analytic controlled-domain
+validity. It reports the active operation channel's pre-`tanh` head output,
+normalized and physical predictions and targets, errors, masks, categories,
+profile scale, prefix, and analytic failures. No CAD kernel is used, so
+executor results are structurally unavailable and a legal-but-geometrically-
+incompatible parameter is unassessable. Raw CAD histories, graphs, model
+state, optimizer state, and checkpoints are forbidden from the five-file
+diagnostic artifact.
+
+`adroit/ge1_operation_parameter_diagnostic_cpu.slurm` is prepared but not
+submitted. It runs all preflight suites before data access, binds the source
+C7-v2 artifact and corpus read-only, verifies source hashes before and after
+inference, emits explicit failure phases and access declarations, and creates
+no checkpoints. The full contract is in the
+[diagnostic specification](../../docs/specifications/ge1_c7_v2_operation_parameter_diagnostic.md).
+No diagnostic result, repair, Stage 6, C8, or protected-partition access is
+claimed by this implementation.
 
 ## Manifest authority and access order
 

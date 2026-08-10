@@ -68,6 +68,10 @@ the immediate next action changes.
 - [GE1 C7-v2 prospective execution
   contract](specifications/ge1_c7_v2_execution_contract.md) — fixed
   epoch-200 tiny/scaled gate and versioned Stage 6 authorization contract.
+- [GE1 C7-v2 operation-parameter diagnostic
+  contract](specifications/ge1_c7_v2_operation_parameter_diagnostic.md) —
+  read-only train-only diagnosis of the five scaled analytic operation-
+  parameter failures, with CAD-kernel outcomes explicitly unavailable.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

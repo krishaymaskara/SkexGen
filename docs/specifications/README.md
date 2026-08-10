@@ -20,6 +20,8 @@ succeeded.
   contract](ge1_c7_optimization_sufficiency_diagnostic.md)
 - [GE1 C7-v2 prospective execution
   contract](ge1_c7_v2_execution_contract.md)
+- [GE1 C7-v2 operation-parameter diagnostic
+  contract](ge1_c7_v2_operation_parameter_diagnostic.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -33,3 +35,6 @@ awaiting a decision. When its current-state language differs from the
 - [Phase B categorical-isolation replay](flat_baseline_phase_b_categorical_isolation_replay.md):
   a preregistered 2-by-2 plane-category/profile-category diagnostic over the
   immutable recovered bundle and completed constraint-manifold replay.
+- [GE1 C7-v2 operation-parameter diagnostic](ge1_c7_v2_operation_parameter_diagnostic.md):
+  a read-only, train-only scalar and conversion trace over the immutable
+  scaled checkpoints from job `3344981`; authoritative execution is pending.

@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | This prospective C7-v2 implementation update; its literal hash is intentionally not embedded |
+| Current reviewed revision | This C7-v2 operation-parameter diagnostic implementation; its literal hash is intentionally not embedded |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus prospective accepted ADR-0008; C0-C6 complete; formal C7-v1 failed; C7-v2 is implemented but not run; Stage 6 remains unauthorized; C8 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus accepted ADR-0008; C0-C6 complete; formal C7-v1 and C7-v2 failed; a read-only train-only operation-parameter diagnostic is prepared; Stage 6 remains unauthorized; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -28,8 +28,9 @@ specifications or new decision records.
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 C7 formal pilot | Adroit job `3344505` at exact commit `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` completed with valid artifacts and failed both tiny autonomous exact gates; all scaled gates were `not_run`, repair was triggered procedurally, and Stage 6 was not authorized |
 | GE1 post-C7 optimization diagnostic | Job `3344907` at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed; both unchanged arms first passed autonomous exact sufficiency at update 200, yielding `undertraining_supported_both_arms`; Stage 6 was not authorized and protected partitions remained closed |
-| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; additive implementation present; first preflight failed before data access; corrected standalone-checkout CPU rerun pending; decoder repair deferred, not erased |
+| GE1 C7-v2 execution | Job `3344981` at exact commit `e325d5ad97957c08da4a19b4261560e8a4a472a4` completed as a valid scientific failure: both tiny gates passed; scaled memory gates passed; flat failed 2/32 and typed graph failed 3/32 only on analytic complete validity; Stage 6 remained unauthorized and the repair path became procedurally next |
 | GE1 C7-v2 preflight attempt | Job `3344975` at exact commit `99a4587d73e82a5df5f12a54130b105ae264b419` failed in the sequential regression loader before manifest or payload access; no scientific execution or artifact occurred |
+| GE1 operation-parameter diagnostic | Reviewer-authorized, separately versioned read-only diagnostic prepared against the immutable scaled epoch-200 checkpoints from job `3344981`; no authoritative run yet, no repair implemented, and protected partitions remain closed |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -323,12 +324,9 @@ establishes separately versioned C7-v2 identities and a fixed 200-epoch
 budget for tiny and scaled gates. The same 200 epochs become the eventual
 Stage 6 budget only if a finalized C7-v2 artifact explicitly records
 `stage6_authorized_by_c7_v2=true`. C7-v1 and the diagnostic remain immutable.
-The hierarchical repair path remains triggered in C7-v1 history but is
-deferred while C7-v2 tests the evidence-based budget. The additive
-`prototype/graph_encoder/c7_v2.py` implementation, focused tests, and
-standalone-checkout CPU runner are prepared. C7-v2 has not been submitted or
-executed scientifically, so Stage 6 remains unauthorized and no repair or C8
-work has begun. The first authoritative preflight, job `3344975`, passed the
+The hierarchical repair path remains triggered in C7-v1 history and was
+deferred while C7-v2 tested the evidence-based budget. The first authoritative
+preflight, job `3344975`, passed the
 environment, focused 28/28, complete graph-encoder 266/266, and model-data
 86/86 gates, then stopped before flat-baseline discovery because Python 3.8's
 singleton `defaultTestLoader` retained a prior discovery root. The runner now
@@ -336,7 +334,27 @@ constructs a fresh loader with explicit repository top level per regression
 suite. The attempt opened no manifest or payload and produced no artifact;
 see its [preflight record](experiments/ge1_c7_v2_preflight_attempt_3344975.md).
 
-No further Graph V1 correction or rerun is authorized. RR access remains
+Corrected job `3344981` then completed C7-v2 at exact commit
+`e325d5ad97957c08da4a19b4261560e8a4a472a4`. Both tiny arms passed before
+scaled access. On the 32-family scaled cohort, both memory gates passed and
+all node, graph, applicable `depends_on`, and strict-conversion criteria were
+exact. Flat failed complete analytic validity on two families and typed graph
+failed it on three, all with `invalid_operation_parameter`. The finalized
+result is an overall C7-v2 failure, records
+`stage6_authorized_by_c7_v2=false`, and makes the preauthorized repair path
+procedurally next without implementing it.
+
+Before any repair, Krishay Maskara authorized a narrower read-only
+[operation-parameter diagnostic](specifications/ge1_c7_v2_operation_parameter_diagnostic.md).
+It reuses the immutable scaled epoch-200 checkpoints and train cohort,
+requires exact `P_true` reproduction, and records scalar and analytic traces
+for both arms on the five failures. Strict conversion and analytic
+controlled-domain validity are separate; CAD-kernel executor results are
+structurally unavailable, and legal-but-geometrically-incompatible outcomes
+are unassessable. The runner is prepared but has not been submitted. Stage 6,
+C8, repair implementation, and protected-partition access remain blocked.
+
+No repair or C7-v2 rerun is authorized by this diagnostic work. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed
 throughout GE1.
 

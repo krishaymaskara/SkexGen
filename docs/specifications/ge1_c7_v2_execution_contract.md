@@ -1,9 +1,9 @@
 # GE1 C7-v2 Prospective Execution Contract
 
-Status: accepted prospective protocol under
-[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md); additive
-implementation present; corrected CPU rerun pending after a zero-access
-preflight failure; scientific execution has not occurred.
+Status: accepted protocol under
+[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md); authoritative
+job `3344981` completed as a valid scientific gate failure at exact commit
+`e325d5ad97957c08da4a19b4261560e8a4a472a4`.
 
 Reviewer: Krishay Maskara, August 10, 2026.
 
@@ -18,6 +18,24 @@ The diagnostic showed both unchanged arms first reaching autonomous exact
 sufficiency at epoch 200. C7-v2 therefore tests a prospectively fixed
 200-epoch budget while deferring, not deleting, the previously triggered
 decoder-repair path.
+
+## Finalized execution outcome
+
+Both tiny exact gates passed before scaled payload access. Both scaled memory
+gates also passed. Across the scaled cohort, both arms produced 32/32 exact
+node sequences, 32/32 exact typed graphs, 16/16 exact applicable EE/RE
+`depends_on` relationships, and 32/32 strict conversions. Flat failed
+complete analytic validity for two families; typed graph failed it for three.
+All five failures were `invalid_operation_parameter` at analytic geometry
+validity. Thus `c7_v2_overall_gate_pass=false`,
+`stage6_authorized_by_c7_v2=false`, `comparison_inconclusive=false`, and the
+preauthorized repair path is procedurally next. The completed failure exited
+zero and finalized a valid artifact; it did not implement repair or begin
+Stage 6 or C8.
+
+The separately versioned, read-only
+[operation-parameter diagnostic](ge1_c7_v2_operation_parameter_diagnostic.md)
+is the only currently prepared follow-up. It does not alter this outcome.
 
 ## Identities
 
