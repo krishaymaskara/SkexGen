@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; Stage 6 remains unauthorized; no repaired scientific protocol is frozen; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; accepted ADR-0010 freezes a separately versioned repaired sufficiency protocol with an operation-geometry fidelity gate; implementation is pending and scientific execution remains unauthorized; Stage 6 is blocked; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -754,6 +754,17 @@ CAD-kernel, Stage 6, and C8 declarations remained false. See the
 [authoritative validation record](../experiments/ge1_operation_magnitude_repair_cpu_validation.md).
 This closes implementation validation only; any repaired scientific protocol
 still requires a separate prospective governance decision.
+
+Accepted [ADR-0010](../decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md)
+now supplies that prospective governance decision under the separate identity
+`GE1-C7-REPAIRED-SUFFICIENCY-v1`. It preserves the tiny/scaled epoch-200
+budget and all C7-v2 structural and memory criteria while adding a strict
+autonomous `operation_geometry_fidelity` gate: extrusion absolute physical
+error `< 0.25` and revolve absolute physical error `< 22.5`, required for
+every operation and representation variant of every family. Scaled access
+requires both tiny arms to pass exactness and fidelity. This authorizes
+implementation and engineering validation preparation only, not scientific
+execution or Stage 6.
 
 ### Stage 6 — Core continuous encoder pilot
 

@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | Documentation-only record of authoritative operation-magnitude repair validation; its literal hash is intentionally not embedded |
+| Current reviewed revision | Accepted ADR-0010 prospective repaired train-sufficiency protocol; implementation and scientific execution remain separate |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -33,6 +33,7 @@ specifications or new decision records.
 | GE1 operation-parameter diagnostic | Adroit job `3345013` at exact diagnostic commit `802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57` completed read-only: all five failures were active negative extrusion/revolve magnitudes; no training, repair, checkpoint write, protected-partition access, or C7-v2 mutation occurred |
 | GE1 prospective magnitude repair | Accepted ADR-0009 supersedes only the earlier hierarchical repair authorization; `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` is implemented for exact-commit engineering validation, while scientific training and Stage 6 remain unauthorized |
 | GE1 magnitude-repair validation | Passed as Adroit CPU job `3345044` at exact commit `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`: 13/13 focused and 292/292 complete graph-encoder tests with zero skips, all regressions and repository gates, and zero corpus/training/kernel access |
+| GE1 repaired sufficiency protocol | Accepted [ADR-0010](decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) freezes `GE1-C7-REPAIRED-SUFFICIENCY-v1` and its strict operation-geometry fidelity gate; no repaired model has been trained and scientific execution remains unauthorized |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |

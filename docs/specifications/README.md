@@ -22,6 +22,8 @@ succeeded.
   contract](ge1_c7_v2_execution_contract.md)
 - [GE1 C7-v2 operation-parameter diagnostic
   contract](ge1_c7_v2_operation_parameter_diagnostic.md)
+- [GE1 repaired train-sufficiency execution
+  contract](ge1_repaired_sufficiency_execution_contract.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

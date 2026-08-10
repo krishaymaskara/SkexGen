@@ -66,3 +66,9 @@ it superseded by a later ADR.
   authorized hierarchical structural repair with a prospective positive,
   bounded extrusion/revolve magnitude mapping while preserving C7-v2 and its
   diagnostic as immutable evidence.
+- [ADR-0010: GE1 repaired train-sufficiency
+  protocol](ADR-0010-ge1-repaired-train-sufficiency-protocol.md) — accepted by
+  designated reviewer Krishay Maskara; freezes a separately versioned
+  epoch-200 repaired protocol with a strict per-operation fidelity gate,
+  conservative physical-family aggregation, target isolation, and unchanged
+  protected-access boundaries.

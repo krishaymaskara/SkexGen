@@ -195,6 +195,10 @@ the immediate next action changes.
   3344975](experiments/ge1_c7_v2_preflight_attempt_3344975.md) — sequential
   regression-loader implementation failure before manifest or payload access;
   no C7-v2 scientific execution or artifact.
+- [GE1 repaired train-sufficiency execution
+  contract](specifications/ge1_repaired_sufficiency_execution_contract.md) —
+  accepted prospective epoch-200 protocol with a strict operation-geometry
+  fidelity gate; implementation and scientific execution remain separate.
 - [GE1 operation-magnitude repair authoritative CPU
   validation](experiments/ge1_operation_magnitude_repair_cpu_validation.md) —
   exact-commit, corpus-free engineering validation of the prospective positive
