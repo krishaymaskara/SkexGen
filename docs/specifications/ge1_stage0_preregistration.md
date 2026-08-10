@@ -173,6 +173,31 @@ optimization-inconclusive but does not change checkpoint selection. The same
 classification applies if arm train-ceiling shortfalls differ by more than
 0.05 for normalized executable prefix or 0.10 for complete validity.
 
+## Prospective C7-v2 and Stage 6 budget addendum
+
+The tables above remain the immutable `GE1-STAGE0-PREREG-v1` and C7-v1
+history. Accepted
+[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) prospectively
+supersedes only their 50-epoch budget and checkpoint semantics for C7-v2 and
+for eventual Stage 6 if C7-v2 later authorizes it. It does not edit the
+historical C7-v1 selection.
+
+| Prospective use | Epochs | Fixed checkpoint | Updates | Presentations |
+|---|---:|---:|---:|---:|
+| C7-v2 tiny, four families | 200 | epoch 200 | 200 per arm | 800 per arm |
+| C7-v2 scaled, 32 families | 200 | epoch 200 | 800 per arm | 6,400 per arm |
+| Eventual Stage 6, 407 families | 200 | epoch 200 | approximately 10,200 per arm/seed | exactly 81,400 per arm/seed |
+
+Every architecture, optimizer, loss, cohort, seed, endpoint, memory threshold,
+capacity, and access rule remains unchanged. C7-v2 and eventual Stage 6 have
+no early stopping, best-checkpoint selection, extension after observation,
+warm start, C7-v1 resume, or optimization-diagnostic checkpoint reuse.
+
+Stage 6 remains blocked unless a finalized C7-v2 artifact explicitly records
+`stage6_authorized_by_c7_v2=true`. The C7-v1 decoder-repair trigger remains in
+history but is deferred. C7-v2 exact failure returns to that repair path;
+memory-only failure remains inconclusive and does not trigger repair.
+
 ## Frozen sufficiency, endpoints, and decisions
 
 Train-only sufficiency uses one E, R, EE, and RE family, then a deterministic
@@ -247,6 +272,7 @@ rules. ER and all other manifests remain unopened regardless of outcome.
 | Physical 407/45/114/114 counts and hashes verified | complete |
 | C0 activation gate | complete |
 | Stage 1 | not begun by reviewer instruction |
+| Prospective ADR-0008 budget addendum | accepted and recorded August 10, 2026 |
 
 C0 is complete. No model implementation or scientific training began during
 this audit, and Stage 1 remains deliberately unstarted.

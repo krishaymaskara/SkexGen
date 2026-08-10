@@ -57,10 +57,17 @@ the immediate next action changes.
   diagnostic](decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
   — accepted additive post-C7 record for a fixed 500-update, four-family
   clean-start trajectory without Stage 6 or C8 authorization.
+- [ADR-0008: GE1 C7-v2 prospective 200-epoch
+  protocol](decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) — accepted
+  prospective budget revision that preserves C7-v1 and the completed
+  optimization diagnostic as immutable records.
 - [GE1 C7 optimization-sufficiency diagnostic
   contract](specifications/ge1_c7_optimization_sufficiency_diagnostic.md) —
   frozen implementation, measurement, provenance, artifact, and runner
-  contract; implementation exists but has not run.
+  contract; completed job `3344907` supports undertraining in both arms.
+- [GE1 C7-v2 prospective execution
+  contract](specifications/ge1_c7_v2_execution_contract.md) — fixed
+  epoch-200 tiny/scaled gate and versioned Stage 6 authorization contract.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
@@ -176,6 +183,10 @@ the immediate next action changes.
   3344896](experiments/ge1_optimization_diagnostic_preflight_attempt_3344896.md)
   — focused-suite infrastructure failure before any manifest or payload
   access; no diagnostic result or finalized artifact.
+- [GE1 post-C7 optimization-sufficiency
+  diagnostic](experiments/ge1_optimization_diagnostic.md) — completed job
+  `3344907`; both unchanged arms first became autonomously exact-sufficient at
+  update 200 without protected access.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

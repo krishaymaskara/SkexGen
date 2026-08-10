@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7 completed as a train-only scientific gate failure; additive post-C7 optimization diagnostic implemented, with job `3344896` stopped in preflight before manifest or payload access and no diagnostic result; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; prospective C7-v2 fixed-epoch-200 protocol accepted but not implemented or run; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -597,25 +597,27 @@ adapter; the decoder path is byte-identical code.
    graph encoder obtains a three-hop receptive field through three relational
    layers.
 4. Plan three fixed seeds: `2026`, `2027`, and `2028`.
-5. Train every arm for 50 epochs, batch size eight, AdamW with learning rate
+5. Under prospective ADR-0008, train every arm for 200 epochs, batch size
+   eight, AdamW with learning rate
    `1e-3`, zero weight decay, and gradient clipping at `1.0`, unless the
    train-only engineering smoke rejects a setting before any comparative
    validation. No arm may receive extra presentations after comparative
    development evaluation begins. With 407 families this is 51 steps per
-   epoch, 2,550 optimizer steps, and 20,350 example presentations per arm and
-   seed, replacing the
+   epoch, approximately 10,200 optimizer steps, and exactly 81,400 example
+   presentations per arm and seed, replacing the
    frozen two-epoch/136-step budget that measured only early optimization.
-   Planned GE1 therefore contains 15,300 optimizer steps across six runs.
+   Planned GE1 therefore contains approximately 61,200 optimizer steps across
+   six runs.
 6. Define train-loss plateau as less than 1% relative improvement in the
    five-epoch moving best after epoch 10. Report the plateau epoch, final train
    loss, train exact graph, train normalized executable prefix, and train
    complete validity for every arm and seed. If either arm has not plateaued
-   by epoch 50, if the arms' normalized-prefix train-ceiling shortfalls differ
+   by epoch 200, if the arms' normalized-prefix train-ceiling shortfalls differ
    by more than `0.05`, or if their complete-validity train-ceiling shortfalls
    differ by more than `0.10`, classify
    the encoder comparison as optimization-inconclusive rather than extending
    only one arm.
-7. Select the fixed epoch-50 checkpoint for every arm and seed. Training loss,
+7. Select the fixed epoch-200 checkpoint for every arm and seed. Training loss,
    plateau epoch, and train ceilings remain required diagnostics but cannot
    select a checkpoint. Development data may not select checkpoints or
    hyperparameters.
@@ -627,7 +629,7 @@ adapter; the decoder path is byte-identical code.
    reduce GE1 from three seeds to seeds `2026` and `2027`. Under the two-seed
    fallback, compute every seed mean over those two seeds and additionally
    require both seed-level treatment effects to be nonnegative. Do not reduce
-   the 50-epoch budget below the plateau requirement. If two 50-epoch seeds
+   the 200-epoch budget. If two 200-epoch seeds
    per GE1 arm are infeasible, block the experiment rather than measuring
    early optimization again.
 10. Report wall time and peak memory; parameter matching does not imply compute
@@ -687,23 +689,34 @@ governs an additive optimization-sufficiency trajectory prompted by the
 non-plateaued update-50 losses. It reuses exactly the formal C7 four-family
 train cohort and seed 2026, starts both arms freshly from the matched
 initialization, trains uninterrupted through 500 optimizer updates, and
-measures autonomous outputs only at updates 50, 100, 200, and 500. The
-implementation and CPU runner exist. Slurm job `3344896` at commit
-`0837717a90eebcfd6aaa0c0ca9cd47f18ac52f88` failed the focused preflight
-because explicit `None` was incorrectly treated as a request to read the
-ambient Slurm job ID. The runner stopped before manifest or payload access;
-the diagnostic therefore has not executed and has no result. The corrected
-implementation uses a private missing-argument sentinel and preserves the
-no-argument environment-provenance behavior. It does not change formal C7,
-invoke repair, authorize Stage 6, open protected data, or begin C8. See the
-[diagnostic contract](ge1_c7_optimization_sufficiency_diagnostic.md).
+measures autonomous outputs only at updates 50, 100, 200, and 500. Corrected
+Adroit job `3344907` at commit
+`fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed successfully. Both
+unchanged arms first became autonomously exact-sufficient at update 200 and
+remained exact at update 500, yielding
+`undertraining_supported_both_arms`. It did not change formal C7-v1, invoke
+repair, authorize Stage 6, open protected data, or begin C8. See the
+[diagnostic contract](ge1_c7_optimization_sufficiency_diagnostic.md) and
+[result record](../experiments/ge1_optimization_diagnostic.md).
+
+**Prospective C7-v2 status:** accepted
+[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) freezes a
+separate `GE1-C7-SUFFICIENCY-v2` execution at epoch 200. Tiny arithmetic is
+200 updates and 800 presentations per arm; scaled arithmetic is 800 updates
+and 6,400 presentations per arm. The unchanged C7-v1 cohorts, criteria,
+memory thresholds, seed, models, decoder, losses, access rules, and failure
+rules remain in force. Tiny and scaled use separately fresh matched pairs.
+The decoder repair is deferred, not erased, and becomes the next permitted
+implementation path if C7-v2 exact sufficiency fails. C7-v2 is not yet
+implemented or run. See the [C7-v2 contract](ge1_c7_v2_execution_contract.md).
 
 ### Stage 6 — Core continuous encoder pilot
 
-1. Train both conditions from fresh initialization for 50 epochs under the
+1. After explicit C7-v2 authorization, train both conditions from fresh
+   initialization for 200 epochs under the
    frozen retained seed set: normally 2026, 2027, and 2028, or 2026 and 2027
    if the preauthorized timing fallback was invoked and recorded.
-2. Select the fixed epoch-50 checkpoint for every arm and retained seed.
+2. Select the fixed epoch-200 checkpoint for every arm and retained seed.
 3. Compare the graded normalized executable-prefix endpoint overall and by
    `E/R/EE/RE` on the 45-family operation-template development partition.
 4. Report complete validity, exact graph, `depends_on` recall, node/geometry
@@ -720,7 +733,7 @@ Open the predetermined systematic partition only after:
 - code and configs are frozen and committed;
 - both conditions pass autonomous inference, strict conversion, and artifact
   validation;
-- the fixed epoch-50 rule has identified one checkpoint per arm and retained
+- the fixed epoch-200 rule has identified one checkpoint per arm and retained
   seed without development or systematic data;
 - the exact systematic endpoint and stopping rule are recorded;
 - the `operation_template` manifest and RR

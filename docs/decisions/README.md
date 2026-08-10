@@ -55,3 +55,8 @@ it superseded by a later ADR.
   accepted by designated reviewer Krishay Maskara; freezes a post-C7,
   four-family, 500-update clean-start trajectory without changing formal C7,
   protected access, Stage 6 authorization, or C8 status.
+- [ADR-0008: GE1 C7-v2 prospective 200-epoch
+  protocol](ADR-0008-ge1-c7-v2-200-epoch-protocol.md) — accepted by
+  designated reviewer Krishay Maskara; prospectively replaces the inadequate
+  C7 and eventual Stage 6 budget while preserving C7-v1 and the optimization
+  diagnostic as immutable history.

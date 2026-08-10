@@ -1,8 +1,8 @@
 # GE1 C7 Optimization-Sufficiency Diagnostic Contract
 
-Status: accepted additive post-C7 contract; implementation exists; the first
-authoritative preflight failed before any manifest or payload access; no
-diagnostic execution or result exists yet.
+Status: completed as Adroit job `3344907`; audited interpretation
+`undertraining_supported_both_arms`; formal C7-v1 unchanged and Stage 6 not
+authorized.
 
 Authority: accepted
 [ADR-0007](../decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md),
@@ -156,4 +156,30 @@ The narrow implementation correction uses a private missing-argument
 sentinel. Omission still reads the environment; explicit `None`, empty,
 non-string, non-ASCII, and non-decimal values are rejected. No scientific,
 artifact, decision, or protected-access contract changes. The corrected exact
-commit requires a fresh authoritative validation.
+commit then passed that regression. A second operational attempt, job
+`3344906`, used a linked Git worktree and failed the runner's standalone
+checkout gate before container startup, tests, manifest access, or payload
+access.
+
+Corrected job `3344907` completed on `adroit-h11n2` at exact clean commit
+`fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0`. All 20 focused and 238 complete
+graph-encoder tests passed with zero skips. Forty checkpoints, eight milestone
+measurements, Slurm provenance, and the immutable artifact verified. Both
+arms first became autonomously exact-sufficient at update 200 and remained
+exact at update 500, establishing the preregistered category
+`undertraining_supported_both_arms`.
+
+The completed record preserves:
+
+```text
+original_c7_result_changed=false
+stage6_authorized=false
+decoder_repair_invoked=false
+c8_or_later_performed=false
+```
+
+Development and every protected partition remained unopened. The complete
+[experiment record](../experiments/ge1_optimization_diagnostic.md) contains
+the evidence hashes and trajectory. Accepted
+[ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) uses the
+result only prospectively for a separately versioned C7-v2 protocol.

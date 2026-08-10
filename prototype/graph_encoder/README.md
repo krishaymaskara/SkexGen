@@ -67,9 +67,15 @@ protected evaluation access, or a later scientific result.
 The additive post-C7 diagnostic uses the same four tiny train families and a
 fresh seed-2026 matched pair, trains both arms continuously through 500
 optimizer updates, strictly reloads measurements at updates 50/100/200/500,
-and retains recovery checkpoints every 25 updates. It has not run and has no
-result. It does not change formal C7, authorize Stage 6, invoke repair, or
-begin C8.
+and retains recovery checkpoints every 25 updates. Adroit job `3344907`
+completed at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0`;
+both unchanged arms first became autonomously exact-sufficient at update 200,
+yielding `undertraining_supported_both_arms`. It did not change formal C7-v1,
+authorize Stage 6, invoke repair, or begin C8.
+
+Accepted ADR-0008 prospectively defines a separate fixed-epoch-200 C7-v2.
+This documentation commit does not yet implement or execute C7-v2. The
+hierarchical repair remains deferred, not erased, and Stage 6 remains blocked.
 The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
@@ -1014,11 +1020,13 @@ suite before manifest or payload access. An explicit `None` supplied to the
 Slurm-ID validator was incorrectly treated as an omitted argument and fell
 back to the ambient job ID. The implementation now uses a private sentinel:
 omitting the argument retains environment-based provenance, while explicitly
-supplying `None` is rejected. The corrected exact commit still requires an
-authoritative rerun. There is no diagnostic result, Stage 6 remains
-unauthorized, repair is not invoked, C8 has not begun, and no protected
-partition has been opened. The frozen contract and runner requirements are in
-the
+supplying `None` is rejected. After a separate linked-worktree preflight
+failure, standalone-checkout job `3344907` completed successfully. Both arms
+first passed the exact gate at update 200 and remained exact at update 500.
+Stage 6 remains unauthorized, repair was not invoked, C8 has not begun, and no
+protected partition was opened. The audited
+[result record](../../docs/experiments/ge1_optimization_diagnostic.md) and
+frozen contract and runner requirements are in the
 [diagnostic specification](../../docs/specifications/ge1_c7_optimization_sufficiency_diagnostic.md).
 
 ## Manifest authority and access order

@@ -18,6 +18,8 @@ succeeded.
   contract](ge1_c6_measurement_contract.md)
 - [GE1 C7 optimization-sufficiency diagnostic
   contract](ge1_c7_optimization_sufficiency_diagnostic.md)
+- [GE1 C7-v2 prospective execution
+  contract](ge1_c7_v2_execution_contract.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

@@ -22,7 +22,7 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was updated on August 9, 2026 from branch
+This inventory was updated on August 10, 2026 from branch
 `graph-v1-experiment-record`. The documentation commit's literal hash is not
 embedded because it would be self-referential. The audit used:
 
@@ -73,6 +73,7 @@ frozen archive described below is now the primary evidence.
 | GE1 C5/C6 review-fix authoritative CPU validation | `d29dc8299d32186907eb16d05c6102fcececf32e` | `3344431` | Local stdout/stderr, terminal transcript, and verified complete-history Git bundle listed in record | Both complete 407-family train-only v2 smokes passed; development and all protected partitions remained closed | `verified-local` | [Record](ge1_c5_c6_review_fix_cpu_validation.md) |
 | GE1 C7 formal train-only sufficiency pilot | `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` | `3344505` | Local stdout/stderr, resolved config, metrics, artifact manifest, checksums, and terminal transcript listed in record | Four selected train families opened; both tiny exact gates failed; scaled gates not run; development and all protected partitions remained closed | `verified-local` | [Record](ge1_c7_pilot.md) |
 | GE1 optimization-diagnostic preflight attempt | `0837717a90eebcfd6aaa0c0ca9cd47f18ac52f88` | `3344896` | Raw logs and hashes not supplied | Focused-suite infrastructure failure before manifest or payload access; no diagnostic result or artifact | `reported-only` | [Record](ge1_optimization_diagnostic_preflight_attempt_3344896.md) |
+| GE1 post-C7 optimization-sufficiency diagnostic | `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` | `3344907` | Local stdout/stderr, resolved config, metrics, artifact manifest, checksums, and terminal transcript listed in record | Exact four-family train cohort opened; both arms first passed autonomously at update 200; every protected partition remained closed | `verified-local` | [Record](ge1_optimization_diagnostic.md) |
 
 ### Current-through-August-3 coverage
 

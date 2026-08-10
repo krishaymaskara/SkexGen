@@ -14,11 +14,11 @@ specifications or new decision records.
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 9, 2026 |
+| Status recorded | August 10, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1`; C0-C6 complete; the formal C7 gate completed as a scientific failure; Stage 6 remains unauthorized; C8 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus prospective accepted ADR-0008; C0-C6 complete; formal C7-v1 failed; C7-v2 is approved but not implemented or run; Stage 6 remains unauthorized; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -27,7 +27,8 @@ specifications or new decision records.
 | GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 C7 formal pilot | Adroit job `3344505` at exact commit `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` completed with valid artifacts and failed both tiny autonomous exact gates; all scaled gates were `not_run`, repair was triggered procedurally, and Stage 6 was not authorized |
-| GE1 post-C7 optimization diagnostic | Accepted under ADR-0007 and implemented as a fresh matched 500-update trajectory over the same four train families; job `3344896` failed its focused preflight before any manifest or payload access, so the diagnostic has not executed, has no result, and does not authorize Stage 6 or begin C8 |
+| GE1 post-C7 optimization diagnostic | Job `3344907` at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed; both unchanged arms first passed autonomous exact sufficiency at update 200, yielding `undertraining_supported_both_arms`; Stage 6 was not authorized and protected partitions remained closed |
+| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; fixed epoch 200 for tiny, scaled, and eventual authorized Stage 6 training; implementation and execution pending; decoder repair deferred, not erased |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -304,22 +305,26 @@ begun.
 
 Accepted
 [ADR-0007](decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
-adds a narrow post-C7 optimization-sufficiency diagnostic because both tiny
-losses were still improving substantially at update 50. The implementation
-freezes the same four train families and seed 2026, fresh matched
-initialization, 500 uninterrupted updates, autonomous measurements at updates
-50/100/200/500, sparse 25-update recovery checkpoints, exact per-family
-criteria, five interpretation categories, immutable artifacts, and explicit
-Slurm identity through the clean container. It does not resume or mutate job
-`3344505`, invoke repair, authorize Stage 6, or begin C8. Its first
-authoritative-environment attempt, job `3344896` at commit
-`0837717a90eebcfd6aaa0c0ca9cd47f18ac52f88`, failed the focused preflight
-suite because explicit `None` incorrectly fell back to the ambient Slurm job
-ID. The runner stopped before manifest or payload access. That attempt is an
-infrastructure failure, the scientific diagnostic has not executed, and no
-diagnostic result exists. The corrected implementation distinguishes an
-omitted argument from explicit `None` without changing the diagnostic
-contract. Development and every protected partition remain unopened.
+added a narrow post-C7 optimization-sufficiency diagnostic because both tiny
+losses were still improving substantially at update 50. After two preflight
+failures before corpus access, corrected job `3344907` completed at exact
+commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0`. Both unchanged fresh
+matched arms first became autonomously exact-sufficient at update 200 and
+remained exact at update 500, so the frozen interpretation is
+`undertraining_supported_both_arms`. The diagnostic did not change C7-v1,
+authorize Stage 6, invoke repair, begin C8, or open a protected partition. The
+[diagnostic record](experiments/ge1_optimization_diagnostic.md) retains the
+audited hashes, trajectories, provenance, and limitations.
+
+Accepted
+[ADR-0008](decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md) prospectively
+establishes separately versioned C7-v2 identities and a fixed 200-epoch
+budget for tiny and scaled gates. The same 200 epochs become the eventual
+Stage 6 budget only if a finalized C7-v2 artifact explicitly records
+`stage6_authorized_by_c7_v2=true`. C7-v1 and the diagnostic remain immutable.
+The hierarchical repair path remains triggered in C7-v1 history but is
+deferred while C7-v2 tests the evidence-based budget. C7-v2 implementation
+and execution have not begun in this documentation commit.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed
