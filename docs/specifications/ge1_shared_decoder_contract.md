@@ -9,6 +9,8 @@
 | Checkpoint identity | `GE1-CHECKPOINT-v1` |
 | Output-position identity | `GE1-DECODER-OUTPUT-POSITIONS-v1` |
 | Common loss identity | `GE1-COMMON-GRAPH-LOSS-v1` |
+| Prospective operation-magnitude identity | `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` |
+| Historical operation-magnitude identity | `GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1` |
 | Bottleneck | Continuous; decoder input is `memory [B, 2, 32]` |
 
 This additive record discharges frozen Stage 0 item 4 without rewriting the
@@ -152,11 +154,45 @@ commitment. Component masks, ignore behavior, weights, and stabilizers are
 unchanged. The continuous bottleneck supplies an exactly zero per-example VQ
 term.
 
+## Prospective operation-magnitude parameterization
+
+Accepted
+[ADR-0009](../decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md)
+adds a versioned prospective neural-output mode without changing the frozen C5
+parity result. Historical C7-v2 behavior remains explicit as
+`GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1`, under which all six compact
+remaining-geometry channels use exact `tanh(raw)`.
+
+The prospective `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` mode changes only
+compact channels 4 and 5, which scatter to serialized extrusion-distance
+channel 37 and revolve-angle channel 38. For those two channels it applies:
+
+```text
+torch.finfo(raw.dtype).tiny
+    + (1 - torch.finfo(raw.dtype).tiny) * sigmoid(raw)
+```
+
+The result is finite and in `(0, 1]` for finite logits, including sigmoid
+underflow at a very negative logit. Exact `1.0` remains representable and is
+required by the controlled 360-degree revolve target. Compact channels 0--3
+retain exact `tanh`; masks, channel selection, direction, Boolean mode,
+normalization, denormalization, loss assembly, and weights are unchanged. The
+mapping runs inside the neural decoder before both teacher-forced loss and
+autonomous reconstruction. The raw head pre-activation remains separately
+callable for diagnostics.
+
+The mode is a required model-configuration and checkpoint-provenance field.
+Strict inference and recovery checkpoint loading rejects a mode mismatch with
+the existing stable invalid-checkpoint error. Both encoder arms receive
+disjoint, value-identical copies of the same selected decoder mode. This
+analytic parameter-domain guarantee makes no CAD-kernel validity claim.
+
 ## Strict checkpoint contract
 
 `GE1-CHECKPOINT-v1` records the arm and encoder identities, frozen feed-forward
 width, relation-basis count, shared-decoder and output-position versions,
-continuous-bottleneck status, full frozen configuration and its SHA-256,
+operation-magnitude parameterization, continuous-bottleneck status, full
+frozen configuration and its SHA-256,
 architectural sizes, parameter and buffer inventories, exact decoder key
 namespace, source commit, authoritative operation-template manifest hash, and
 complete model state.

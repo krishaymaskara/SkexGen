@@ -554,7 +554,7 @@ def _load_read_only_model_checkpoint(
         GE1TrainingConfig,
         MODEL_FAMILY,
         TRAINING_OPTIMIZER,
-        frozen_encoder_config,
+        legacy_frozen_encoder_config,
     )
     from .model import build_ge1_model
     from .provenance import sha256_json
@@ -568,7 +568,9 @@ def _load_read_only_model_checkpoint(
         raise GraphEncoderError(
             "invalid_diagnostic_checkpoint", "checkpoint field set differs"
         )
-    config = frozen_encoder_config(arm, C7_V2_SEED)
+    config = legacy_frozen_encoder_config(arm, C7_V2_SEED)
+    historical_model_config = config.to_dict()
+    historical_model_config.pop("operation_magnitude_parameterization")
     training_config = GE1TrainingConfig()
     training_config.validate()
     expected = {
@@ -576,8 +578,8 @@ def _load_read_only_model_checkpoint(
         "checkpoint_schema": CHECKPOINT_SCHEMA,
         "model_family": MODEL_FAMILY,
         "arm_identity": config.arm_identity,
-        "model_config": config.to_dict(),
-        "model_config_sha256": sha256_json(config.to_dict()),
+        "model_config": historical_model_config,
+        "model_config_sha256": sha256_json(historical_model_config),
         "training_config": training_config.to_dict(),
         "training_config_sha256": sha256_json(training_config.to_dict()),
         "optimizer_name": TRAINING_OPTIMIZER,

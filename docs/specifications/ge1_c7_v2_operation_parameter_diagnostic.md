@@ -5,7 +5,7 @@
 | Field | Frozen value |
 |---|---|
 | Contract | `GE1-C7-V2-OPERATION-PARAMETER-DIAGNOSTIC-v1` |
-| Status | Implemented locally; authoritative Adroit execution not yet submitted |
+| Status | Completed read-only on Adroit as job `3345013`; source C7-v2 result unchanged |
 | Reviewer authorization | Krishay Maskara, August 10, 2026 |
 | Source result | C7-v2 commit `e325d5ad97957c08da4a19b4261560e8a4a472a4`, job `3344981` |
 | Source artifact | `/scratch/network/km6349/ge1_c7_v2_runs/ge1-c7-v2-e325d5ad97957c08da4a19b4261560e8a4a472a4-3344981` |
@@ -159,9 +159,24 @@ repository regression suites before any manifest or payload access, verifies
 the source artifact read-only before and after inference, and emits distinct
 preflight, incomplete-diagnostic, postflight, and terminal-success markers.
 
-Local tests and packaging establish implementation readiness only. No corpus
-diagnostic has been run locally or on Adroit, and no scientific diagnosis is
-claimed until the checksummed authoritative artifact is returned and audited.
+Adroit job `3345013` completed at exact diagnostic commit
+`802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57` under Python 3.8.13, PyTorch
+1.11.0, and CPU execution. The artifact and semantic verification passed,
+both arms were traced for all five families, and the immutable C7-v2 evidence
+was reproduced before diagnosis. Every failed arm had a negative active
+extrusion-distance or revolve-angle magnitude; the other arm's same-family
+control was positive and analytically legal. Masks, channels, scale-only
+normalization and denormalization, units, direction and Boolean categories,
+targets, and alignment were consistent.
+
+The completed diagnostic performed no training, backward pass, optimizer
+step, checkpoint write, decoder repair, Stage 6, or C8 work. Only the
+authorized operation-template train/scaled cohort was accessed; all protected
+partitions and other corpora remained unopened. Executor results remain
+structurally unavailable and geometric compatibility remains unassessable.
+The result supports the separately accepted prospective decision in
+[ADR-0009](../decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md);
+it does not itself authorize a repaired scientific run.
 
 ## Related records
 

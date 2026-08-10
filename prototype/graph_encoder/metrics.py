@@ -1026,6 +1026,9 @@ def complete_metrics_record(
         "epoch": int(epoch),
         "checkpoint_identity": checkpoint_identity,
         "checkpoint_schema": training_result.provenance.checkpoint_schema,
+        "operation_magnitude_parameterization": (
+            training_result.provenance.operation_magnitude_parameterization
+        ),
         "engineering_smoke_only": True,
         "scientific_result": False,
         "training": training_result.to_dict(),

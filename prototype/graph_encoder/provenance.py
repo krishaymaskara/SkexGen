@@ -21,6 +21,7 @@ import subprocess
 from prototype.flat_baseline.provenance import source_tree_sha256
 
 from .config import CHECKPOINT_SCHEMA
+from .decoder_contract import POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
 from .errors import GraphEncoderError
 from .partitions import (
     ASSIGNMENT_SHA256,
@@ -55,6 +56,9 @@ class C6Provenance:
     seed: int
     encoder_arm: str
     checkpoint_schema: str
+    operation_magnitude_parameterization: str = (
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    )
 
     def to_dict(self):
         values = asdict(self)
@@ -73,6 +77,9 @@ class C6ProvenanceContext:
     encoder_arm: str
     device: str
     authorized: C6Provenance
+    expected_operation_magnitude_parameterization: str = (
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    )
 
 
 def sha256_json(value):
@@ -147,6 +154,9 @@ def collect_c6_provenance(
     seed,
     encoder_arm,
     device,
+    operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
     torch_module=None
 ):
     """Collect the exact C6 run identity without reading corpus payloads."""
@@ -186,6 +196,7 @@ def collect_c6_provenance(
         int(seed),
         str(encoder_arm),
         CHECKPOINT_SCHEMA,
+        str(operation_magnitude_parameterization),
     )
 
 
@@ -198,6 +209,9 @@ def authorize_c6_provenance(
     seed,
     encoder_arm,
     device,
+    operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
     torch_module=None
 ):
     """Collect and freeze the clean provenance expected throughout one run."""
@@ -209,6 +223,9 @@ def authorize_c6_provenance(
         seed=seed,
         encoder_arm=encoder_arm,
         device=device,
+        operation_magnitude_parameterization=(
+            operation_magnitude_parameterization
+        ),
         torch_module=torch_module,
     )
     _validate_snapshot(
@@ -219,6 +236,9 @@ def authorize_c6_provenance(
         expected_partition_digest=partition_identity_sha256,
         seed=seed,
         encoder_arm=encoder_arm,
+        expected_operation_magnitude_parameterization=(
+            operation_magnitude_parameterization
+        ),
     )
     return C6ProvenanceContext(
         str(Path(repository_root).resolve()),
@@ -230,6 +250,7 @@ def authorize_c6_provenance(
         str(encoder_arm),
         str(device),
         snapshot,
+        str(operation_magnitude_parameterization),
     )
 
 
@@ -260,6 +281,9 @@ def verify_c6_provenance(
         seed=context.seed,
         encoder_arm=context.encoder_arm,
         device=context.device,
+        operation_magnitude_parameterization=(
+            context.expected_operation_magnitude_parameterization
+        ),
         torch_module=torch_module,
     )
     _validate_snapshot(
@@ -270,6 +294,9 @@ def verify_c6_provenance(
         expected_partition_digest=context.expected_partition_digest,
         seed=context.seed,
         encoder_arm=context.encoder_arm,
+        expected_operation_magnitude_parameterization=(
+            context.expected_operation_magnitude_parameterization
+        ),
     )
     if actual.to_dict() != context.authorized.to_dict():
         # Host/job/runtime fields are stable inside one run. A change is
@@ -290,7 +317,10 @@ def _validate_snapshot(
     expected_configuration_digest,
     expected_partition_digest,
     seed,
-    encoder_arm
+    encoder_arm,
+    expected_operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
 ):
     if not isinstance(snapshot, C6Provenance):
         raise GraphEncoderError(
@@ -312,6 +342,14 @@ def _validate_snapshot(
         _fail("run_identity_mismatch", "seed or encoder arm differs")
     if snapshot.checkpoint_schema != CHECKPOINT_SCHEMA:
         _fail("checkpoint_identity_mismatch", "checkpoint schema differs")
+    if (
+        snapshot.operation_magnitude_parameterization
+        != expected_operation_magnitude_parameterization
+    ):
+        _fail(
+            "operation_magnitude_parameterization_mismatch",
+            "operation-magnitude parameterization differs",
+        )
     if snapshot.detached_head is not (snapshot.git_branch is None):
         _fail("malformed_git_identity", "branch/detached state is inconsistent")
     return snapshot

@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | This C7-v2 operation-parameter diagnostic implementation; its literal hash is intentionally not embedded |
+| Current reviewed revision | This prospective operation-magnitude repair implementation; its literal hash is intentionally not embedded |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -18,7 +18,7 @@ specifications or new decision records.
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus accepted ADR-0008; C0-C6 complete; formal C7-v1 and C7-v2 failed; a read-only train-only operation-parameter diagnostic is prepared; Stage 6 remains unauthorized; C8 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus accepted ADR-0008 and ADR-0009; C0-C6 complete; formal C7-v1 and C7-v2 failed; diagnostic job `3345013` isolated negative operation magnitudes; the prospective positive-magnitude repair is implemented for validation only; Stage 6 remains unauthorized; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -30,7 +30,8 @@ specifications or new decision records.
 | GE1 post-C7 optimization diagnostic | Job `3344907` at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed; both unchanged arms first passed autonomous exact sufficiency at update 200, yielding `undertraining_supported_both_arms`; Stage 6 was not authorized and protected partitions remained closed |
 | GE1 C7-v2 execution | Job `3344981` at exact commit `e325d5ad97957c08da4a19b4261560e8a4a472a4` completed as a valid scientific failure: both tiny gates passed; scaled memory gates passed; flat failed 2/32 and typed graph failed 3/32 only on analytic complete validity; Stage 6 remained unauthorized and the repair path became procedurally next |
 | GE1 C7-v2 preflight attempt | Job `3344975` at exact commit `99a4587d73e82a5df5f12a54130b105ae264b419` failed in the sequential regression loader before manifest or payload access; no scientific execution or artifact occurred |
-| GE1 operation-parameter diagnostic | Reviewer-authorized, separately versioned read-only diagnostic prepared against the immutable scaled epoch-200 checkpoints from job `3344981`; no authoritative run yet, no repair implemented, and protected partitions remain closed |
+| GE1 operation-parameter diagnostic | Adroit job `3345013` at exact diagnostic commit `802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57` completed read-only: all five failures were active negative extrusion/revolve magnitudes; no training, repair, checkpoint write, protected-partition access, or C7-v2 mutation occurred |
+| GE1 prospective magnitude repair | Accepted ADR-0009 supersedes only the earlier hierarchical repair authorization; `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` is implemented for exact-commit engineering validation, while scientific training and Stage 6 remain unauthorized |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -351,12 +352,23 @@ requires exact `P_true` reproduction, and records scalar and analytic traces
 for both arms on the five failures. Strict conversion and analytic
 controlled-domain validity are separate; CAD-kernel executor results are
 structurally unavailable, and legal-but-geometrically-incompatible outcomes
-are unassessable. The runner is prepared but has not been submitted. Stage 6,
-C8, repair implementation, and protected-partition access remain blocked.
+are unassessable. Adroit job `3345013` completed that read-only diagnostic at
+exact commit `802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57`. It reproduced the
+immutable C7-v2 evidence and isolated a negative active operation magnitude
+in every failed case; masks, channels, units, normalization, direction,
+Boolean mode, targets, and alignment remained consistent.
 
-No repair or C7-v2 rerun is authorized by this diagnostic work. RR access remains
-blocked until the accepted one-time systematic stage, and ER remains closed
-throughout GE1.
+Accepted
+[ADR-0009](decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md)
+therefore supersedes only the previously authorized hierarchical structural
+repair. The prospective decoder mode
+`GE1-OPERATION-MAGNITUDE-POSITIVE-v1` maps only extrusion-distance and
+revolve-angle logits into `(0, 1]`; every other decoder output remains on the
+legacy path. Historical `tanh` behavior remains explicitly versioned and
+checkpoint-incompatible with the repaired configuration. This is an
+implementation-validation step, not C7-v2, Stage 6, C8, or a repaired
+scientific run. RR remains blocked until the accepted one-time systematic
+stage, and ER remains closed throughout GE1.
 
 ## Documentation and artifact maintenance
 

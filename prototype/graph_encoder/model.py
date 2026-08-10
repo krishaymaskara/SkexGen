@@ -7,7 +7,13 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from .config import GE1Config, frozen_encoder_config, validate_authorized_seed
+from .config import (
+    GE1Config,
+    frozen_encoder_config,
+    legacy_frozen_encoder_config,
+    validate_authorized_seed,
+)
+from .decoder_contract import POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
 from .encoders import FlatProgramEncoder, TypedGraphProgramEncoder
 from .shared_decoder import SharedGE1Decoder, copied_shared_decoder
 
@@ -37,6 +43,14 @@ class GE1Model(nn.Module):
             raise ValueError("encoder state is labeled with a different configuration")
         if not isinstance(decoder, SharedGE1Decoder):
             raise TypeError("decoder must be SharedGE1Decoder")
+        if (
+            decoder.operation_magnitude_parameterization
+            != config.operation_magnitude_parameterization
+        ):
+            raise ValueError(
+                "decoder operation-magnitude parameterization disagrees "
+                "with configuration"
+            )
         self.config = config
         self.encoder = encoder
         self.decoder = decoder
@@ -74,11 +88,23 @@ def _construct_with_local_seed(seed, constructor):
         return constructor()
 
 
-def canonical_shared_decoder(seed):
+def canonical_shared_decoder(
+    seed,
+    operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
+):
     """Construct the arm-independent canonical decoder exactly once."""
 
     validate_authorized_seed(seed)
-    return _construct_with_local_seed(seed, SharedGE1Decoder)
+    return _construct_with_local_seed(
+        seed,
+        lambda: SharedGE1Decoder(
+            operation_magnitude_parameterization=(
+                operation_magnitude_parameterization
+            )
+        ),
+    )
 
 
 def build_ge1_model(config, canonical_decoder=None):
@@ -90,8 +116,17 @@ def build_ge1_model(config, canonical_decoder=None):
     decoder = (
         copied_shared_decoder(canonical_decoder)
         if canonical_decoder is not None
-        else canonical_shared_decoder(config.seed)
+        else canonical_shared_decoder(
+            config.seed, config.operation_magnitude_parameterization
+        )
     )
+    if (
+        decoder.operation_magnitude_parameterization
+        != config.operation_magnitude_parameterization
+    ):
+        raise ValueError(
+            "canonical decoder operation-magnitude parameterization differs"
+        )
     encoder_type = (
         FlatProgramEncoder
         if config.encoder == "flat"
@@ -104,16 +139,41 @@ def build_ge1_model(config, canonical_decoder=None):
 
 
 def build_matched_ge1_models(
-    seed=2026, encoder_order=("flat", "typed_graph")
+    seed=2026,
+    encoder_order=("flat", "typed_graph"),
+    *,
+    operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
 ):
     """Build both arms from one canonical decoder, independent of arm order."""
 
     order = tuple(encoder_order)
     if set(order) != {"flat", "typed_graph"} or len(order) != 2:
         raise ValueError("encoder_order must contain flat and typed_graph once")
-    canonical = canonical_shared_decoder(seed)
+    parameterization = operation_magnitude_parameterization
+    canonical = canonical_shared_decoder(seed, parameterization)
     models = {}
     for arm in order:
-        config = frozen_encoder_config(arm, seed)
+        config = frozen_encoder_config(
+            arm,
+            seed,
+            operation_magnitude_parameterization=parameterization,
+        )
         models[arm] = build_ge1_model(config, canonical)
     return models["flat"], models["typed_graph"]
+
+
+def build_legacy_matched_ge1_models(
+    seed=2026, encoder_order=("flat", "typed_graph")
+):
+    """Build the explicit historical `tanh` pair for immutable protocols."""
+
+    legacy = legacy_frozen_encoder_config("typed_graph", seed)
+    return build_matched_ge1_models(
+        seed,
+        encoder_order,
+        operation_magnitude_parameterization=(
+            legacy.operation_magnitude_parameterization
+        ),
+    )

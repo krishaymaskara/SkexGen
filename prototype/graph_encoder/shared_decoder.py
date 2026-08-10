@@ -48,7 +48,11 @@ from prototype.node_grammar import NodeGrammarError
 
 from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
+    LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    OPERATION_MAGNITUDE_COMPACT_CHANNELS,
+    OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     OUTPUT_POSITION_CONTRACT_VERSION,
+    POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     SHARED_DECODER_VERSION,
 )
 
@@ -229,12 +233,27 @@ class SharedGE1Decoder(GraphV1Model):
     shared_decoder_version = SHARED_DECODER_VERSION
     output_position_contract_version = OUTPUT_POSITION_CONTRACT_VERSION
 
-    def __init__(self, config=None):
+    def __init__(
+        self,
+        config=None,
+        *,
+        operation_magnitude_parameterization=(
+            POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+    ):
         resolved = config or GraphV1Config()
         if not isinstance(resolved, GraphV1Config):
             raise TypeError("SharedGE1Decoder requires GraphV1Config")
         resolved.validate()
+        if (
+            operation_magnitude_parameterization
+            not in OPERATION_MAGNITUDE_PARAMETERIZATIONS
+        ):
+            raise ValueError("unknown operation-magnitude parameterization")
         super().__init__(resolved)
+        self.operation_magnitude_parameterization = (
+            operation_magnitude_parameterization
+        )
         for name in _ENCODER_ONLY_MODULES + _EXCLUDED_C1_POSITION_BIAS_MODULES:
             delattr(self, name)
         self.register_buffer(
@@ -248,7 +267,12 @@ class SharedGE1Decoder(GraphV1Model):
 
         if not isinstance(reference, GraphV1Model):
             raise TypeError("reference must be GraphV1Model")
-        extracted = cls(reference.config)
+        extracted = cls(
+            reference.config,
+            operation_magnitude_parameterization=(
+                LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
+            ),
+        )
         reference_state = reference.state_dict()
         state = {}
         for name, value in extracted.state_dict().items():
@@ -256,6 +280,53 @@ class SharedGE1Decoder(GraphV1Model):
             state[name] = source.detach().clone()
         extracted.load_state_dict(state, strict=True)
         return extracted
+
+    def raw_remaining_geometry(self, decoded_states):
+        """Return pre-activation geometry-head values for diagnostics."""
+
+        return self.remaining_geometry_head(decoded_states)
+
+    def parameterize_remaining_geometry(self, raw):
+        """Apply the versioned neural geometry output mapping."""
+
+        legacy = torch.tanh(raw)
+        if (
+            self.operation_magnitude_parameterization
+            == LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ):
+            return legacy
+        epsilon = torch.finfo(raw.dtype).tiny
+        operation_raw = raw[..., OPERATION_MAGNITUDE_COMPACT_CHANNELS]
+        positive = epsilon + (1.0 - epsilon) * torch.sigmoid(operation_raw)
+        return torch.cat((legacy[..., :4], positive), dim=-1).contiguous()
+
+    def decode_prefix(
+        self,
+        memory,
+        categorical_prefix,
+        geometry_prefix,
+        geometry_mask_prefix,
+        prefix_mask=None,
+    ):
+        """Apply the prospective mapping inside autonomous neural decoding."""
+
+        output = super().decode_prefix(
+            memory,
+            categorical_prefix,
+            geometry_prefix,
+            geometry_mask_prefix,
+            prefix_mask,
+        )
+        if (
+            self.operation_magnitude_parameterization
+            == LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ):
+            return output
+        raw = self.raw_remaining_geometry(output.decoded_states)
+        return replace(
+            output,
+            remaining_geometry=self.parameterize_remaining_geometry(raw),
+        )
 
     def forward(self, memory, *, node_counts, node_count_source):
         """Autonomously decode continuous memory; no target is accepted."""
@@ -392,7 +463,8 @@ class SharedGE1Decoder(GraphV1Model):
             extent_min=self.config.profile_extent_min,
             extent_max=self.config.profile_extent_max,
         )
-        remaining = torch.tanh(self.remaining_geometry_head(states))
+        raw_remaining = self.raw_remaining_geometry(states)
+        remaining = self.parameterize_remaining_geometry(raw_remaining)
         scattered = scatter_remaining_geometry(remaining)
         selected_mask = (
             select_remaining_geometry(target["geometry_mask"])

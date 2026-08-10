@@ -341,6 +341,9 @@ def run_ge1_training(
             seed=model.config.seed,
             encoder_arm=model.config.encoder,
             device="cpu",
+            operation_magnitude_parameterization=(
+                model.config.operation_magnitude_parameterization
+            ),
             torch_module=torch,
         )
 

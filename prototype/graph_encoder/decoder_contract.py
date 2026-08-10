@@ -16,6 +16,19 @@ OUTPUT_POSITION_CONTRACT_VERSION = "GE1-DECODER-OUTPUT-POSITIONS-v1"
 COMMON_LOSS_VERSION = "GE1-COMMON-GRAPH-LOSS-v1"
 AUTONOMOUS_OUTPUT_VERSION = "GE1-AUTONOMOUS-OUTPUT-v1"
 C5_IMPLEMENTATION_SCOPE = "GE1-C5-SHARED-DECODER-PARITY-v1"
+LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION = (
+    "GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1"
+)
+POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION = (
+    "GE1-OPERATION-MAGNITUDE-POSITIVE-v1"
+)
+OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
+    LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
+OPERATION_MAGNITUDE_EPSILON_POLICY = "torch.finfo(dtype).tiny"
+OPERATION_MAGNITUDE_SERIALIZED_CHANNELS = (37, 38)
+OPERATION_MAGNITUDE_COMPACT_CHANNELS = (4, 5)
 
 
 @dataclass(frozen=True)
@@ -118,4 +131,28 @@ def output_position_contract_metadata():
         "semantic_signals": [asdict(item) for item in OUTPUT_POSITION_SIGNALS],
         "bookkeeping_only_values": [dict(item) for item in BOOKKEEPING_ONLY_VALUES],
         "excluded_signals": list(EXCLUDED_POSITION_SIGNALS),
+    }
+
+
+def operation_magnitude_contract_metadata(parameterization):
+    """Return the versioned operation-magnitude neural-output contract."""
+
+    if parameterization not in OPERATION_MAGNITUDE_PARAMETERIZATIONS:
+        raise ValueError("unknown operation-magnitude parameterization")
+    legacy = parameterization == LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
+    return {
+        "parameterization": parameterization,
+        "legacy": legacy,
+        "serialized_channels": list(OPERATION_MAGNITUDE_SERIALIZED_CHANNELS),
+        "compact_channels": list(OPERATION_MAGNITUDE_COMPACT_CHANNELS),
+        "mapping": (
+            "tanh(raw)"
+            if legacy
+            else "eps + (1 - eps) * sigmoid(raw)"
+        ),
+        "epsilon_policy": None if legacy else OPERATION_MAGNITUDE_EPSILON_POLICY,
+        "normalized_domain": "[-1, 1]" if legacy else "(0, 1]",
+        "direction_is_separate_categorical": True,
+        "applies_identically_to_both_arms": True,
+        "cad_kernel_validity_claimed": False,
     }

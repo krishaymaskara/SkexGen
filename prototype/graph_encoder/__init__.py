@@ -20,6 +20,7 @@ from .config import (
     GE1TrainingConfig,
     frozen_encoder_config,
     frozen_feedforward_width,
+    legacy_frozen_encoder_config,
     validate_authorized_seed,
 )
 from .errors import GraphEncoderError
@@ -72,9 +73,15 @@ from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
     BOOKKEEPING_ONLY_VALUES,
     COMMON_LOSS_VERSION,
+    LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    OPERATION_MAGNITUDE_COMPACT_CHANNELS,
+    OPERATION_MAGNITUDE_EPSILON_POLICY,
+    OPERATION_MAGNITUDE_SERIALIZED_CHANNELS,
     OUTPUT_POSITION_CONTRACT_VERSION,
     OUTPUT_POSITION_SIGNALS,
+    POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     SHARED_DECODER_VERSION,
+    operation_magnitude_contract_metadata,
     output_position_contract_metadata,
 )
 
@@ -93,6 +100,7 @@ __all__ = (
     "canonicalize_graph",
     "frozen_encoder_config",
     "frozen_feedforward_width",
+    "legacy_frozen_encoder_config",
     "validate_authorized_seed",
     "C7SufficiencySelection",
     "c7_family_rank",
@@ -133,9 +141,15 @@ __all__ = (
     "AUTONOMOUS_OUTPUT_VERSION",
     "BOOKKEEPING_ONLY_VALUES",
     "COMMON_LOSS_VERSION",
+    "LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION",
+    "OPERATION_MAGNITUDE_COMPACT_CHANNELS",
+    "OPERATION_MAGNITUDE_EPSILON_POLICY",
+    "OPERATION_MAGNITUDE_SERIALIZED_CHANNELS",
     "OUTPUT_POSITION_CONTRACT_VERSION",
     "OUTPUT_POSITION_SIGNALS",
+    "POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION",
     "SHARED_DECODER_VERSION",
+    "operation_magnitude_contract_metadata",
     "output_position_contract_metadata",
 )
 
@@ -160,6 +174,7 @@ try:
         GE1Model,
         GE1TeacherForcedOutput,
         build_ge1_model,
+        build_legacy_matched_ge1_models,
         build_matched_ge1_models,
         canonical_shared_decoder,
     )
@@ -194,6 +209,7 @@ else:
         "SharedGE1Decoder",
         "assert_exact_tensor_parity",
         "build_ge1_model",
+        "build_legacy_matched_ge1_models",
         "build_matched_ge1_models",
         "canonical_shared_decoder",
         "common_ge1_loss",

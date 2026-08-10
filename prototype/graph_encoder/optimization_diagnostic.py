@@ -378,11 +378,11 @@ def run_optimization_diagnostic(
     examples = _load_frozen_train(corpus_dir, tracker)
 
     from .config import GE1TrainingConfig
-    from .model import build_matched_ge1_models
+    from .model import build_legacy_matched_ge1_models
 
     training_config = GE1TrainingConfig()
     training_config.validate()
-    flat_model, graph_model = build_matched_ge1_models(seed=SEED)
+    flat_model, graph_model = build_legacy_matched_ge1_models(seed=SEED)
     _assert_matched_disjoint(flat_model, graph_model)
     parameter_counts = parameter_count_record(flat_model, graph_model)
     events.append({

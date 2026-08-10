@@ -671,7 +671,7 @@ def run_c7_v2(
     events.append({"event": "c7_v2_subset_selection", **selection_record})
 
     from .config import GE1TrainingConfig
-    from .model import build_matched_ge1_models
+    from .model import build_legacy_matched_ge1_models
 
     protocol_config = C7V2Configuration().validate()
     inherited_training_config = GE1TrainingConfig()
@@ -683,7 +683,7 @@ def run_c7_v2(
     tiny_examples = _load_selected_train(
         corpus_dir, selection.tiny_family_ids, tracker, subset_identity="tiny"
     )
-    tiny_models = build_matched_ge1_models(seed=C7_V2_SEED)
+    tiny_models = build_legacy_matched_ge1_models(seed=C7_V2_SEED)
     _assert_matched_disjoint(*tiny_models)
     parameter_inventories["tiny"] = parameter_count_record(*tiny_models)
     model_configurations.update({
@@ -716,7 +716,7 @@ def run_c7_v2(
             tracker,
             subset_identity="scaled",
         )
-        scaled_models = build_matched_ge1_models(seed=C7_V2_SEED)
+        scaled_models = build_legacy_matched_ge1_models(seed=C7_V2_SEED)
         _assert_matched_disjoint(*scaled_models)
         _assert_model_collections_disjoint(tiny_models, scaled_models)
         parameter_inventories["scaled"] = parameter_count_record(*scaled_models)

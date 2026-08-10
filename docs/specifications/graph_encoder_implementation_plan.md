@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; a read-only operation-parameter diagnostic is prepared; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; accepted ADR-0009 authorizes only prospective positive-magnitude implementation validation; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -68,7 +68,8 @@ ADR-0004:
 - explain why decoder sufficiency is a prerequisite rather than a new
   decoder-side treatment;
 - designate continuous-memory GE1 as the sole core encoder comparison;
-- preauthorize the single decoder repair described in this plan;
+- preauthorize the single decoder repair described in this plan, as
+  prospectively superseded by accepted ADR-0009 after the C7-v2 diagnostic;
 - freeze the systematic manifest, endpoint, access rule, and correction
   budget.
 
@@ -394,15 +395,17 @@ train-only set containing the four accessible operation templates (`E`, `R`,
 - correct `depends_on` edge in every two-operation example.
 
 This gate tests architectural sufficiency, not generalization. If it fails,
-apply only the following preauthorized shared repair before running the
-comparison: replace independent ordered-pair edge classification with a
-hierarchical operation-group decoder. It first identifies each generated
-operation group, predicts its unique profile/sketch and optional axis
-references under one-to-one cardinality masks, and constructs the linear
-`depends_on` chain from the decoded operation order. The repair is identical
-for both encoders and must be frozen before comparative development results are
-inspected. No other decoder repair is permitted, and no decoder change is
-allowed after protected systematic data is opened.
+stop the comparison. Accepted
+[ADR-0009](../decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md)
+prospectively supersedes the earlier hierarchical operation-group repair
+authorization because C7-v2 was exact on node sequences, typed graphs,
+attachments, dependencies, and strict conversion. Read-only diagnostic job
+`3345013` instead isolated five negative active operation magnitudes. The only
+authorized repair is therefore the shared, versioned positive mapping for
+extrusion-distance and revolve-angle outputs. It is identical for both arms,
+preserves every other decoder output and training choice, and must pass
+implementation validation before any separately governed scientific
+protocol. No repair is selected from development or protected data.
 
 After the four-example smoke, run a scaled train-only sufficiency gate on 32
 families selected deterministically as eight families from each of
@@ -662,9 +665,10 @@ subsequently completed as a train-only scientific gate failure.
 3. Repeat the gate on the deterministic 32-family train-only set.
 4. Run autonomous shuffled-memory and mean-memory interventions and apply the
    frozen 0.80 ratios.
-5. Permit only the preauthorized hierarchical operation-group repair, applied
-   identically to both conditions. Its specification is frozen before any
-   comparative development result.
+5. Permit only the prospective positive operation-magnitude repair accepted in
+   ADR-0009, applied identically to both conditions. The historical `tanh`
+   mode remains explicit and checkpoint-incompatible. Implementation
+   validation does not authorize scientific retraining or development access.
 
 **Exit:** the decoder can represent the task and demonstrably uses memory.
 
@@ -722,9 +726,25 @@ metrics before interpretation, and records both-arm scalar, mask, category,
 conversion, and analytic-validity traces. Because no CAD kernel is part of
 the evaluation contract, executor outcomes are structurally unavailable and
 legal-but-geometrically-incompatible values are unassessable. The
-[diagnostic contract](ge1_c7_v2_operation_parameter_diagnostic.md), focused
-tests, and non-submitting CPU runner are prepared. No authoritative diagnostic
-run, repair, Stage 6, C8, or protected-partition access has occurred.
+[diagnostic contract](ge1_c7_v2_operation_parameter_diagnostic.md) was
+executed read-only as Adroit job `3345013` at exact commit
+`802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57`. All five failures were negative
+active extrusion-distance or revolve-angle magnitudes, while masks, channel
+selection, scaling, units, direction, Boolean mode, targets, and alignment
+were consistent. No training, source-checkpoint mutation, protected access,
+Stage 6, or C8 occurred.
+
+**Prospective repair status:** accepted
+[ADR-0009](../decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md)
+replaces only the earlier hierarchical repair authorization. It versions the
+historical behavior as `GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1` and the
+prospective behavior as `GE1-OPERATION-MAGNITUDE-POSITIVE-v1`. Only compact
+operation channels 4 and 5, serialized as extrusion distance 37 and revolve
+angle 38, use `finfo(dtype).tiny + (1 - finfo(dtype).tiny) * sigmoid(raw)`.
+All other geometry channels retain exact `tanh`. Configuration, checkpoints,
+provenance, and reporting distinguish the modes and reject incompatible
+loads. This implementation work does not authorize a repaired C7 run or
+Stage 6.
 
 ### Stage 6 — Core continuous encoder pilot
 

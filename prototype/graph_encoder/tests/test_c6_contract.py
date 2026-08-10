@@ -302,7 +302,12 @@ class DonorTemplateAgreementTests(unittest.TestCase):
         )
         training = SimpleNamespace(
             run_identity="procedural",
-            provenance=SimpleNamespace(checkpoint_schema="GE1-CHECKPOINT-v1"),
+            provenance=SimpleNamespace(
+                checkpoint_schema="GE1-CHECKPOINT-v1",
+                operation_magnitude_parameterization=(
+                    "GE1-OPERATION-MAGNITUDE-POSITIVE-v1"
+                ),
+            ),
             timing=(
                 ("data_preparation_seconds", 0.0),
                 ("training_seconds", 0.0),
@@ -327,6 +332,10 @@ class DonorTemplateAgreementTests(unittest.TestCase):
         )
         self.assertEqual(METRICS_SCHEMA_VERSION, "GE1-C6-METRICS-v2")
         self.assertEqual(record["schema_version"], METRICS_SCHEMA_VERSION)
+        self.assertEqual(
+            record["operation_magnitude_parameterization"],
+            "GE1-OPERATION-MAGNITUDE-POSITIVE-v1",
+        )
         self.assertEqual(
             record["primary_reporting_contract"],
             PRIMARY_REPORTING_CONTRACT_VERSION,
@@ -536,6 +545,16 @@ class ProvenanceTests(unittest.TestCase):
         context = self._authorize()
         self.assertFalse(context.authorized.detached_head)
         self.assertIsNotNone(context.authorized.git_branch)
+        self.assertEqual(
+            context.authorized.operation_magnitude_parameterization,
+            "GE1-OPERATION-MAGNITUDE-POSITIVE-v1",
+        )
+        self.assertEqual(
+            context.authorized.to_dict()[
+                "operation_magnitude_parameterization"
+            ],
+            "GE1-OPERATION-MAGNITUDE-POSITIVE-v1",
+        )
         self.assertEqual(verify_c6_provenance(context), context.authorized)
 
     def test_dirty_tree_is_rejected(self):

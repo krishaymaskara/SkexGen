@@ -9,6 +9,11 @@ import math
 from prototype.flat_baseline.config import FlatBaselineConfig
 from prototype.graph_baseline.config import GraphV1Config
 
+from .decoder_contract import (
+    LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    OPERATION_MAGNITUDE_PARAMETERIZATIONS,
+    POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
 from .errors import GraphEncoderError
 
 
@@ -91,7 +96,14 @@ def frozen_feedforward_width(encoder):
     )
 
 
-def frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+def frozen_encoder_config(
+    encoder,
+    seed=AUTHORIZED_SEEDS[0],
+    *,
+    operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
+):
     """Return the validated frozen configuration for one GE1 arm.
 
     `GE1Config(encoder)` alone is not a complete configuration: the frozen
@@ -102,9 +114,24 @@ def frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
         encoder=encoder,
         seed=seed,
         encoder_feedforward_width=frozen_feedforward_width(encoder),
+        operation_magnitude_parameterization=(
+            operation_magnitude_parameterization
+        ),
     )
     config.validate()
     return config
+
+
+def legacy_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+    """Return the explicit historical C7-v2 `tanh` configuration."""
+
+    return frozen_encoder_config(
+        encoder,
+        seed,
+        operation_magnitude_parameterization=(
+            LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+    )
 
 _FLAT_CONTRACT = FlatBaselineConfig()
 _GRAPH_CONTRACT = GraphV1Config()
@@ -140,6 +167,9 @@ class GE1Config:
     profile_family_loss_weight: float = _GRAPH_CONTRACT.profile_family_loss_weight
     profile_parameter_loss_weight: float = _GRAPH_CONTRACT.profile_parameter_loss_weight
     graph_edge_loss_weight: float = _GRAPH_CONTRACT.graph_edge_loss_weight
+    operation_magnitude_parameterization: str = (
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    )
 
     @property
     def arm_identity(self):
@@ -168,6 +198,15 @@ class GE1Config:
             raise GraphEncoderError(
                 "unauthorized_configuration",
                 "bottleneck_mode must equal continuous",
+            )
+        if (
+            self.operation_magnitude_parameterization
+            not in OPERATION_MAGNITUDE_PARAMETERIZATIONS
+        ):
+            raise GraphEncoderError(
+                "unauthorized_configuration",
+                "operation_magnitude_parameterization is not an accepted "
+                "legacy or repaired identity",
             )
         fixed_identities = (
             ("model_family", MODEL_FAMILY),

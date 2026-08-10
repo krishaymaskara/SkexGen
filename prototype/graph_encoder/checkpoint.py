@@ -16,6 +16,7 @@ from .config import (
 )
 from .decoder_contract import (
     OUTPUT_POSITION_CONTRACT_VERSION,
+    POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     SHARED_DECODER_VERSION,
     output_position_contract_metadata,
 )
@@ -36,6 +37,7 @@ CHECKPOINT_FIELDS = frozenset({
     "shared_decoder_version",
     "output_position_contract_version",
     "output_position_contract",
+    "operation_magnitude_parameterization",
     "bottleneck_mode",
     "config",
     "config_sha256",
@@ -89,6 +91,9 @@ def ge1_checkpoint_payload(model, *, code_revision):
         "shared_decoder_version": SHARED_DECODER_VERSION,
         "output_position_contract_version": OUTPUT_POSITION_CONTRACT_VERSION,
         "output_position_contract": output_position_contract_metadata(),
+        "operation_magnitude_parameterization": (
+            config.operation_magnitude_parameterization
+        ),
         "bottleneck_mode": BOTTLENECK_MODE,
         "config": config.to_dict(),
         "config_sha256": _config_sha256(config),
@@ -117,7 +122,14 @@ def save_ge1_checkpoint(path, model, *, code_revision):
     )
 
 
-def load_ge1_checkpoint(path, *, expected_code_revision=None):
+def load_ge1_checkpoint(
+    path,
+    *,
+    expected_code_revision=None,
+    expected_operation_magnitude_parameterization=(
+        POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ),
+):
     """Validate exact identity and reconstruct one selected arm strictly."""
 
     payload = torch.load(str(path), map_location="cpu")
@@ -141,9 +153,22 @@ def load_ge1_checkpoint(path, *, expected_code_revision=None):
         raise GE1CheckpointError("config must be a mapping")
     seed = config_values.get("seed")
     try:
-        config = frozen_encoder_config(encoder, seed)
+        config = frozen_encoder_config(
+            encoder,
+            seed,
+            operation_magnitude_parameterization=(
+                expected_operation_magnitude_parameterization
+            ),
+        )
     except Exception as exc:
         raise GE1CheckpointError("configuration cannot be reconstructed") from exc
+    if (
+        payload["operation_magnitude_parameterization"]
+        != expected_operation_magnitude_parameterization
+    ):
+        raise GE1CheckpointError(
+            "operation-magnitude parameterization differs"
+        )
     expected = ge1_checkpoint_payload(
         build_ge1_model(config), code_revision=payload["code_revision"]
     )

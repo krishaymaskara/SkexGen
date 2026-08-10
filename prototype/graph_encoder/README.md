@@ -7,7 +7,9 @@ C3 paired flat/graph batching, C4 continuous flat and position-free typed
 graph encoders, C5 shared decoder integration, C6 training/measurement
 machinery, and the C7 train-only sufficiency/memory gate implementation for
 `GE1-SHARED-DECODER-ENCODER-COMPARISON`. It also implements the separately
-identified post-C7 optimization-sufficiency diagnostic.
+identified post-C7 optimization-sufficiency diagnostic, C7-v2 and its
+read-only operation-parameter diagnostic, and the prospective versioned
+positive operation-magnitude repair for engineering validation only.
 
 C1 provides:
 
@@ -73,9 +75,12 @@ both unchanged arms first became autonomously exact-sufficient at update 200,
 yielding `undertraining_supported_both_arms`. It did not change formal C7-v1,
 authorize Stage 6, invoke repair, or begin C8.
 
-Accepted ADR-0008 prospectively defines a separate fixed-epoch-200 C7-v2.
-The additive implementation is now present but has not been executed. The
-hierarchical repair remains deferred, not erased, and Stage 6 remains blocked.
+Accepted ADR-0008 defined the separate fixed-epoch-200 C7-v2, completed as
+job `3344981`. Read-only diagnostic job `3345013` then isolated negative
+active operation magnitudes in all five failures. Accepted ADR-0009
+supersedes only the earlier hierarchical repair authorization and permits the
+prospective positive operation-magnitude implementation described below. No
+repaired scientific run is authorized, and Stage 6 remains blocked.
 The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
@@ -676,6 +681,33 @@ then example totals are averaged across the batch. Graph V1 already used this
 policy, so C5 introduces no intentional legacy aggregation difference. The
 continuous VQ commitment component is exactly zero.
 
+### Prospective positive operation magnitudes
+
+Accepted
+[ADR-0009](../../docs/decisions/ADR-0009-ge1-positive-operation-magnitude-repair.md)
+adds one prospective, shared decoder mode after read-only Adroit diagnostic job
+`3345013` isolated negative active operation magnitudes in all five C7-v2
+failures. Historical C7-v2 behavior remains explicit as
+`GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1`; the new mode is
+`GE1-OPERATION-MAGNITUDE-POSITIVE-v1`.
+
+Only compact geometry channels 4 and 5, serialized as extrusion distance 37
+and revolve angle 38, change. The prospective neural decoder applies
+`finfo(dtype).tiny + (1 - finfo(dtype).tiny) * sigmoid(raw)`, producing a
+finite normalized value in `(0, 1]` for finite logits. A normalized value of
+exactly `1.0` is required by the controlled 360-degree revolve target. Compact
+channels 0--3 retain exact `tanh`, and all masks, channel selection,
+normalization scales, direction, Boolean mode, loss definitions, and weights
+are unchanged. Raw head outputs remain available through
+`raw_remaining_geometry`.
+
+The selected identity is recorded in model configuration, inference and
+recovery checkpoint provenance, C6 metrics records, and downstream artifacts.
+Legacy and repaired checkpoints cannot be loaded interchangeably. Both arms
+receive value-identical, independently mutable copies of the same selected
+decoder mode. This guarantees the analytic positive-magnitude domain only; it
+does not claim CAD-kernel execution validity.
+
 ### Output-side position and bookkeeping
 
 The decoder receives exactly four semantic serialization-position signals,
@@ -753,7 +785,8 @@ to the inherited V6 converter and requires the stable
 `save_ge1_checkpoint` and `load_ge1_checkpoint` implement
 `GE1-CHECKPOINT-v1`. The payload records encoder identity and version, frozen
 feed-forward width and relation-basis count, shared-decoder and output-position
-versions, continuous-bottleneck status, full configuration plus SHA-256,
+versions, operation-magnitude parameterization, continuous-bottleneck status,
+full configuration plus SHA-256,
 architectural sizes, parameter and buffer inventories, decoder state-key
 namespace, source commit, authoritative operation-template manifest hash, and
 complete model state.
@@ -1101,14 +1134,17 @@ incompatible parameter is unassessable. Raw CAD histories, graphs, model
 state, optimizer state, and checkpoints are forbidden from the five-file
 diagnostic artifact.
 
-`adroit/ge1_operation_parameter_diagnostic_cpu.slurm` is prepared but not
-submitted. It runs all preflight suites before data access, binds the source
-C7-v2 artifact and corpus read-only, verifies source hashes before and after
-inference, emits explicit failure phases and access declarations, and creates
-no checkpoints. The full contract is in the
+`adroit/ge1_operation_parameter_diagnostic_cpu.slurm` ran authoritatively as
+job `3345013` at exact commit
+`802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57`. It ran all preflight suites
+before data access, bound the source C7-v2 artifact and corpus read-only,
+verified source hashes before and after inference, emitted explicit access
+declarations, and created no checkpoints. The full contract is in the
 [diagnostic specification](../../docs/specifications/ge1_c7_v2_operation_parameter_diagnostic.md).
-No diagnostic result, repair, Stage 6, C8, or protected-partition access is
-claimed by this implementation.
+The completed result identified negative active operation magnitudes in all
+five failed arms without authorizing repair training, Stage 6, C8, or
+protected-partition access. The prospective repair implementation above is a
+separately versioned engineering-validation step.
 
 ## Manifest authority and access order
 

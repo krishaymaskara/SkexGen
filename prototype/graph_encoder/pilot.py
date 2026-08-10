@@ -531,7 +531,9 @@ def run_pilot(
     events.append({"event": "subset_selection", **selection_record})
 
     from .config import GE1TrainingConfig
-    from .model import build_matched_ge1_models
+    from .model import (
+        build_legacy_matched_ge1_models as build_matched_ge1_models,
+    )
 
     training_config = GE1TrainingConfig()
     training_config.validate()
