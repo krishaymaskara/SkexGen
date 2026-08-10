@@ -53,6 +53,14 @@ the immediate next action changes.
   contract](decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md) —
   accepted additive record for metadata-only train cohorts, fresh matched
   gate models, epoch-50 autonomous decisions, and immutable C7 artifacts.
+- [ADR-0007: GE1 C7 optimization-sufficiency
+  diagnostic](decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
+  — accepted additive post-C7 record for a fixed 500-update, four-family
+  clean-start trajectory without Stage 6 or C8 authorization.
+- [GE1 C7 optimization-sufficiency diagnostic
+  contract](specifications/ge1_c7_optimization_sufficiency_diagnostic.md) —
+  frozen implementation, measurement, provenance, artifact, and runner
+  contract; implementation exists but has not run.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

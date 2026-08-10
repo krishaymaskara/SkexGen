@@ -27,6 +27,7 @@ specifications or new decision records.
 | GE1 C6 authoritative validation | Passed as Adroit job `3344367` at exact commit `c88e967b96dd201fedcd495fa8d5ddaddd02caf3`: 37/37 focused and 147/147 complete-suite tests with zero skips, followed by both 407-family train-only arm smokes |
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 C7 formal pilot | Adroit job `3344505` at exact commit `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` completed with valid artifacts and failed both tiny autonomous exact gates; all scaled gates were `not_run`, repair was triggered procedurally, and Stage 6 was not authorized |
+| GE1 post-C7 optimization diagnostic | Accepted under ADR-0007 and implemented as a fresh matched 500-update trajectory over the same four train families; it has not run, has no result, and does not authorize Stage 6 or begin C8 |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -300,6 +301,19 @@ discrepancy. Development, RR, ER, IID, history-depth, and
 geometry-extrapolation data remain unopened by C7. The hierarchical repair
 was triggered procedurally but is not implemented or invoked, and C8 has not
 begun.
+
+Accepted
+[ADR-0007](decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
+adds a narrow post-C7 optimization-sufficiency diagnostic because both tiny
+losses were still improving substantially at update 50. The implementation
+freezes the same four train families and seed 2026, fresh matched
+initialization, 500 uninterrupted updates, autonomous measurements at updates
+50/100/200/500, sparse 25-update recovery checkpoints, exact per-family
+criteria, five interpretation categories, immutable artifacts, and explicit
+Slurm identity through the clean container. It does not resume or mutate job
+`3344505`, invoke repair, authorize Stage 6, or begin C8. The diagnostic has
+not been run and no diagnostic result exists. Development and every protected
+partition remain unopened.
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

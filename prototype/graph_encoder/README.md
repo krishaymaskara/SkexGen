@@ -6,7 +6,8 @@ This package implements the C1 boundary, C2 position-free graph canonicalizer,
 C3 paired flat/graph batching, C4 continuous flat and position-free typed
 graph encoders, C5 shared decoder integration, C6 training/measurement
 machinery, and the C7 train-only sufficiency/memory gate implementation for
-`GE1-SHARED-DECODER-ENCODER-COMPARISON`.
+`GE1-SHARED-DECODER-ENCODER-COMPARISON`. It also implements the separately
+identified post-C7 optimization-sufficiency diagnostic.
 
 C1 provides:
 
@@ -62,6 +63,13 @@ The formal C7 pilot completed as Adroit job `3344505`. Both arms failed the
 four-family autonomous exact gate, all scaled gates remained `not_run`, and
 Stage 6 was not authorized. The package does not implement C8 decoder repair,
 protected evaluation access, or a later scientific result.
+
+The additive post-C7 diagnostic uses the same four tiny train families and a
+fresh seed-2026 matched pair, trains both arms continuously through 500
+optimizer updates, strictly reloads measurements at updates 50/100/200/500,
+and retains recovery checkpoints every 25 updates. It has not run and has no
+result. It does not change formal C7, authorize Stage 6, invoke repair, or
+begin C8.
 The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
@@ -960,6 +968,51 @@ scaled gates remained `not_run`, and Stage 6 remains unauthorized. The
 artifact passed integrity checks, with the documented limitation that its
 structured runtime and checkpoint provenance omitted the Slurm job ID even
 though the scheduler log and artifact path identify job `3344505`.
+
+## Post-C7 optimization-sufficiency diagnostic
+
+`optimization_diagnostic.py` implements the accepted
+`GE1-C7-OPTIMIZATION-SUFFICIENCY-DIAGNOSTIC-v1` contract. It reuses the C7
+metadata selector and rejects any tiny cohort other than the exact four formal
+C7 families and hash. Only those four `operation_template.train` payloads can
+then be loaded.
+
+The diagnostic constructs one fresh matched seed-2026 pair, trains each arm
+for all 500 optimizer updates and 2,000 family presentations, retains updates
+25/50/.../500, and measures strictly reloaded updates 50, 100, 200, and 500.
+Autonomous `P_true` exactness alone determines sufficiency. Every milestone
+also carries all three memory conditions, the five primary reporting values,
+donor agreement, memory-alteration evidence, and the complete per-family C6
+metric envelope.
+
+The additive `run_ge1_training` arguments used here are opt-in. Existing C6
+and formal C7 callers omit them and retain their every-epoch checkpoint and
+50-epoch validation behavior. Diagnostic checkpoints are recovery/trajectory
+artifacts only and cannot resume formal C7 or warm-start the full comparison.
+
+The runner explicitly passes decimal `SLURM_JOB_ID` through Apptainer's clean
+environment and verifies that the resolved configuration, run events, every
+checkpoint payload, and terminal event agree. It publishes the
+`GE1-C7-OPTIMIZATION-ARTIFACT-v1` bundle atomically only after complete
+integrity validation. A completed negative trajectory exits successfully;
+infrastructure failure leaves an incomplete staging directory and exits
+nonzero.
+
+The narrow CLI is:
+
+```bash
+python3 -m prototype.graph_encoder.optimization_diagnostic \
+  --corpus-dir <authoritative-corpus> \
+  --output-dir <new-external-output> \
+  --repository-root <clean-exact-checkout> \
+  --expected-commit <exact-commit>
+```
+
+The implementation exists but has not run. There is no diagnostic result,
+Stage 6 remains unauthorized, repair is not invoked, C8 has not begun, and no
+protected partition has been opened. The frozen contract and runner
+requirements are in the
+[diagnostic specification](../../docs/specifications/ge1_c7_optimization_sufficiency_diagnostic.md).
 
 ## Manifest authority and access order
 

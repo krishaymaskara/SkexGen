@@ -50,3 +50,8 @@ it superseded by a later ADR.
   matched gate models, epoch-50 autonomous sufficiency and memory-use gates,
   scientific-failure handling, and immutable C7 artifacts without opening a
   protected partition or rewriting the frozen Stage 0 record.
+- [ADR-0007: GE1 C7 optimization-sufficiency
+  diagnostic](ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md) —
+  accepted by designated reviewer Krishay Maskara; freezes a post-C7,
+  four-family, 500-update clean-start trajectory without changing formal C7,
+  protected access, Stage 6 authorization, or C8 status.

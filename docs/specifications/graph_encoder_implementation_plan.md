@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7 completed as a train-only scientific gate failure; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7 completed as a train-only scientific gate failure; additive post-C7 optimization diagnostic implemented but not run; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -680,6 +680,18 @@ two-operation families. Both tiny gates therefore failed, all scaled and
 memory gates were correctly `not_run`, and
 `stage6_authorized_by_c7=false`. Development, RR, ER, and every unauthorized
 manifest remain unopened by C7. C8 has not begun.
+
+**Post-C7 diagnostic status:** accepted
+[ADR-0007](../decisions/ADR-0007-ge1-c7-optimization-sufficiency-diagnostic.md)
+governs an additive optimization-sufficiency trajectory prompted by the
+non-plateaued update-50 losses. It reuses exactly the formal C7 four-family
+train cohort and seed 2026, starts both arms freshly from the matched
+initialization, trains uninterrupted through 500 optimizer updates, and
+measures autonomous outputs only at updates 50, 100, 200, and 500. The
+implementation and CPU runner exist, but the diagnostic has not run and has
+no result. It does not change formal C7, invoke repair, authorize Stage 6,
+open protected data, or begin C8. See the
+[diagnostic contract](ge1_c7_optimization_sufficiency_diagnostic.md).
 
 ### Stage 6 — Core continuous encoder pilot
 

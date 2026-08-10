@@ -287,12 +287,18 @@ def run_ge1_training(
     resume_checkpoint=None,
     provenance_context=None,
     provenance_verifier=verify_c6_provenance,
+    checkpoint_epochs=None,
+    extended_final_epoch=None,
+    checkpoint_coordinate="epoch",
+    selected_checkpoint_epoch=CHECKPOINT_EPOCH,
 ):
     """Run one common training loop for either arm.
 
     ``final_epoch`` may be 1 or 2 only for an explicitly labeled engineering
-    smoke.  This never changes the selected experimental checkpoint, which is
-    fixed at epoch 50.
+    smoke.  The additive post-C7 optimization diagnostic may instead pass an
+    equal ``extended_final_epoch`` and an explicit sparse checkpoint schedule.
+    Defaults preserve the C6/formal-C7 every-epoch behavior and fixed epoch-50
+    selection. The diagnostic explicitly supplies no selected checkpoint.
     """
 
     _require_torch()
@@ -303,7 +309,12 @@ def run_ge1_training(
         raise TypeError("training_config must be GE1TrainingConfig")
     training_config.validate()
     model.config.validate()
-    _validate_execution_epoch(final_epoch, engineering_smoke)
+    _validate_execution_epoch(
+        final_epoch, engineering_smoke, extended_final_epoch=extended_final_epoch
+    )
+    checkpoint_schedule = _validate_checkpoint_schedule(
+        final_epoch, checkpoint_epochs, checkpoint_coordinate
+    )
     ordered_examples = _validate_training_examples(examples)
     family_ids = tuple(item.physical_family_id for item in ordered_examples)
     partition_identity = training_partition_identity(family_ids)
@@ -496,9 +507,16 @@ def run_ge1_training(
             tuple(item.mean_loss for item in epoch_records),
             first_plateau_epoch=plateau.first_plateau_epoch,
         )
+        data_seconds_total += epoch_data_seconds
+        training_seconds_total += epoch_training_seconds
+        if epoch not in checkpoint_schedule:
+            continue
         checkpoint_path = output_dir / (
-            "{}-seed{}-epoch{:04d}.pt".format(
-                model.config.encoder, model.config.seed, epoch
+            "{}-seed{}-{}{:04d}.pt".format(
+                model.config.encoder,
+                model.config.seed,
+                checkpoint_coordinate,
+                epoch,
             )
         )
         checkpoint_start = time.perf_counter()
@@ -518,15 +536,16 @@ def run_ge1_training(
             provenance_verifier=provenance_verifier,
             partition_identity=partition_identity,
             expected_code_revision=expected_commit,
+            selected_checkpoint_epoch=selected_checkpoint_epoch,
         )
         checkpoint_seconds_total += time.perf_counter() - checkpoint_start
         checkpoint_paths.append(str(checkpoint_path))
-        data_seconds_total += epoch_data_seconds
-        training_seconds_total += epoch_training_seconds
 
     selected = (
         checkpoint_paths[-1]
-        if final_epoch == training_config.checkpoint_epoch else None
+        if selected_checkpoint_epoch is not None
+        and final_epoch == selected_checkpoint_epoch
+        else None
     )
     timing = (
         ("data_preparation_seconds", data_seconds_total),
@@ -549,7 +568,7 @@ def run_ge1_training(
         plateau,
         tuple(checkpoint_paths),
         final_epoch,
-        CHECKPOINT_EPOCH,
+        selected_checkpoint_epoch,
         selected,
         provenance_context.authorized,
         timing,
@@ -570,7 +589,8 @@ def training_checkpoint_payload(
     data_order_random_state,
     provenance,
     partition_identity,
-    expected_code_revision
+    expected_code_revision,
+    selected_checkpoint_epoch=CHECKPOINT_EPOCH,
 ):
     """Build the exact strict C6 recovery payload without target content."""
 
@@ -603,8 +623,11 @@ def training_checkpoint_payload(
         "run_identity": "ge1-{}-seed{}".format(
             model.config.encoder, model.config.seed
         ),
-        "selected_checkpoint_epoch": CHECKPOINT_EPOCH,
-        "selected_experimental_checkpoint": completed_epoch == CHECKPOINT_EPOCH,
+        "selected_checkpoint_epoch": selected_checkpoint_epoch,
+        "selected_experimental_checkpoint": (
+            selected_checkpoint_epoch is not None
+            and completed_epoch == selected_checkpoint_epoch
+        ),
         "family_order_history": [list(item) for item in family_order_history],
     }
 
@@ -625,7 +648,8 @@ def save_training_checkpoint(
     provenance_context,
     provenance_verifier,
     partition_identity,
-    expected_code_revision
+    expected_code_revision,
+    selected_checkpoint_epoch=CHECKPOINT_EPOCH,
 ):
     """Recheck provenance, then atomically publish one complete checkpoint."""
 
@@ -660,6 +684,7 @@ def save_training_checkpoint(
         provenance=provenance,
         partition_identity=partition_identity,
         expected_code_revision=expected_code_revision,
+        selected_checkpoint_epoch=selected_checkpoint_epoch,
     )
     final_path = Path(path)
     final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -689,7 +714,8 @@ def load_training_checkpoint(
     training_config,
     partition_identity,
     expected_code_revision,
-    restore_rng
+    restore_rng,
+    expected_selected_checkpoint_epoch=CHECKPOINT_EPOCH,
 ):
     """Strictly reload model, optimizer, counters, plateau, and RNG state."""
 
@@ -723,7 +749,7 @@ def load_training_checkpoint(
         "run_identity": "ge1-{}-seed{}".format(
             model.config.encoder, model.config.seed
         ),
-        "selected_checkpoint_epoch": CHECKPOINT_EPOCH,
+        "selected_checkpoint_epoch": expected_selected_checkpoint_epoch,
     }
     for name, expected in expected_metadata.items():
         if payload[name] != expected:
@@ -753,9 +779,11 @@ def load_training_checkpoint(
         raise GraphEncoderError(
             "invalid_training_checkpoint", "completed epoch and history length differ"
         )
-    if payload["selected_experimental_checkpoint"] is not (
-        payload["completed_epoch"] == CHECKPOINT_EPOCH
-    ):
+    expected_selected = (
+        expected_selected_checkpoint_epoch is not None
+        and payload["completed_epoch"] == expected_selected_checkpoint_epoch
+    )
+    if payload["selected_experimental_checkpoint"] is not expected_selected:
         raise GraphEncoderError(
             "invalid_training_checkpoint", "fixed checkpoint selection flag differs"
         )
@@ -796,15 +824,55 @@ def _training_tensors(paired, encoder):
     }
 
 
-def _validate_execution_epoch(final_epoch, engineering_smoke):
+def _validate_execution_epoch(
+    final_epoch, engineering_smoke, *, extended_final_epoch=None
+):
     if isinstance(final_epoch, bool) or not isinstance(final_epoch, int):
         raise GraphEncoderError("invalid_training_budget", "final epoch must be integer")
+    if extended_final_epoch is not None:
+        if (
+            isinstance(extended_final_epoch, bool)
+            or not isinstance(extended_final_epoch, int)
+            or extended_final_epoch <= TRAINING_EPOCHS
+            or final_epoch != extended_final_epoch
+            or engineering_smoke
+        ):
+            raise GraphEncoderError(
+                "invalid_training_budget",
+                "extended final epoch must be an equal integer above epoch 50",
+            )
+        return
     allowed = (1, SMOKE_EPOCHS) if engineering_smoke else (TRAINING_EPOCHS,)
     if final_epoch not in allowed:
         raise GraphEncoderError(
             "invalid_training_budget",
             "only epoch 1/2 engineering smoke or the frozen epoch 50 run is allowed",
         )
+
+
+def _validate_checkpoint_schedule(
+    final_epoch, checkpoint_epochs, checkpoint_coordinate
+):
+    if checkpoint_coordinate not in ("epoch", "update"):
+        raise GraphEncoderError(
+            "invalid_checkpoint_schedule",
+            "checkpoint coordinate must be epoch or update",
+        )
+    if checkpoint_epochs is None:
+        return frozenset(range(1, final_epoch + 1))
+    values = tuple(checkpoint_epochs)
+    if (
+        not values
+        or any(isinstance(item, bool) or not isinstance(item, int) for item in values)
+        or values != tuple(sorted(set(values)))
+        or values[0] < 1
+        or values[-1] != final_epoch
+    ):
+        raise GraphEncoderError(
+            "invalid_checkpoint_schedule",
+            "checkpoint epochs must be sorted, unique, positive, and end at final epoch",
+        )
+    return frozenset(values)
 
 
 def _validate_training_examples(examples):
