@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | This prospective operation-magnitude repair implementation; its literal hash is intentionally not embedded |
+| Current reviewed revision | Documentation-only record of authoritative operation-magnitude repair validation; its literal hash is intentionally not embedded |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -32,6 +32,7 @@ specifications or new decision records.
 | GE1 C7-v2 preflight attempt | Job `3344975` at exact commit `99a4587d73e82a5df5f12a54130b105ae264b419` failed in the sequential regression loader before manifest or payload access; no scientific execution or artifact occurred |
 | GE1 operation-parameter diagnostic | Adroit job `3345013` at exact diagnostic commit `802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57` completed read-only: all five failures were active negative extrusion/revolve magnitudes; no training, repair, checkpoint write, protected-partition access, or C7-v2 mutation occurred |
 | GE1 prospective magnitude repair | Accepted ADR-0009 supersedes only the earlier hierarchical repair authorization; `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` is implemented for exact-commit engineering validation, while scientific training and Stage 6 remain unauthorized |
+| GE1 magnitude-repair validation | Passed as Adroit CPU job `3345044` at exact commit `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`: 13/13 focused and 292/292 complete graph-encoder tests with zero skips, all regressions and repository gates, and zero corpus/training/kernel access |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -369,6 +370,17 @@ checkpoint-incompatible with the repaired configuration. This is an
 implementation-validation step, not C7-v2, Stage 6, C8, or a repaired
 scientific run. RR remains blocked until the accepted one-time systematic
 stage, and ER remains closed throughout GE1.
+
+Exact-commit Adroit CPU job `3345044` authoritatively validated that
+prospective implementation under Python 3.8.13 and PyTorch 1.11.0. All 13
+focused repair tests and all 292 graph-encoder tests passed with zero skips;
+every regression and repository gate passed with only the four established
+flat-baseline skips. The runner opened no manifest or payload, performed no
+training, wrote no checkpoint, used no CAD kernel, and did not begin Stage 6
+or C8. The [validation record](experiments/ge1_operation_magnitude_repair_cpu_validation.md)
+preserves the checksums, coverage, decision, and limitations. This is
+engineering validation only and does not authorize a repaired scientific
+protocol.
 
 ## Documentation and artifact maintenance
 

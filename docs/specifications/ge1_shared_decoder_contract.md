@@ -11,6 +11,7 @@
 | Common loss identity | `GE1-COMMON-GRAPH-LOSS-v1` |
 | Prospective operation-magnitude identity | `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` |
 | Historical operation-magnitude identity | `GE1-OPERATION-MAGNITUDE-TANH-LEGACY-v1` |
+| Prospective repair validation | Passed on Adroit CPU as job `3345044` at exact commit `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc` |
 | Bottleneck | Continuous; decoder input is `memory [B, 2, 32]` |
 
 This additive record discharges frozen Stage 0 item 4 without rewriting the
@@ -186,6 +187,17 @@ Strict inference and recovery checkpoint loading rejects a mode mismatch with
 the existing stable invalid-checkpoint error. Both encoder arms receive
 disjoint, value-identical copies of the same selected decoder mode. This
 analytic parameter-domain guarantee makes no CAD-kernel validity claim.
+
+Authoritative Adroit CPU job `3345044` exercised both identities under Python
+3.8.13 and PyTorch 1.11.0. All 13 focused repair tests and all 292 complete
+graph-encoder tests passed with zero skips, including exact legacy parity,
+extreme-logit bounds, channel isolation, unchanged categorical/mask outputs,
+five synthetic conversion cases, both strict checkpoint boundaries, identity
+propagation, and matched arm initialization. The runner opened no corpus,
+performed no training, and used no CAD kernel. The
+[validation record](../experiments/ge1_operation_magnitude_repair_cpu_validation.md)
+is engineering evidence only; it does not authorize or report a repaired
+scientific run.
 
 ## Strict checkpoint contract
 

@@ -195,6 +195,11 @@ the immediate next action changes.
   3344975](experiments/ge1_c7_v2_preflight_attempt_3344975.md) — sequential
   regression-loader implementation failure before manifest or payload access;
   no C7-v2 scientific execution or artifact.
+- [GE1 operation-magnitude repair authoritative CPU
+  validation](experiments/ge1_operation_magnitude_repair_cpu_validation.md) —
+  exact-commit, corpus-free engineering validation of the prospective positive
+  operation-magnitude parameterization; no scientific rerun or Stage 6
+  authorization.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; accepted ADR-0009 authorizes only prospective positive-magnitude implementation validation; Stage 6 remains unauthorized; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; Stage 6 remains unauthorized; no repaired scientific protocol is frozen; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -745,6 +745,15 @@ All other geometry channels retain exact `tanh`. Configuration, checkpoints,
 provenance, and reporting distinguish the modes and reject incompatible
 loads. This implementation work does not authorize a repaired C7 run or
 Stage 6.
+
+Exact-commit Adroit CPU job `3345044` validated the implementation at
+`12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`. The 13-test focused suite and
+292-test complete graph-encoder suite passed with zero skips, every regression
+and repository gate passed, and all corpus, training, checkpoint-write,
+CAD-kernel, Stage 6, and C8 declarations remained false. See the
+[authoritative validation record](../experiments/ge1_operation_magnitude_repair_cpu_validation.md).
+This closes implementation validation only; any repaired scientific protocol
+still requires a separate prospective governance decision.
 
 ### Stage 6 — Core continuous encoder pilot
 

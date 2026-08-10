@@ -708,6 +708,18 @@ receive value-identical, independently mutable copies of the same selected
 decoder mode. This guarantees the analytic positive-magnitude domain only; it
 does not claim CAD-kernel execution validity.
 
+This implementation passed authoritative Adroit CPU validation as job
+`3345044` at exact commit
+`12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`. The focused repair suite passed
+13/13 and the complete graph-encoder suite passed 292/292, both with zero
+skips. All regressions and repository gates passed; the only skips were the
+four established flat-baseline external-bundle cases. No manifest, payload,
+training path, checkpoint publication, CAD kernel, Stage 6, or C8 work was
+used. See the [authoritative validation
+record](../../docs/experiments/ge1_operation_magnitude_repair_cpu_validation.md).
+The pass validates implementation compatibility only, not a repaired
+scientific result or comparative encoder performance.
+
 ### Output-side position and bookkeeping
 
 The decoder receives exactly four semantic serialization-position signals,
@@ -1205,3 +1217,7 @@ The non-C2 package boundary uses:
   exact-commit revalidation as Adroit job `3344431`. Formal C7 job `3344505`
   completed as a valid scientific failure of both tiny exact gates. C8 and
   every later GE1 chunk have not begun.
+- The prospective operation-magnitude repair passed authoritative engineering
+  validation as Adroit job `3345044` at exact commit
+  `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`. No repaired scientific protocol
+  or run is authorized by that result, and Stage 6 remains blocked.
