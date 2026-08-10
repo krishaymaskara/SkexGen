@@ -28,7 +28,8 @@ specifications or new decision records.
 | GE1 C5/C6 review-fix revalidation | Passed as Adroit job `3344431` at exact commit `d29dc8299d32186907eb16d05c6102fcececf32e`: 75/75 focused and 163/163 complete graph-encoder tests with zero skips, every regression and repository gate, and both v2 407-family train-only arm smokes |
 | GE1 C7 formal pilot | Adroit job `3344505` at exact commit `4bfde4c726a585433ea4bb60e6ce9d245ae7c87d` completed with valid artifacts and failed both tiny autonomous exact gates; all scaled gates were `not_run`, repair was triggered procedurally, and Stage 6 was not authorized |
 | GE1 post-C7 optimization diagnostic | Job `3344907` at exact commit `fbc6073f63da9f0e10b5db8c0c0d4786a48ce0c0` completed; both unchanged arms first passed autonomous exact sufficiency at update 200, yielding `undertraining_supported_both_arms`; Stage 6 was not authorized and protected partitions remained closed |
-| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; additive implementation and unsubmitted standalone-checkout CPU runner prepared; execution pending; decoder repair deferred, not erased |
+| GE1 C7-v2 prospective protocol | ADR-0008 accepted by Krishay Maskara; additive implementation present; first preflight failed before data access; corrected standalone-checkout CPU rerun pending; decoder repair deferred, not erased |
+| GE1 C7-v2 preflight attempt | Job `3344975` at exact commit `99a4587d73e82a5df5f12a54130b105ae264b419` failed in the sequential regression loader before manifest or payload access; no scientific execution or artifact occurred |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -326,7 +327,14 @@ The hierarchical repair path remains triggered in C7-v1 history but is
 deferred while C7-v2 tests the evidence-based budget. The additive
 `prototype/graph_encoder/c7_v2.py` implementation, focused tests, and
 standalone-checkout CPU runner are prepared. C7-v2 has not been submitted or
-executed, so Stage 6 remains unauthorized and no repair or C8 work has begun.
+executed scientifically, so Stage 6 remains unauthorized and no repair or C8
+work has begun. The first authoritative preflight, job `3344975`, passed the
+environment, focused 28/28, complete graph-encoder 266/266, and model-data
+86/86 gates, then stopped before flat-baseline discovery because Python 3.8's
+singleton `defaultTestLoader` retained a prior discovery root. The runner now
+constructs a fresh loader with explicit repository top level per regression
+suite. The attempt opened no manifest or payload and produced no artifact;
+see its [preflight record](experiments/ge1_c7_v2_preflight_attempt_3344975.md).
 
 No further Graph V1 correction or rerun is authorized. RR access remains
 blocked until the accepted one-time systematic stage, and ER remains closed

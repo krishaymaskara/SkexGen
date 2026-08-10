@@ -542,6 +542,38 @@ class StaticProductionTests(unittest.TestCase):
         ):
             self.assertLess(source.index(marker), execution, marker)
 
+    def test_sequential_regressions_use_fresh_explicit_root_loaders(self):
+        source = SLURM.read_text(encoding="utf-8")
+        start = source.index("suites = (")
+        end = source.index("\nPY\n\nprintf 'documentation_validation", start)
+        block = source[start:end]
+        tree = ast.parse(block)
+        loop = next(node for node in tree.body if isinstance(node, ast.For))
+        loader_assignments = [
+            node for node in loop.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "loader"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(loader_assignments), 1)
+        constructor = loader_assignments[0].value
+        self.assertIsInstance(constructor, ast.Call)
+        self.assertIsInstance(constructor.func, ast.Attribute)
+        self.assertEqual(constructor.func.attr, "TestLoader")
+        discover = next(
+            node for node in ast.walk(loop)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "discover"
+        )
+        self.assertIsInstance(discover.func.value, ast.Name)
+        self.assertEqual(discover.func.value.id, "loader")
+        keywords = {item.arg: item.value for item in discover.keywords}
+        self.assertEqual(keywords["top_level_dir"].value, ".")
+        self.assertNotIn("unittest.defaultTestLoader", block)
+
     def test_bash_grammar(self):
         self.assertEqual(os.system("bash -n {}".format(SLURM)), 0)
 

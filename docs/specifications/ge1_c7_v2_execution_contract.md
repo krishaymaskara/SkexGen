@@ -2,8 +2,8 @@
 
 Status: accepted prospective protocol under
 [ADR-0008](../decisions/ADR-0008-ge1-c7-v2-200-epoch-protocol.md); additive
-implementation and unsubmitted CPU runner prepared; scientific execution has
-not occurred.
+implementation present; corrected CPU rerun pending after a zero-access
+preflight failure; scientific execution has not occurred.
 
 Reviewer: Krishay Maskara, August 10, 2026.
 
@@ -102,6 +102,13 @@ The CPU runner must complete all tests and repository gates before manifest
 or payload access, reject linked worktrees by requiring an ordinary `.git`
 directory, preserve stdout/stderr, independently verify checkpoint hashes and
 Slurm provenance, and emit explicit terminal success/failure events.
+
+Job `3344975` at commit
+`99a4587d73e82a5df5f12a54130b105ae264b419` stopped in the sequential
+regression loader before manifest access. The corrected runner creates a fresh
+`unittest.TestLoader` per suite with `top_level_dir="."`; it preserves every
+skip expectation and must rerun the entire preflight. The failed attempt is
+non-scientific and is recorded [separately](../experiments/ge1_c7_v2_preflight_attempt_3344975.md).
 
 ## Related records
 

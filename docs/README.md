@@ -187,6 +187,10 @@ the immediate next action changes.
   diagnostic](experiments/ge1_optimization_diagnostic.md) — completed job
   `3344907`; both unchanged arms first became autonomously exact-sufficient at
   update 200 without protected access.
+- [GE1 C7-v2 preflight attempt
+  3344975](experiments/ge1_c7_v2_preflight_attempt_3344975.md) — sequential
+  regression-loader implementation failure before manifest or payload access;
+  no C7-v2 scientific execution or artifact.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

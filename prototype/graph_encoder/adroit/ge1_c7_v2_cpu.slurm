@@ -148,8 +148,10 @@ suites = (
     ("controlled_data", "prototype/controlled_data/tests", 0),
 )
 for name, path, expected_skips in suites:
+    loader = unittest.TestLoader()
+    suite = loader.discover(path, top_level_dir=".")
     result = unittest.TextTestRunner(verbosity=1).run(
-        unittest.defaultTestLoader.discover(path)
+        suite
     )
     print(json.dumps({
         "event": "c7_v2_regression_suite",

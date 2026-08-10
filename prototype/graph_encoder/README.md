@@ -1062,6 +1062,18 @@ and only then permits metadata or train-payload access. It independently
 checks every selected checkpoint and artifact hash after execution. No C7-v2
 scientific execution has yet occurred; Stage 6, C8, and repair remain blocked.
 
+The first authoritative preflight, Slurm job `3344975` at commit
+`99a4587d73e82a5df5f12a54130b105ae264b419`, passed the focused 28/28,
+complete graph-encoder 266/266, and model-data 86/86 gates with zero skips. It
+then stopped before flat-baseline discovery because Python 3.8's singleton
+`unittest.defaultTestLoader` retained the first regression discovery root.
+The corrected loop constructs a fresh `unittest.TestLoader` and supplies
+`top_level_dir="."` for every suite. Job `3344975` opened no manifest or
+payload, performed no training, and produced no artifact; `/external/c7-v2`
+stdout lines were emitted by a mocked CLI unit test. The complete
+[preflight record](../../docs/experiments/ge1_c7_v2_preflight_attempt_3344975.md)
+is non-scientific.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:
