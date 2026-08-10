@@ -1158,6 +1158,52 @@ five failed arms without authorizing repair training, Stage 6, C8, or
 protected-partition access. The prospective repair implementation above is a
 separately versioned engineering-validation step.
 
+## Prospective repaired train-sufficiency protocol
+
+`repaired_sufficiency.py` implements the accepted ADR-0010 identity
+`GE1-C7-REPAIRED-SUFFICIENCY-v1` without changing `c7_v2.py`, its tests, or
+its artifact schemas. Both arms use
+`GE1-OPERATION-MAGNITUDE-POSITIVE-v1`; legacy configurations and checkpoints
+are rejected. Tiny and scaled use fresh matched seed-2026 pairs, exactly 200
+epochs, fixed epoch-200 selection, and strict reload into fresh recovery and
+inference models. The frozen arithmetic remains 200 optimizer steps and 800
+presentations per tiny arm, and 800 steps and 6,400 presentations per scaled
+arm.
+
+`operation_fidelity.py` defines the hard
+`operation_geometry_fidelity` gate. Autonomous `P_true` operation predictions
+are paired with targets only after generation. Extrusion channel 37 is
+denormalized by 4.0 and must have unrounded absolute physical error strictly
+below 0.25; revolve channel 38 is denormalized by 360.0 and must be strictly
+below 22.5 degrees. Missing, nonfinite, masked, wrong-type, or wrong-channel
+values fail. Every operation and both loader-verified representation variants
+must pass; the family summary uses the maximum absolute error and never a
+mean. Existing non-operation geometry errors remain report-only.
+
+Both tiny arms must pass exact structural/analytic criteria and fidelity
+before scaled payload access. Scaled overall success requires both arms to
+pass exactness, fidelity, and the unchanged memory-use gate. Exact or fidelity
+failure is a completed scientific failure; memory-only failure is
+inconclusive. Either blocks Stage 6. A successful scientific pass still makes
+no CAD-kernel claim.
+
+Artifacts use separate protocol, gate, metrics, checkpoint-role, and manifest
+identities. They contain repaired recovery and inference checkpoint hashes,
+per-operation evidence, conservative family summaries, explicit access
+declarations, and a terminal infrastructure/scientific decision. Raw corpus
+payloads and model state do not enter metrics JSONL.
+
+The corpus-free implementation runner is
+`adroit/ge1_repaired_sufficiency_validation_cpu.slurm`. It binds only an exact
+read-only standalone checkout and runs all focused real-PyTorch tests, the
+complete graph-encoder suite, regressions, documentation, compilation,
+Python-3.8 grammar, import/export, target-leakage, protected-access,
+C7-v2-immutability, frozen-V6, Bash, and clean-tree gates. The separately
+prepared `adroit/ge1_repaired_sufficiency_cpu.slurm` scientific runner is not
+authorized for submission. Locally, all 24 pure focused tests pass and all
+eight real-PyTorch focused tests are discovered but skipped because PyTorch is
+unavailable. No corpus or scientific training has been run.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

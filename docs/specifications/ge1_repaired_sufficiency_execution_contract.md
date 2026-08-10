@@ -4,7 +4,7 @@
 
 | Item | Frozen value |
 |---|---|
-| Status | Accepted prospective protocol; implementation pending |
+| Status | Accepted and implemented prospectively; authoritative engineering validation pending |
 | Governing decision | [ADR-0010](../decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) |
 | Protocol | `GE1-C7-REPAIRED-SUFFICIENCY-v1` |
 | Operation magnitude | `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` |
@@ -146,3 +146,13 @@ ADR-0010 authorizes code, corpus-free tests, an unsubmitted scientific runner,
 and engineering validation preparation. It does not authorize scientific
 training, local corpus/manifest access, Slurm submission, Stage 6, C8,
 protected access, CAD-kernel integration, or pushing.
+
+The implementation lives in `operation_fidelity.py` and
+`repaired_sufficiency.py`, with separately versioned pure and real-PyTorch
+tests. The corpus-free implementation-validation runner is
+`adroit/ge1_repaired_sufficiency_validation_cpu.slurm`; the scientific runner
+is prepared separately as `adroit/ge1_repaired_sufficiency_cpu.slurm` but is
+not authorized for submission. Local validation discovers 32 focused tests:
+24 pure tests pass and eight real-PyTorch tests are skipped because the local
+environment has no PyTorch. Authoritative Python 3.8/PyTorch 1.11 validation
+with zero skips remains required before scientific execution can be governed.

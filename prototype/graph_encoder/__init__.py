@@ -84,6 +84,23 @@ from .decoder_contract import (
     operation_magnitude_contract_metadata,
     output_position_contract_metadata,
 )
+from .operation_fidelity import (
+    OPERATION_GEOMETRY_FIDELITY_VERSION,
+    operation_fidelity_contract,
+    operation_fidelity_record,
+    operation_geometry_fidelity_gate,
+    summarize_operation_fidelity_family,
+)
+from .repaired_sufficiency import (
+    REPAIRED_ARTIFACT_VERSION,
+    REPAIRED_GATE_VERSION,
+    REPAIRED_METRICS_VERSION,
+    REPAIRED_PROTOCOL_VERSION,
+    RepairedSufficiencyConfiguration,
+    overall_repaired_sufficiency_decision,
+    repaired_training_arithmetic,
+    verify_repaired_artifact,
+)
 
 __all__ = (
     "GE1Config",
@@ -151,6 +168,19 @@ __all__ = (
     "SHARED_DECODER_VERSION",
     "operation_magnitude_contract_metadata",
     "output_position_contract_metadata",
+    "OPERATION_GEOMETRY_FIDELITY_VERSION",
+    "operation_fidelity_contract",
+    "operation_fidelity_record",
+    "operation_geometry_fidelity_gate",
+    "summarize_operation_fidelity_family",
+    "REPAIRED_ARTIFACT_VERSION",
+    "REPAIRED_GATE_VERSION",
+    "REPAIRED_METRICS_VERSION",
+    "REPAIRED_PROTOCOL_VERSION",
+    "RepairedSufficiencyConfiguration",
+    "overall_repaired_sufficiency_decision",
+    "repaired_training_arithmetic",
+    "verify_repaired_artifact",
 )
 
 try:
