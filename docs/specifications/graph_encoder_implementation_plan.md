@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; C7 train-only gate implementation exists but the formal C7 pilot has not run; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7 completed as a train-only scientific gate failure; Stage 6 remains unauthorized; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -109,9 +109,13 @@ record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md) retains the
 evidence and limitations. C6 is complete. The subsequent C7 execution details
 are frozen by accepted
 [ADR-0006](../decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md).
-C7 implementation now exists, but its formal train-only pilot has not run and
-has no pass/fail result. RR and ER payload access remains restricted by the
-accepted staged-access rules.
+C7 implementation now exists, and its formal train-only pilot completed as
+Adroit job `3344505` at exact commit
+`4bfde4c726a585433ea4bb60e6ce9d245ae7c87d`. Both arms failed the tiny
+autonomous exact gate, all scaled gates remained `not_run`, and Stage 6 was
+not authorized. The [C7 experiment record](../experiments/ge1_c7_pilot.md)
+retains the complete evidence and limitations. RR and ER payload access
+remains restricted by the accepted staged-access rules.
 
 ## Evidence that constrains the design
 
@@ -645,8 +649,8 @@ Post-validation C5/C6 review fixes and accepted
 [ADR-0005](../decisions/ADR-0005-ge1-primary-reporting-and-metrics-v2.md)
 advance new metrics artifacts to v2. Job `3344367` remains valid historical
 C6 evidence; combined exact-commit job `3344431` passed the required C5/C6
-review-fix revalidation, including both v2 train-only artifacts. C7 has not
-begun scientifically.
+review-fix revalidation, including both v2 train-only artifacts. Formal C7
+subsequently completed as a train-only scientific gate failure.
 
 ### Stage 5 — Train-only sufficiency and memory-use gates
 
@@ -668,10 +672,13 @@ freezes the metadata-only cohort ranking, seed-2026 fresh matched model
 lifecycle, epoch-50 autonomous gates, scientific-failure semantics, and
 immutable artifact format. `partitions.py`, `pilot.py`, the C7 CPU runner, and
 focused C7 tests implement that contract. Implementation tests use only
-synthetic metadata, procedural CAD fixtures, and temporary artifacts. The
-formal train-only C7 pilot has not run, no C7 pass/fail result exists, and
-Stage 6 remains unauthorized until a finalized formal artifact reports
-`stage6_authorized_by_c7=true`. Development, RR, ER, and every unauthorized
+synthetic metadata, procedural CAD fixtures, and temporary artifacts. Formal
+Adroit job `3344505` completed the tiny gate at the frozen epoch-50
+checkpoint: flat reached 4/4 exact nodes and typed graph 3/4, but both reached
+0/4 exact graphs, 0/4 complete validity, and 0/2 exact `depends_on` on the
+two-operation families. Both tiny gates therefore failed, all scaled and
+memory gates were correctly `not_run`, and
+`stage6_authorized_by_c7=false`. Development, RR, ER, and every unauthorized
 manifest remain unopened by C7. C8 has not begun.
 
 ### Stage 6 — Core continuous encoder pilot

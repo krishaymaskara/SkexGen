@@ -19,7 +19,10 @@ revalidated the review-fix source and both v2 train-only artifacts; see the
 record](../experiments/ge1_c5_c6_review_fix_cpu_validation.md). The later C7
 implementation is governed separately by accepted
 [ADR-0006](../decisions/ADR-0006-ge1-c7-sufficiency-execution-contract.md);
-its formal train-only pilot has not run and has no scientific result.
+its formal train-only pilot subsequently completed as Adroit job `3344505`
+and failed both tiny autonomous exact gates. See the
+[C7 experiment record](../experiments/ge1_c7_pilot.md). That later result does
+not modify this frozen C6 contract.
 
 This record resolves measurement details that were intentionally deferred by
 the accepted Stage 0 preregistration. It does not change the architecture,

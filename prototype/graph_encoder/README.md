@@ -58,9 +58,10 @@ C7 provides:
 - atomic self-verifying artifacts with complete checkpoints; and
 - a fail-fast Python 3.8.13/PyTorch 1.11 CPU Slurm runner.
 
-The formal C7 pilot has not run, so this package records no C7 scientific
-pass/fail result and does not authorize Stage 6. It does not implement C8
-decoder repair, protected evaluation access, or a later scientific result.
+The formal C7 pilot completed as Adroit job `3344505`. Both arms failed the
+four-family autonomous exact gate, all scaled gates remained `not_run`, and
+Stage 6 was not authorized. The package does not implement C8 decoder repair,
+protected evaluation access, or a later scientific result.
 The frozen
 `prototype.flat_baseline` and
 `prototype.graph_baseline` packages are reused by import only and remain
@@ -922,7 +923,8 @@ train-only arm smokes. Current C5/C6 source is therefore authoritatively
 covered; see the [combined validation
 record](../../docs/experiments/ge1_c5_c6_review_fix_cpu_validation.md). C7
 implementation was added afterward under accepted ADR-0006. Its formal pilot
-has not run and the C5/C6 result does not validate the new C7 runtime path.
+completed separately as job `3344505`; see the
+[C7 record](../../docs/experiments/ge1_c7_pilot.md).
 
 ## C7 train-only sufficiency and memory-use gates
 
@@ -953,8 +955,11 @@ artifact beside the requested final path and atomically publishes
 `resolved_config.json`, `metrics.jsonl`, complete checkpoints, an artifact
 manifest, and `SHA256SUMS`. The CPU Slurm runner validates the exact clean
 source and complete test/regression suite before any corpus access. The
-formal runner has not been submitted, no C7 artifact or scientific result
-exists, and Stage 6 remains unauthorized.
+formal runner completed as job `3344505`. Both tiny exact gates failed, all
+scaled gates remained `not_run`, and Stage 6 remains unauthorized. The
+artifact passed integrity checks, with the documented limitation that its
+structured runtime and checkpoint provenance omitted the Slurm job ID even
+though the scheduler log and artifact path identify job `3344505`.
 
 ## Manifest authority and access order
 
@@ -1012,6 +1017,6 @@ The non-C2 package boundary uses:
   `996016df44b7f9a6cd5c092a3e3b7a87d9964f9d`.
 - C6 passed authoritative runtime validation as Adroit job `3344367`; the
   post-validation C5/C6 review-fix source and v2 artifacts passed combined
-  exact-commit revalidation as Adroit job `3344431`. The C7 implementation
-  exists but has not received a formal corpus pilot or production-environment
-  validation; C8 and every later GE1 chunk have not begun.
+  exact-commit revalidation as Adroit job `3344431`. Formal C7 job `3344505`
+  completed as a valid scientific failure of both tiny exact gates. C8 and
+  every later GE1 chunk have not begun.

@@ -160,6 +160,10 @@ the immediate next action changes.
   exact-commit revalidation of shared-decoder provenance, prefix handling,
   structured primary reporting, donor agreement, metrics v2, and both
   authorized train-only arm smokes.
+- [GE1 C7 formal train-only sufficiency
+  pilot](experiments/ge1_c7_pilot.md) — completed exact-commit scientific gate
+  failure: both arms failed four-family autonomous exact sufficiency, all
+  scaled gates remained `not_run`, and Stage 6 remains unauthorized.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
