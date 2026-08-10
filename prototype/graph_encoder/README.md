@@ -1200,9 +1200,21 @@ complete graph-encoder suite, regressions, documentation, compilation,
 Python-3.8 grammar, import/export, target-leakage, protected-access,
 C7-v2-immutability, frozen-V6, Bash, and clean-tree gates. The separately
 prepared `adroit/ge1_repaired_sufficiency_cpu.slurm` scientific runner is not
-authorized for submission. Locally, all 24 pure focused tests pass and all
-eight real-PyTorch focused tests are discovered but skipped because PyTorch is
-unavailable. No corpus or scientific training has been run.
+authorized for submission. Adroit CPU job `3345161` at exact commit
+`6b62cab90ea8f693cde41c2abf0a261024057d45` passed all 32 focused tests and
+all 324 graph-encoder tests with zero skips, plus every regression and
+repository gate. The real-PyTorch procedural fixtures intentionally performed
+bounded backward passes and optimizer steps; no manifest, corpus, scientific
+training, scientific checkpoint or artifact, CAD kernel, Stage 6, or C8 was
+accessed or performed. See the [validation record](../../docs/experiments/ge1_repaired_sufficiency_cpu_validation.md).
+
+Generic inference and recovery checkpoints enforce the model-semantic
+`GE1-OPERATION-MAGNITUDE-POSITIVE-v1` identity. The enclosing resolved/run
+configuration, metrics, gates, artifact manifest, and terminal record carry
+the literal `GE1-C7-REPAIRED-SUFFICIENCY-v1` identity and bind checkpoint
+hashes, source, arm, seed, epoch, and role without duplicating that protocol
+field in the generic checkpoint schema. Implementation validation is complete;
+scientific execution remains separately unauthorized.
 
 ## Manifest authority and access order
 

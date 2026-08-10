@@ -4,7 +4,7 @@
 
 | Item | Frozen value |
 |---|---|
-| Status | Accepted and implemented prospectively; authoritative engineering validation pending |
+| Status | Accepted, implemented prospectively, and authoritatively engineering-validated; scientific execution separately unauthorized |
 | Governing decision | [ADR-0010](../decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) |
 | Protocol | `GE1-C7-REPAIRED-SUFFICIENCY-v1` |
 | Operation magnitude | `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` |
@@ -16,6 +16,9 @@
 This contract is separately versioned and prospective. It must not be called
 C7-v2 or used to reinterpret the immutable C7-v2 failure. Job `3345044`
 validated implementation behavior only; no repaired model has been trained.
+Corpus-free job `3345161` subsequently validated the complete prospective
+protocol implementation only; it likewise produced no repaired scientific
+result.
 
 ## Frozen model and lifecycle
 
@@ -152,7 +155,18 @@ The implementation lives in `operation_fidelity.py` and
 tests. The corpus-free implementation-validation runner is
 `adroit/ge1_repaired_sufficiency_validation_cpu.slurm`; the scientific runner
 is prepared separately as `adroit/ge1_repaired_sufficiency_cpu.slurm` but is
-not authorized for submission. Local validation discovers 32 focused tests:
-24 pure tests pass and eight real-PyTorch tests are skipped because the local
-environment has no PyTorch. Authoritative Python 3.8/PyTorch 1.11 validation
-with zero skips remains required before scientific execution can be governed.
+not authorized for submission. Adroit CPU job `3345161` at exact commit
+`6b62cab90ea8f693cde41c2abf0a261024057d45` passed all 32 focused tests and
+all 324 graph-encoder tests with zero skips, every regression and repository
+gate, and zero manifest/corpus access. Synthetic procedural fixtures executed
+the expected backward passes and optimizer steps; no corpus or scientific
+training and no scientific checkpoint or artifact occurred.
+
+The positive-magnitude model-semantic identity is enforced in inference and
+recovery checkpoints and checkpoint provenance. The broader repaired protocol
+identity is carried by the enclosing resolved/training configuration, metrics,
+gates, artifact manifest, and terminal record rather than duplicated in the
+generic checkpoint schema. The [authoritative validation record](../experiments/ge1_repaired_sufficiency_cpu_validation.md)
+documents this boundary. Implementation validation is complete, making the
+protocol eligible for a separate execution authorization; it does not itself
+authorize submission, scientific training, Stage 6, or C8.

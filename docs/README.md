@@ -199,6 +199,11 @@ the immediate next action changes.
   contract](specifications/ge1_repaired_sufficiency_execution_contract.md) —
   accepted prospective epoch-200 protocol with a strict operation-geometry
   fidelity gate; implementation and scientific execution remain separate.
+- [GE1 repaired-sufficiency authoritative CPU
+  validation](experiments/ge1_repaired_sufficiency_cpu_validation.md) —
+  exact-commit, corpus-free implementation validation of the prospective
+  repaired protocol; synthetic optimizer fixtures ran, but no scientific
+  training, artifact, or Stage 6 authorization occurred.
 - [GE1 operation-magnitude repair authoritative CPU
   validation](experiments/ge1_operation_magnitude_repair_cpu_validation.md) —
   exact-commit, corpus-free engineering validation of the prospective positive

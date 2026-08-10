@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; accepted ADR-0010 freezes a separately versioned repaired sufficiency protocol with an operation-geometry fidelity gate; its implementation and unsubmitted runners are complete locally, authoritative engineering validation is pending, and scientific execution remains unauthorized; Stage 6 is blocked; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; accepted ADR-0010 freezes a separately versioned repaired sufficiency protocol with an operation-geometry fidelity gate; its implementation passed authoritative corpus-free engineering validation as job `3345161`, its scientific runner remains unsubmitted, and scientific execution remains unauthorized; Stage 6 is blocked; C8 and later work not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -771,9 +771,16 @@ conservative per-family maxima, exact/fidelity/memory gates, repaired recovery
 and inference checkpoint identities, complete access/provenance declarations,
 and atomic artifact integrity. It preserves C7-v2 source and schemas byte-for-
 byte and introduces targets only after autonomous generation. The 24 pure
-focused tests pass locally; all eight real-PyTorch focused tests are discovered
-and require authoritative Adroit execution. No corpus or scientific training
-has been opened or run under ADR-0010.
+and eight real-PyTorch focused tests passed authoritatively as Adroit CPU job
+`3345161` at exact commit
+`6b62cab90ea8f693cde41c2abf0a261024057d45`; the complete 324-test
+graph-encoder suite also passed with zero skips. Procedural fixtures executed
+the expected bounded backward passes and optimizer steps, but the runner
+opened no manifest or corpus and produced no scientific checkpoint or
+artifact. The literal protocol identity remains in the enclosing run/artifact
+records while the positive-magnitude compatibility identity is enforced in
+generic checkpoints and provenance. This completes implementation validation
+only. Scientific submission, training, Stage 6, and C8 remain unauthorized.
 
 ### Stage 6 — Core continuous encoder pilot
 
