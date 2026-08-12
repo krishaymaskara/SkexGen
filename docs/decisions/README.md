@@ -72,3 +72,9 @@ it superseded by a later ADR.
   epoch-200 repaired protocol with a strict per-operation fidelity gate,
   conservative physical-family aggregation, target isolation, and unchanged
   protected-access boundaries.
+- [ADR-0011: GE1 repaired-checkpoint representation
+  probe](ADR-0011-ge1-repaired-representation-probe.md) — accepted by
+  designated reviewer Krishay Maskara; freezes a read-only, train-only
+  scalar/decoder-state/encoder-memory accessibility diagnostic over immutable
+  job `3345280`, while authorizing only implementation, synthetic testing, an
+  unsubmitted runner, and local bundle preparation.

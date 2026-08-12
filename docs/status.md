@@ -10,15 +10,15 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | ADR-0010 repaired train-sufficiency implementation passed authoritative corpus-free engineering validation as job `3345161`; scientific execution remains separately unauthorized |
+| Current reviewed revision | Repaired-sufficiency job `3345280` completed at exact source commit `705eb820f7a15d64fe650df7350b1553b2bc8172` as a valid train-only scientific failure; accepted ADR-0011 authorizes representation-probe implementation and synthetic validation only |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 10, 2026 |
+| Status recorded | August 12, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
-| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus accepted ADR-0008, ADR-0009, and ADR-0010; C0-C6 complete; formal C7-v1 and C7-v2 failed; diagnostic job `3345013` isolated negative operation magnitudes; repaired-sufficiency implementation validation passed as job `3345161`; scientific execution and Stage 6 remain unauthorized; C8 and later work not begun |
+| GE1 protocol record | `GE1-STAGE0-PREREG-v1` plus accepted ADR-0008, ADR-0009, and ADR-0010; C0-C6 complete; formal C7-v1, C7-v2, and repaired sufficiency all failed scientifically; job `3345280` preserved exact structure/validity/memory but failed scaled operation fidelity in both arms; Stage 6 remains unauthorized; C8 and later work not begun |
 | GE1 C3 authoritative validation | Passed on Adroit CPU as job `3344235` at exact commit `a85ad3a23a6587cbedad8a6693b6117c1edfacc7` |
 | GE1 C4 validation | Passed on Adroit CPU at exact commit `e66cd089462c2e075b9ff742e157c21e4d9a2a6e`: 26/26 targeted and 85/85 complete-suite tests |
 | GE1 C4 review-fix revalidation | Passed as Adroit job `3344265` at exact commit `3a41abc81f68ef6d6450465e05b3544f07a08b83`: 2/2 new, 28/28 C4 encoder, and 88/88 complete-suite tests, all with zero skips |
@@ -31,10 +31,11 @@ specifications or new decision records.
 | GE1 C7-v2 execution | Job `3344981` at exact commit `e325d5ad97957c08da4a19b4261560e8a4a472a4` completed as a valid scientific failure: both tiny gates passed; scaled memory gates passed; flat failed 2/32 and typed graph failed 3/32 only on analytic complete validity; Stage 6 remained unauthorized and the repair path became procedurally next |
 | GE1 C7-v2 preflight attempt | Job `3344975` at exact commit `99a4587d73e82a5df5f12a54130b105ae264b419` failed in the sequential regression loader before manifest or payload access; no scientific execution or artifact occurred |
 | GE1 operation-parameter diagnostic | Adroit job `3345013` at exact diagnostic commit `802ae1d1e9deb3c7a6c428d320e4276a8b5e7e57` completed read-only: all five failures were active negative extrusion/revolve magnitudes; no training, repair, checkpoint write, protected-partition access, or C7-v2 mutation occurred |
-| GE1 prospective magnitude repair | Accepted ADR-0009 supersedes only the earlier hierarchical repair authorization; `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` is implemented for exact-commit engineering validation, while scientific training and Stage 6 remain unauthorized |
+| GE1 prospective magnitude repair | Accepted ADR-0009 superseded only the earlier hierarchical repair authorization; `GE1-OPERATION-MAGNITUDE-POSITIVE-v1` passed engineering validation and was exercised by finalized repaired-sufficiency job `3345280`, while Stage 6 remains unauthorized |
 | GE1 magnitude-repair validation | Passed as Adroit CPU job `3345044` at exact commit `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`: 13/13 focused and 292/292 complete graph-encoder tests with zero skips, all regressions and repository gates, and zero corpus/training/kernel access |
-| GE1 repaired sufficiency protocol | Accepted [ADR-0010](decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) freezes `GE1-C7-REPAIRED-SUFFICIENCY-v1` and its strict operation-geometry fidelity gate; no repaired model has been trained and scientific execution remains unauthorized |
-| GE1 repaired sufficiency implementation | Passed authoritative Adroit CPU validation as job `3345161` at exact commit `6b62cab90ea8f693cde41c2abf0a261024057d45`: 32/32 focused and 324/324 complete graph-encoder tests with zero skips, every regression/repository gate, and zero manifest/corpus/scientific access; the scientific runner remains unsubmitted |
+| GE1 repaired sufficiency protocol | Accepted [ADR-0010](decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) froze `GE1-C7-REPAIRED-SUFFICIENCY-v1`; authoritative job `3345280` completed with both tiny arms passing, both scaled exact and memory gates passing, both scaled operation-fidelity gates failing, and Stage 6 unauthorized |
+| GE1 repaired sufficiency implementation | Passed authoritative Adroit CPU validation as job `3345161` at exact commit `6b62cab90ea8f693cde41c2abf0a261024057d45`: 32/32 focused and 324/324 complete graph-encoder tests with zero skips, every regression/repository gate, and zero manifest/corpus/scientific access; subsequent scientific job `3345280` is recorded separately above |
+| GE1 repaired representation probe | Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md) and its [diagnostic contract](specifications/ge1_repaired_representation_probe.md) authorize implementation, synthetic validation, an unsubmitted runner, and local bundle preparation only; checkpoint loading, corpus access, execution, repair, Stage 6, C8, pushing, and protected access remain unauthorized |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -396,6 +397,28 @@ opened or performed. The [validation record](experiments/ge1_repaired_sufficienc
 preserves the evidence and reviewer clarification. This completes
 implementation validation and makes the protocol eligible for a separate
 execution authorization; it does not itself authorize submission or training.
+
+The separately authorized repaired-sufficiency execution then completed on
+Adroit as job `3345280` from exact clean commit
+`705eb820f7a15d64fe650df7350b1553b2bc8172`. Both tiny arms passed exactness
+and operation fidelity before scaled access. On the 32-family scaled train
+cohort, both arms passed exact node, graph, applicable dependency, strict-
+conversion, analytic-validity, and memory-use gates. Flat passed 18/32
+extrusions and 9/16 revolves under the strict operation-fidelity thresholds;
+typed graph passed 17/32 and 4/16. The completed artifact therefore records a
+valid scientific failure, `comparison_inconclusive=false`, and
+`stage6_authorized_by_repaired_sufficiency=false`. Development, RR, ER, IID,
+history-depth, geometry-extrapolation, and other corpora remained unopened;
+no CAD kernel, Stage 6, C8, or additional repair was used.
+
+Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md)
+and its [representation-probe contract](specifications/ge1_repaired_representation_probe.md)
+ask whether magnitude-class information remains accessible in the immutable
+decoder states or encoder memories. Krishay Maskara accepted both records on
+August 12, 2026. Implementation, synthetic corpus-free testing, an unsubmitted
+runner, and local bundle preparation are authorized; checkpoint loading,
+corpus access, probe execution, Slurm submission, and any repair remain
+blocked.
 
 ## Documentation and artifact maintenance
 

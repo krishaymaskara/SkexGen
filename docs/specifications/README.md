@@ -24,6 +24,8 @@ succeeded.
   contract](ge1_c7_v2_operation_parameter_diagnostic.md)
 - [GE1 repaired train-sufficiency execution
   contract](ge1_repaired_sufficiency_execution_contract.md)
+- [GE1 repaired-checkpoint representation-probe
+  contract](ge1_repaired_representation_probe.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -38,5 +40,9 @@ awaiting a decision. When its current-state language differs from the
   a preregistered 2-by-2 plane-category/profile-category diagnostic over the
   immutable recovered bundle and completed constraint-manifold replay.
 - [GE1 C7-v2 operation-parameter diagnostic](ge1_c7_v2_operation_parameter_diagnostic.md):
-  a read-only, train-only scalar and conversion trace over the immutable
-  scaled checkpoints from job `3344981`; authoritative execution is pending.
+  a completed read-only, train-only scalar and conversion trace over the
+  immutable scaled checkpoints from job `3344981`.
+- [GE1 repaired-checkpoint representation probe](ge1_repaired_representation_probe.md):
+  an accepted detached-feature diagnostic over the immutable scaled epoch-200
+  checkpoints from job `3345280`; implementation is authorized but scientific
+  execution remains separately unauthorized.

@@ -72,6 +72,16 @@ the immediate next action changes.
   contract](specifications/ge1_c7_v2_operation_parameter_diagnostic.md) —
   read-only train-only diagnosis of the five scaled analytic operation-
   parameter failures, with CAD-kernel outcomes explicitly unavailable.
+- [ADR-0011: GE1 repaired-checkpoint representation
+  probe](decisions/ADR-0011-ge1-repaired-representation-probe.md) — accepted
+  governance record for a detached-feature, train-only diagnostic of scalar,
+  decoder-state, and encoder-memory magnitude accessibility; scientific
+  execution remains separately unauthorized.
+- [GE1 repaired-checkpoint representation-probe
+  contract](specifications/ge1_repaired_representation_probe.md) — accepted
+  feature, split, probe, permutation-control, loss-audit, provenance, and
+  non-authorization contract over immutable repaired-sufficiency job
+  `3345280`.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
