@@ -101,6 +101,22 @@ from .repaired_sufficiency import (
     repaired_training_arithmetic,
     verify_repaired_artifact,
 )
+from .representation_probe import (
+    PROBE_ARTIFACT_VERSION,
+    PROBE_FEATURE_VERSION,
+    PROBE_LABEL_VERSION,
+    PROBE_PROTOCOL_VERSION,
+    PROBE_RESULT_VERSION,
+    RepresentationProbeAccessTracker,
+    accessibility_decision,
+    classification_metrics,
+    fit_monotonic_thresholds,
+    geometry_loss_audit,
+    nearest_grid_predictions,
+    permute_family_label_blocks,
+    probe_contract,
+    verify_probe_artifact,
+)
 
 __all__ = (
     "GE1Config",
@@ -181,6 +197,20 @@ __all__ = (
     "overall_repaired_sufficiency_decision",
     "repaired_training_arithmetic",
     "verify_repaired_artifact",
+    "PROBE_ARTIFACT_VERSION",
+    "PROBE_FEATURE_VERSION",
+    "PROBE_LABEL_VERSION",
+    "PROBE_PROTOCOL_VERSION",
+    "PROBE_RESULT_VERSION",
+    "RepresentationProbeAccessTracker",
+    "accessibility_decision",
+    "classification_metrics",
+    "fit_monotonic_thresholds",
+    "geometry_loss_audit",
+    "nearest_grid_predictions",
+    "permute_family_label_blocks",
+    "probe_contract",
+    "verify_probe_artifact",
 )
 
 try:

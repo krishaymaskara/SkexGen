@@ -43,6 +43,7 @@ awaiting a decision. When its current-state language differs from the
   a completed read-only, train-only scalar and conversion trace over the
   immutable scaled checkpoints from job `3344981`.
 - [GE1 repaired-checkpoint representation probe](ge1_repaired_representation_probe.md):
-  an accepted detached-feature diagnostic over the immutable scaled epoch-200
-  checkpoints from job `3345280`; implementation is authorized but scientific
-  execution remains separately unauthorized.
+  an accepted and implemented detached-feature diagnostic over the immutable
+  scaled epoch-200 checkpoints from job `3345280`; synthetic validation and an
+  unsubmitted runner are present, while scientific execution remains
+  separately unauthorized.

@@ -1216,6 +1216,50 @@ hashes, source, arm, seed, epoch, and role without duplicating that protocol
 field in the generic checkpoint schema. Implementation validation is complete;
 scientific execution remains separately unauthorized.
 
+## Repaired-checkpoint representation probe
+
+`representation_probe.py` implements accepted ADR-0011 under the separate
+identity `GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1`. It is a read-only
+diagnostic of immutable repaired-sufficiency job `3345280`, not a new GE1
+training run and not a revision of that result. The source artifact, its four
+scaled recovery/inference checkpoints, the exact 32-family train cohort, and
+their direct hashes are frozen in the module and verified before inference.
+
+Feature extraction accepts only target-free autonomous inputs. For each
+autonomously predicted operation it records the positive-mapped scalar, its
+active raw head logit, the 32-value pre-head decoder state, and the flattened
+2-by-16 continuous encoder memory plus autonomous type/slot one-hot context.
+It adds no chronological or absolute-position input to the typed graph
+encoder. Stable source node, graph, dependency, conversion, analytic-validity,
+and operation-fidelity evidence must reproduce exactly before the candidate
+features are written. The target-free `detached_features.pt` is written and
+hashed, all GE1 models and checkpoint payloads are released, and only then is
+the separate magnitude-class label file created.
+
+The scalar path includes nearest-grid scoring, a dynamic-programming monotonic
+resubstitution ceiling with deterministic ties and empty intervals, and
+physical-family LOFO recalibration. C/D probes use family-grouped nested LOFO,
+train-fold-only standardization, the frozen float64 L-BFGS multinomial linear
+model, and the fixed width-eight tanh MLP. All 16 arm/type/feature/model
+pipelines rerun 100 deterministic label-block permutations. Result records
+apply the preregistered accessibility and material-scalar-margin rules and
+also include the analytic Smooth-L1 channel-weight audit. No finding grants
+Stage 6, C8, protected access, or repair authority.
+
+`tests/test_representation_probe_contract.py` covers the pure protocol,
+threshold, permutation, loss-audit, target-isolation, and source-access rules.
+`tests/test_representation_probe_runtime.py` provides real-PyTorch synthetic
+coverage for feature shapes, unchanged GE1 state, target rejection,
+train-only preprocessing, deterministic disposable probes, parameter counts,
+and target-free serialization. The prepared
+`adroit/ge1_representation_probe_cpu.slurm` reruns those tests, the complete
+graph-encoder suite, all repository regressions, documentation, compilation,
+Python-3.8 grammar, import/export, protected-access, frozen-source, Bash, and
+clean-tree gates before it can touch the source artifact or corpus. ADR-0011
+acceptance authorizes preparation of this runner and an exact-commit bundle;
+it does not authorize runner submission, checkpoint loading, corpus access,
+or probe execution.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

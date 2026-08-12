@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; formal C7-v1 remains a scientific gate failure; optimization diagnostic job `3344907` supports undertraining in both arms; C7-v2 job `3344981` completed as a scaled exact-sufficiency failure; diagnostic job `3345013` isolated negative operation magnitudes; the ADR-0009 prospective repair passed engineering validation as job `3345044`; accepted ADR-0010 freezes a separately versioned repaired sufficiency protocol with an operation-geometry fidelity gate; its implementation passed authoritative corpus-free engineering validation as job `3345161`, its scientific runner remains unsubmitted, and scientific execution remains unauthorized; Stage 6 is blocked; C8 and later work not begun |
+| Status | Accepted protocol; C0-C6 complete; C7-v1 and C7-v2 failed scientifically; the positive-magnitude repair passed engineering validation; accepted ADR-0010 repaired sufficiency completed as immutable job `3345280` with exact structure/validity/memory but failed operation fidelity in both arms; accepted ADR-0011's detached representation probe is implemented with corpus-free synthetic tests and an unsubmitted runner, but probe execution is separately unauthorized; Stage 6 remains blocked and C8 is not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -909,6 +909,36 @@ evidence.
   shared decoder cannot pass the 32-family sufficiency gate, or governance and
   partition rules are not satisfied. Do not interpret this as evidence
   against graph representations.
+
+## Accepted post-C7 repaired representation probe
+
+The core stage sequence remains blocked because repaired-sufficiency job
+`3345280` failed the frozen scaled operation-fidelity gates in both arms.
+Accepted [ADR-0011](../decisions/ADR-0011-ge1-repaired-representation-probe.md)
+therefore governs a separate, train-only read-only diagnostic over those
+immutable epoch-200 checkpoints. It asks whether the controlled five-class
+extrusion and revolve magnitudes remain accessible in the autonomous
+pre-scalar decoder state or encoder memory.
+
+The implementation lives in `prototype/graph_encoder/representation_probe.py`
+and is separately identified as
+`GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1`. It freezes the source artifact and
+checkpoint hashes, exact 32-family scaled train cohort, target-free A-D
+feature boundary, physical-family LOFO splits, scalar recalibration, nested
+linear probes, fixed MLP probes, 100 family-block label permutations,
+interpretation rules, geometry-loss audit, minimal artifact, and explicit
+non-authorization declarations. Its feature file is written and hashed before
+labels are joined and after exact source-result reproduction; all GE1 model
+objects are released before disposable probe fitting.
+
+Pure and real-PyTorch synthetic test modules and an exact-commit Adroit CPU
+runner are prepared. The runner performs every preflight before binding the
+source artifact or corpus for scientific access. This implementation does not
+open a manifest, payload, or checkpoint locally, and it does not modify the
+repaired result. ADR-0011 acceptance authorizes implementation validation and
+bundle preparation only. Slurm submission, probe execution, a categorical
+head, loss reweighting, another repair, Stage 6, C8, and protected-partition
+access require separate authorization.
 
 ## Scope exclusions
 

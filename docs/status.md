@@ -10,7 +10,7 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | Repaired-sufficiency job `3345280` completed at exact source commit `705eb820f7a15d64fe650df7350b1553b2bc8172` as a valid train-only scientific failure; accepted ADR-0011 authorizes representation-probe implementation and synthetic validation only |
+| Current reviewed revision | Repaired-sufficiency job `3345280` remains an immutable valid train-only scientific failure; ADR-0011 is accepted and its representation-probe implementation, synthetic tests, and unsubmitted exact-commit CPU runner are present, while scientific execution remains unauthorized |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
@@ -35,7 +35,7 @@ specifications or new decision records.
 | GE1 magnitude-repair validation | Passed as Adroit CPU job `3345044` at exact commit `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc`: 13/13 focused and 292/292 complete graph-encoder tests with zero skips, all regressions and repository gates, and zero corpus/training/kernel access |
 | GE1 repaired sufficiency protocol | Accepted [ADR-0010](decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) froze `GE1-C7-REPAIRED-SUFFICIENCY-v1`; authoritative job `3345280` completed with both tiny arms passing, both scaled exact and memory gates passing, both scaled operation-fidelity gates failing, and Stage 6 unauthorized |
 | GE1 repaired sufficiency implementation | Passed authoritative Adroit CPU validation as job `3345161` at exact commit `6b62cab90ea8f693cde41c2abf0a261024057d45`: 32/32 focused and 324/324 complete graph-encoder tests with zero skips, every regression/repository gate, and zero manifest/corpus/scientific access; subsequent scientific job `3345280` is recorded separately above |
-| GE1 repaired representation probe | Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md) and its [diagnostic contract](specifications/ge1_repaired_representation_probe.md) authorize implementation, synthetic validation, an unsubmitted runner, and local bundle preparation only; checkpoint loading, corpus access, execution, repair, Stage 6, C8, pushing, and protected access remain unauthorized |
+| GE1 repaired representation probe | Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md) is implemented as `GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1` with pure and real-PyTorch synthetic tests plus an unsubmitted exact-commit CPU runner; local validation is corpus-free and real-PyTorch cases remain for authoritative Adroit preflight; checkpoint loading, corpus access, execution, repair, Stage 6, C8, pushing, and protected access remain unauthorized |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -415,10 +415,13 @@ Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md)
 and its [representation-probe contract](specifications/ge1_repaired_representation_probe.md)
 ask whether magnitude-class information remains accessible in the immutable
 decoder states or encoder memories. Krishay Maskara accepted both records on
-August 12, 2026. Implementation, synthetic corpus-free testing, an unsubmitted
-runner, and local bundle preparation are authorized; checkpoint loading,
-corpus access, probe execution, Slurm submission, and any repair remain
-blocked.
+August 12, 2026. The additive implementation, pure synthetic contract suite,
+real-PyTorch synthetic suite, and unsubmitted CPU runner are now present. The
+local environment has no PyTorch, so the runtime cases are intentionally
+reported as local skips and must execute with zero skips in the runner's
+Adroit preflight. No local corpus, source checkpoint, or repaired artifact was
+opened. Bundle preparation is authorized; checkpoint loading, corpus access,
+probe execution, Slurm submission, and any repair remain blocked.
 
 ## Documentation and artifact maintenance
 
