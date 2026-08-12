@@ -53,6 +53,21 @@ class RepresentationProbeContractTests(unittest.TestCase):
         self.assertEqual(probe.REGULARIZATION_GRID, (1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0))
         self.assertEqual(probe.PERMUTATION_COUNT, 100)
 
+    def test_D_uses_prequant_while_decoder_receives_memory(self):
+        contract = probe.probe_contract()["features"]
+        self.assertIn("prequant", contract["D"])
+        self.assertEqual(
+            contract["decoder_facing_memory"],
+            "2x32_from_codebook_prequant_used_only_by_shared_decoder",
+        )
+        source = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("decoder_memory = encoded.memory.detach()", source)
+        self.assertIn("continuous_bottleneck = encoded.prequant.detach()", source)
+        self.assertIn("model.decoder(\n                    memory,", source)
+        self.assertIn(
+            "d_feature = prequant_values + type_one_hot + slot_one_hot", source
+        )
+
     def test_nearest_grid_tie_chooses_smaller_magnitude(self):
         self.assertEqual(probe.nearest_grid_predictions((0.75,), "extrude"), (0,))
         self.assertEqual(probe.nearest_grid_predictions((67.5,), "revolve"), (0,))
@@ -200,6 +215,8 @@ def _per_example_smooth_l1(a, b):
         self.assertNotIn("sbatch ", source)
         self.assertIn("ge1_representation_probe_cpu.slurm", str(RUNNER))
         self.assertIn("GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1", source)
+        self.assertIn('"PROBE_FEATURE_VERSION" in package.__all__', source)
+        self.assertNotIn("probe.PROBE_FEATURE_VERSION in package.__all__", source)
 
 
 if __name__ == "__main__":

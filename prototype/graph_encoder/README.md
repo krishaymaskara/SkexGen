@@ -1228,13 +1228,17 @@ their direct hashes are frozen in the module and verified before inference.
 Feature extraction accepts only target-free autonomous inputs. For each
 autonomously predicted operation it records the positive-mapped scalar, its
 active raw head logit, the 32-value pre-head decoder state, and the flattened
-2-by-16 continuous encoder memory plus autonomous type/slot one-hot context.
-It adds no chronological or absolute-position input to the typed graph
-encoder. Stable source node, graph, dependency, conversion, analytic-validity,
-and operation-fidelity evidence must reproduce exactly before the candidate
-features are written. The target-free `detached_features.pt` is written and
-hashed, all GE1 models and checkpoint payloads are released, and only then is
-the separate magnitude-class label file created.
+2-by-16 continuous `encoded.prequant` bottleneck plus autonomous type/slot
+one-hot context. This bottleneck is the output of `to_codebook` immediately
+before `from_codebook`. The distinct decoder-facing `encoded.memory` is the
+2-by-32 output of `from_codebook(prequant)` and remains the only tensor passed
+to the shared decoder; it is not part of D. The probe adds no chronological or
+absolute-position input to the typed graph encoder. Stable source node, graph,
+dependency, conversion, analytic-validity, and operation-fidelity evidence
+must reproduce exactly before the candidate features are written. The
+target-free `detached_features.pt` is written and hashed, all GE1 models and
+checkpoint payloads are released, and only then is the separate
+magnitude-class label file created.
 
 The scalar path includes nearest-grid scoring, a dynamic-programming monotonic
 resubstitution ceiling with deterministic ties and empty intervals, and
@@ -1259,6 +1263,16 @@ clean-tree gates before it can touch the source artifact or corpus. ADR-0011
 acceptance authorizes preparation of this runner and an exact-commit bundle;
 it does not authorize runner submission, checkpoint loading, corpus access,
 or probe execution.
+
+The first authoritative-environment preflight, Adroit job `3346476` at exact
+commit `4baf596812471ca76a15b09df89ce38d0a4bf30c`, stopped in the focused
+real-PyTorch suite because the extractor incorrectly treated the 2-by-32
+decoder-facing memory as the frozen 2-by-16 D input. It passed all 17 pure
+tests and six of seven runtime tests before that implementation failure. It
+opened no source artifact, checkpoint, manifest, corpus, or protected
+partition; executed no scientific probe or training; and produced no
+artifact. The correction keeps memory on the decoder path and derives D from
+the detached prequant bottleneck.
 
 ## Manifest authority and access order
 

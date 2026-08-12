@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 import tempfile
+from unittest import mock
 import unittest
 
 from prototype.graph_encoder.tests.fixtures import procedural_fixture
@@ -44,15 +45,64 @@ class RepresentationProbeRuntimeTests(unittest.TestCase):
             before = {
                 name: value.detach().clone() for name, value in model.state_dict().items()
             }
-            rows, autonomous = extract_target_free_features(
-                model, (autonomous_input,), arm=arm
+            model.eval()
+            with torch.no_grad():
+                encoded = model.encode(autonomous_input.encoder_input)
+                expected_memory = encoded.memory.detach().clone()
+                expected_prequant = encoded.prequant.detach().clone()
+            self.assertEqual(
+                tuple(expected_memory.shape),
+                (len(examples), 2, 32),
             )
+            self.assertEqual(
+                tuple(expected_prequant.shape),
+                (len(examples), 2, 16),
+            )
+            with mock.patch.object(
+                model.decoder, "forward", wraps=model.decoder.forward
+            ) as decoder_forward:
+                rows, autonomous = extract_target_free_features(
+                    model, (autonomous_input,), arm=arm
+                )
+            self.assertEqual(decoder_forward.call_count, len(examples))
+            for index, call in enumerate(decoder_forward.call_args_list):
+                supplied = call.args[0]
+                self.assertEqual(tuple(supplied.shape), (1, 2, 32))
+                self.assertTrue(torch.equal(
+                    supplied, expected_memory[index:index + 1]
+                ))
+                self.assertNotEqual(
+                    tuple(supplied.shape),
+                    tuple(expected_prequant[index:index + 1].shape),
+                )
             self.assertEqual(len(rows), 6)
             self.assertEqual(len(autonomous.conditions), 1)
             self.assertEqual(autonomous.conditions[0].condition, "P_true")
+            family_index = {
+                family_id: index
+                for index, family_id in enumerate(autonomous_input.family_ids)
+            }
             for row in rows:
                 self.assertEqual(len(row["C"]), 32)
                 self.assertEqual(len(row["D"]), 36)
+                expected_prefix = tuple(
+                    float(item)
+                    for item in expected_prequant[
+                        family_index[row["family_id"]]
+                    ].cpu().reshape(-1)
+                )
+                self.assertEqual(tuple(row["D"][:32]), expected_prefix)
+                expected_type = (
+                    (1.0, 0.0)
+                    if row["operation_type"] == "extrude"
+                    else (0.0, 1.0)
+                )
+                expected_slot = (
+                    (1.0, 0.0)
+                    if row["operation_index"] == 0
+                    else (0.0, 1.0)
+                )
+                self.assertEqual(tuple(row["D"][32:]), expected_type + expected_slot)
                 self.assertGreater(row["A_normalized"], 0.0)
                 self.assertLessEqual(row["A_normalized"], 1.0)
                 self.assertIn(row["operation_type"], ("extrude", "revolve"))

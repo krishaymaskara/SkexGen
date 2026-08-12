@@ -286,10 +286,13 @@ def probe_contract():
             "B": "active_remaining_geometry_head_logit",
             "C": "pre_head_shared_decoder_state",
             "D": (
-                "flattened_2x16_continuous_memory_plus_predicted_type_and_"
+                "flattened_2x16_continuous_prequant_bottleneck_plus_predicted_type_and_"
                 "canonical_slot_one_hot"
             ),
             "dimensions": dict(FEATURE_DIMENSIONS),
+            "decoder_facing_memory": (
+                "2x32_from_codebook_prequant_used_only_by_shared_decoder"
+            ),
         },
         "linear": {
             "regularization_grid": list(REGULARIZATION_GRID),
@@ -1548,16 +1551,35 @@ def extract_target_free_features(model, input_batches, *, arm):
             start = time.perf_counter()
             encoded = model.encode(batch.encoder_input)
             encoding_seconds += time.perf_counter() - start
+            expected_memory_shape = (
+                len(batch.family_ids),
+                model.config.latent_tokens,
+                model.config.model_dim,
+            )
+            expected_prequant_shape = (
+                len(batch.family_ids),
+                model.config.latent_tokens,
+                model.config.bottleneck_dim,
+            )
             if (
-                tuple(encoded.memory.shape[1:]) != (2, 16)
-                or encoded.memory.size(0) != len(batch.family_ids)
+                tuple(encoded.memory.shape) != expected_memory_shape
             ):
                 raise GraphEncoderError(
-                    "probe_memory_shape_mismatch", "encoder memory must be [B,2,16]"
+                    "probe_memory_shape_mismatch",
+                    "decoder-facing memory shape differs from [B,latent_tokens,model_dim]",
                 )
+            if tuple(encoded.prequant.shape) != expected_prequant_shape:
+                raise GraphEncoderError(
+                    "probe_prequant_shape_mismatch",
+                    "continuous bottleneck shape differs from "
+                    "[B,latent_tokens,bottleneck_dim]",
+                )
+            decoder_memory = encoded.memory.detach()
+            continuous_bottleneck = encoded.prequant.detach()
             membership.append((batch.batch_identity, batch.family_ids))
             for index, family_id in enumerate(batch.family_ids):
-                memory = encoded.memory[index:index + 1].detach().clone()
+                memory = decoder_memory[index:index + 1].clone()
+                prequant = continuous_bottleneck[index:index + 1].clone()
                 decode_start = time.perf_counter()
                 output = model.decoder(
                     memory,
@@ -1593,10 +1615,13 @@ def extract_target_free_features(model, input_batches, *, arm):
                         "invalid_autonomous_operation_count",
                         "controlled prediction must contain one or two operations",
                     )
-                memory_values = tuple(float(item) for item in memory.cpu().reshape(-1))
-                if len(memory_values) != 32:
+                prequant_values = tuple(
+                    float(item) for item in prequant.cpu().reshape(-1)
+                )
+                if len(prequant_values) != 32:
                     raise GraphEncoderError(
-                        "probe_memory_shape_mismatch", "flattened memory must have 32 values"
+                        "probe_prequant_shape_mismatch",
+                        "flattened continuous bottleneck must have 32 values",
                     )
                 for operation_index, node_index in enumerate(operation_nodes):
                     node = constrained.node_prediction.raw_nodes[node_index]
@@ -1617,7 +1642,7 @@ def extract_target_free_features(model, input_batches, *, arm):
                     normalized = float(node.normalized_geometry[channel])
                     physical = normalized * float(GEOMETRY_CHANNEL_SCALES[channel])
                     hidden = tuple(float(item) for item in states[0, node_index])
-                    d_feature = memory_values + type_one_hot + slot_one_hot
+                    d_feature = prequant_values + type_one_hot + slot_one_hot
                     if len(hidden) != 32 or len(d_feature) != 36:
                         raise GraphEncoderError(
                             "probe_feature_shape_mismatch", "C or D dimension differs"

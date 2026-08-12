@@ -137,18 +137,22 @@ emitted operation node immediately before `remaining_geometry_head`. Do not
 record a target-position state, a teacher-forced state, or a state selected by
 target operation type.
 
-### D. Encoder memory with autonomous query context
+### D. Continuous encoder bottleneck with autonomous query context
 
-Flatten the continuous encoder memory of shape `[2, 16]` in latent-token-major
-order to 32 values. Concatenate a two-element one-hot autonomously predicted
-operation type and a two-element one-hot canonical operation slot (`0` or
-`1`), yielding 36 values. Local tensor indices and graph offsets remain
+Flatten `encoded.prequant`, the continuous encoder bottleneck immediately
+after `to_codebook` and before `from_codebook`, in latent-token-major order.
+Its frozen shape is `[2, 16]`, so flattening yields 32 values. Concatenate a
+two-element one-hot autonomously predicted operation type and a two-element
+one-hot canonical operation slot (`0` or `1`), yielding 36 values. The
+separate decoder-facing `encoded.memory` is `from_codebook(prequant)`, has
+shape `[2, 32]`, and remains the only tensor passed into the shared decoder;
+it is not flattened into D. Local tensor indices and graph offsets remain
 bookkeeping; no chronological or absolute-position input is added to the
 typed-graph encoder.
 
-The two-by-sixteen interface is a continuous 32-value representation. It must
-not be described as an eight-bit channel, and the diagnostic assigns no
-independent-bit requirement to any program.
+The two-by-sixteen prequant bottleneck is a continuous 32-value
+representation. It must not be described as an eight-bit channel, and the
+diagnostic assigns no independent-bit requirement to any program.
 
 ## Scalar analyses
 
@@ -201,7 +205,7 @@ Fit two separate five-class multinomial softmax regressions per arm and
 operation type:
 
 - C-linear: decoder state only; and
-- D-linear: encoder memory plus autonomous type/slot only.
+- D-linear: continuous prequant bottleneck plus autonomous type/slot only.
 
 The objective is mean cross-entropy plus
 `0.5 * lambda * ||W||_2^2`; the intercept is unpenalized. Fit in float64 on

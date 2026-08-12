@@ -219,6 +219,11 @@ the immediate next action changes.
   exact-commit, corpus-free engineering validation of the prospective positive
   operation-magnitude parameterization; no scientific rerun or Stage 6
   authorization.
+- [GE1 representation-probe preflight attempt
+  3346476](experiments/ge1_representation_probe_preflight_attempt_3346476.md)
+  — focused real-PyTorch implementation failure caused by conflating the
+  two-by-sixteen prequant bottleneck with two-by-thirty-two decoder memory;
+  zero artifact, checkpoint, manifest, payload, or scientific-probe access.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

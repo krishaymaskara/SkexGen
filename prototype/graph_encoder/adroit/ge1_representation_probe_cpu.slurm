@@ -235,7 +235,7 @@ import prototype.graph_encoder.representation_probe as probe
 assert probe.PROBE_PROTOCOL_VERSION == (
     "GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1"
 )
-assert probe.PROBE_FEATURE_VERSION in package.__all__
+assert "PROBE_FEATURE_VERSION" in package.__all__
 print("REPRESENTATION_PROBE_IMPORT_EXPORT_AUDIT=PASS", flush=True)
 PY
 git diff --quiet "$GOVERNANCE_COMMIT" "$EXPECTED_COMMIT" -- \

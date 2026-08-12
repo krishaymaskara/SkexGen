@@ -918,7 +918,7 @@ Accepted [ADR-0011](../decisions/ADR-0011-ge1-repaired-representation-probe.md)
 therefore governs a separate, train-only read-only diagnostic over those
 immutable epoch-200 checkpoints. It asks whether the controlled five-class
 extrusion and revolve magnitudes remain accessible in the autonomous
-pre-scalar decoder state or encoder memory.
+pre-scalar decoder state or continuous encoder bottleneck.
 
 The implementation lives in `prototype/graph_encoder/representation_probe.py`
 and is separately identified as
@@ -930,6 +930,13 @@ interpretation rules, geometry-loss audit, minimal artifact, and explicit
 non-authorization declarations. Its feature file is written and hashed before
 labels are joined and after exact source-result reproduction; all GE1 model
 objects are released before disposable probe fitting.
+
+Feature D specifically flattens the position-free `encoded.prequant`
+bottleneck of shape `[B, 2, 16]` and appends autonomous predicted-type and
+canonical-slot one-hots. The distinct `encoded.memory` tensor is
+`from_codebook(prequant)`, has shape `[B, 2, 32]`, and continues to serve only
+as the shared decoder input. This terminology correction preserves D's frozen
+36-value dimension and every statistical, access, and interpretation rule.
 
 Pure and real-PyTorch synthetic test modules and an exact-commit Adroit CPU
 runner are prepared. The runner performs every preflight before binding the

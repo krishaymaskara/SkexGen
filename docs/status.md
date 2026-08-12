@@ -36,6 +36,7 @@ specifications or new decision records.
 | GE1 repaired sufficiency protocol | Accepted [ADR-0010](decisions/ADR-0010-ge1-repaired-train-sufficiency-protocol.md) froze `GE1-C7-REPAIRED-SUFFICIENCY-v1`; authoritative job `3345280` completed with both tiny arms passing, both scaled exact and memory gates passing, both scaled operation-fidelity gates failing, and Stage 6 unauthorized |
 | GE1 repaired sufficiency implementation | Passed authoritative Adroit CPU validation as job `3345161` at exact commit `6b62cab90ea8f693cde41c2abf0a261024057d45`: 32/32 focused and 324/324 complete graph-encoder tests with zero skips, every regression/repository gate, and zero manifest/corpus/scientific access; subsequent scientific job `3345280` is recorded separately above |
 | GE1 repaired representation probe | Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md) is implemented as `GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1` with pure and real-PyTorch synthetic tests plus an unsubmitted exact-commit CPU runner; local validation is corpus-free and real-PyTorch cases remain for authoritative Adroit preflight; checkpoint loading, corpus access, execution, repair, Stage 6, C8, pushing, and protected access remain unauthorized |
+| GE1 representation-probe preflight attempt | Adroit job `3346476` at exact commit `4baf596812471ca76a15b09df89ce38d0a4bf30c` failed after 17/17 pure and 6/7 real-PyTorch focused tests because the extractor conflated the `[B,2,32]` decoder memory with the frozen `[B,2,16]` prequant probe bottleneck; no source artifact, checkpoint, manifest, payload, scientific probe, training, or later-stage work was accessed or performed, and no artifact exists |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -414,14 +415,17 @@ no CAD kernel, Stage 6, C8, or additional repair was used.
 Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md)
 and its [representation-probe contract](specifications/ge1_repaired_representation_probe.md)
 ask whether magnitude-class information remains accessible in the immutable
-decoder states or encoder memories. Krishay Maskara accepted both records on
-August 12, 2026. The additive implementation, pure synthetic contract suite,
-real-PyTorch synthetic suite, and unsubmitted CPU runner are now present. The
-local environment has no PyTorch, so the runtime cases are intentionally
-reported as local skips and must execute with zero skips in the runner's
-Adroit preflight. No local corpus, source checkpoint, or repaired artifact was
-opened. Bundle preparation is authorized; checkpoint loading, corpus access,
-probe execution, Slurm submission, and any repair remain blocked.
+decoder states or continuous encoder bottlenecks. Krishay Maskara accepted
+both records on August 12, 2026. Feature D uses the detached `[B,2,16]`
+`encoded.prequant` bottleneck; the separate `[B,2,32]` `encoded.memory`
+continues unchanged into the shared decoder. The first Adroit preflight, job
+`3346476`, exposed and stopped on the earlier shape conflation before any
+artifact or data access. The additive implementation, pure synthetic contract
+suite, real-PyTorch synthetic suite, and unsubmitted CPU runner remain the
+only authorized scope. No local corpus, source checkpoint, or repaired
+artifact was opened. Bundle preparation is authorized; checkpoint loading,
+corpus access, probe execution, Slurm submission, and any repair remain
+blocked.
 
 ## Documentation and artifact maintenance
 
