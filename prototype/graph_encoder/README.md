@@ -1274,6 +1274,25 @@ partition; executed no scientific probe or training; and produced no
 artifact. The correction keeps memory on the decoder path and derives D from
 the detached prequant bottleneck.
 
+### Preserved-feature representation screen
+
+`representation_screening.py` implements the separately identified
+`GE1-C7-REPAIRED-REPRESENTATION-SCREEN-v1` contract. It reads only the three
+exact hashed files preserved from timed-out job `3346513`, validates their 96
+target-free feature rows and 48 labels, and calls production
+`fit_probe_pipeline` exactly 16 times across arm, operation type, C/D, and
+linear/MLP combinations. It supplies no reduced optimization setting and
+never calls permutation, scalar, feature-extraction, inference, corpus,
+checkpoint, or model paths.
+
+Each pipeline receives `candidate_for_full_controls` only when both
+family-LOFO accuracy and balanced accuracy are at least 0.40. The five-file
+artifact records that permutation significance is unavailable, ADR-0011
+remains incomplete, and no formal representation claim, repair, Stage 6, or
+C8 is authorized. The prepared one-hour CPU runner mounts the preserved
+directory read-only only after all preflights and mounts no corpus, manifest,
+source repaired artifact, or checkpoint.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

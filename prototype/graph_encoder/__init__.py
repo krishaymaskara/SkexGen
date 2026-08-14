@@ -117,6 +117,14 @@ from .representation_probe import (
     probe_contract,
     verify_probe_artifact,
 )
+from .representation_screening import (
+    SCREEN_ARTIFACT_VERSION,
+    SCREEN_PROTOCOL_VERSION,
+    SCREEN_RESULT_VERSION,
+    candidate_for_full_controls,
+    screen_contract,
+    verify_screening_artifact,
+)
 
 __all__ = (
     "GE1Config",
@@ -211,6 +219,12 @@ __all__ = (
     "permute_family_label_blocks",
     "probe_contract",
     "verify_probe_artifact",
+    "SCREEN_ARTIFACT_VERSION",
+    "SCREEN_PROTOCOL_VERSION",
+    "SCREEN_RESULT_VERSION",
+    "candidate_for_full_controls",
+    "screen_contract",
+    "verify_screening_artifact",
 )
 
 try:

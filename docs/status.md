@@ -10,11 +10,11 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | Repaired-sufficiency job `3345280` remains an immutable valid train-only scientific failure; ADR-0011 is accepted and its representation-probe implementation, synthetic tests, and unsubmitted exact-commit CPU runner are present, while scientific execution remains unauthorized |
+| Current reviewed revision | Repaired-sufficiency job `3345280` remains an immutable valid train-only scientific failure; ADR-0011 probe job `3346513` timed out after preserving complete feature/label inputs, and the separately identified 16-pipeline representation screen is implemented with synthetic tests and an unsubmitted artifact-only runner; no screen execution, accessibility claim, repair, Stage 6, or C8 is authorized |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 12, 2026 |
+| Status recorded | August 14, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
@@ -37,6 +37,8 @@ specifications or new decision records.
 | GE1 repaired sufficiency implementation | Passed authoritative Adroit CPU validation as job `3345161` at exact commit `6b62cab90ea8f693cde41c2abf0a261024057d45`: 32/32 focused and 324/324 complete graph-encoder tests with zero skips, every regression/repository gate, and zero manifest/corpus/scientific access; subsequent scientific job `3345280` is recorded separately above |
 | GE1 repaired representation probe | Accepted [ADR-0011](decisions/ADR-0011-ge1-repaired-representation-probe.md) is implemented as `GE1-C7-REPAIRED-REPRESENTATION-PROBE-v1` with pure and real-PyTorch synthetic tests plus an unsubmitted exact-commit CPU runner; local validation is corpus-free and real-PyTorch cases remain for authoritative Adroit preflight; checkpoint loading, corpus access, execution, repair, Stage 6, C8, pushing, and protected access remain unauthorized |
 | GE1 representation-probe preflight attempt | Adroit job `3346476` at exact commit `4baf596812471ca76a15b09df89ce38d0a4bf30c` failed after 17/17 pure and 6/7 real-PyTorch focused tests because the extractor conflated the `[B,2,32]` decoder memory with the frozen `[B,2,16]` prequant probe bottleneck; no source artifact, checkpoint, manifest, payload, scientific probe, training, or later-stage work was accessed or performed, and no artifact exists |
+| GE1 representation-probe timeout | Job `3346513` at exact commit `3ea43650bb793d8d55b3d61a1edb70ec7a920089` timed out during its large workload; its three verified preserved files contain the complete 96-row target-free feature and 48-row label stage, but no finalized ADR-0011 result, significance analysis, or authority |
+| GE1 preserved-feature representation screen | `GE1-C7-REPAIRED-REPRESENTATION-SCREEN-v1` is implemented as a separate 16-pipeline non-permuted real-label screen with a one-hour artifact-only CPU runner; implementation validation and bundle preparation do not authorize submission, formal accessibility claims, repair, Stage 6, C8, corpus/checkpoint access, or relabeling job `3346513` |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -426,6 +428,14 @@ only authorized scope. No local corpus, source checkpoint, or repaired
 artifact was opened. Bundle preparation is authorized; checkpoint loading,
 corpus access, probe execution, Slurm submission, and any repair remain
 blocked.
+
+The subsequent ADR-0011 job `3346513` preserved the complete target-free
+feature and label stage but timed out before its permutation-controlled
+analysis finalized. It remains incomplete. The separate
+[representation-screening contract](specifications/ge1_repaired_representation_screen.md)
+uses only those three hashes and the existing 16 non-permuted real-label
+pipelines. Its descriptive 0.40/0.40 LOFO flag is not significance evidence
+and cannot authorize a repair or later stage.
 
 ## Documentation and artifact maintenance
 

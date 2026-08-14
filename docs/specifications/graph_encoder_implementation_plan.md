@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; C7-v1 and C7-v2 failed scientifically; the positive-magnitude repair passed engineering validation; accepted ADR-0010 repaired sufficiency completed as immutable job `3345280` with exact structure/validity/memory but failed operation fidelity in both arms; accepted ADR-0011's detached representation probe is implemented with corpus-free synthetic tests and an unsubmitted runner, but probe execution is separately unauthorized; Stage 6 remains blocked and C8 is not begun |
+| Status | Accepted protocol; C0-C6 complete; C7-v1 and C7-v2 failed scientifically; the positive-magnitude repair passed engineering validation; accepted ADR-0010 repaired sufficiency completed as immutable job `3345280` with exact structure/validity/memory but failed operation fidelity in both arms; accepted ADR-0011 probe job `3346513` timed out after preserving complete feature/label inputs; the separate 16-pipeline representation screen is implemented with corpus-free synthetic tests and an unsubmitted artifact-only runner, but screen execution is separately unauthorized; Stage 6 remains blocked and C8 is not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |
@@ -946,6 +946,18 @@ repaired result. ADR-0011 acceptance authorizes implementation validation and
 bundle preparation only. Slurm submission, probe execution, a categorical
 head, loss reweighting, another repair, Stage 6, C8, and protected-partition
 access require separate authorization.
+
+### Preliminary preserved-feature screen
+
+Timed-out representation-probe job `3346513` preserved a complete, hashed
+target-free feature and label stage but did not complete ADR-0011's
+permutation-controlled analysis. The separately identified
+[`GE1-C7-REPAIRED-REPRESENTATION-SCREEN-v1`](ge1_repaired_representation_screen.md)
+therefore permits only the existing 16 non-permuted real-label C/D pipelines
+over those three exact files. It reruns no feature extraction, inference,
+scalar analysis, corpus selection, or checkpoint loading. Its 0.40/0.40 LOFO
+flag merely prioritizes a pipeline for future full controls; it supplies no
+formal representation conclusion or later-stage authority.
 
 ## Scope exclusions
 

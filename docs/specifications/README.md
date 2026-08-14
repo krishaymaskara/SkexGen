@@ -26,6 +26,8 @@ succeeded.
   contract](ge1_repaired_sufficiency_execution_contract.md)
 - [GE1 repaired-checkpoint representation-probe
   contract](ge1_repaired_representation_probe.md)
+- [GE1 preserved-feature representation-screening
+  contract](ge1_repaired_representation_screen.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -47,3 +49,7 @@ awaiting a decision. When its current-state language differs from the
   scaled epoch-200 checkpoints from job `3345280`; synthetic validation and an
   unsubmitted runner are present, while scientific execution remains
   separately unauthorized.
+- [GE1 preserved-feature representation screen](ge1_repaired_representation_screen.md):
+  a short, separately identified non-permuted screen over the three verified
+  files preserved by timed-out job `3346513`; implementation and an unsubmitted
+  artifact-only runner are present, while execution remains unauthorized.

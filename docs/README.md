@@ -224,6 +224,11 @@ the immediate next action changes.
   — focused real-PyTorch implementation failure caused by conflating the
   two-by-sixteen prequant bottleneck with two-by-thirty-two decoder memory;
   zero artifact, checkpoint, manifest, payload, or scientific-probe access.
+- [GE1 repaired representation-screening
+  contract](specifications/ge1_repaired_representation_screen.md) — separate
+  16-pipeline real-label-only screen over the three preserved files from
+  timed-out job `3346513`; no permutations, corpus, checkpoint, GE1 model,
+  repair, Stage 6, or C8 authority.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
