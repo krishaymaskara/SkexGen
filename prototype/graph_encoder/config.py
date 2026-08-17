@@ -11,7 +11,10 @@ from prototype.graph_baseline.config import GraphV1Config
 
 from .decoder_contract import (
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
+    checkpoint_schema_for,
+    uses_grid_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
 )
 from .errors import GraphEncoderError
@@ -117,9 +120,24 @@ def frozen_encoder_config(
         operation_magnitude_parameterization=(
             operation_magnitude_parameterization
         ),
+        checkpoint_schema=checkpoint_schema_for(
+            operation_magnitude_parameterization
+        ),
     )
     config.validate()
     return config
+
+
+def grid_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+    """Return the prospective grid-ordinal magnitude configuration."""
+
+    return frozen_encoder_config(
+        encoder,
+        seed,
+        operation_magnitude_parameterization=(
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+    )
 
 
 def legacy_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
@@ -167,6 +185,8 @@ class GE1Config:
     profile_family_loss_weight: float = _GRAPH_CONTRACT.profile_family_loss_weight
     profile_parameter_loss_weight: float = _GRAPH_CONTRACT.profile_parameter_loss_weight
     graph_edge_loss_weight: float = _GRAPH_CONTRACT.graph_edge_loss_weight
+    grid_magnitude_extrude_loss_weight: float = 1.0
+    grid_magnitude_revolve_loss_weight: float = 1.0
     operation_magnitude_parameterization: str = (
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     )
@@ -208,10 +228,18 @@ class GE1Config:
                 "operation_magnitude_parameterization is not an accepted "
                 "legacy or repaired identity",
             )
+        # The checkpoint schema is implied by the magnitude parameterization:
+        # historical identities keep `GE1-CHECKPOINT-v1` byte-for-byte and the
+        # grid identity requires `GE1-CHECKPOINT-v2`.
         fixed_identities = (
             ("model_family", MODEL_FAMILY),
             ("shared_decoder", SHARED_DECODER),
-            ("checkpoint_schema", CHECKPOINT_SCHEMA),
+            (
+                "checkpoint_schema",
+                checkpoint_schema_for(
+                    self.operation_magnitude_parameterization
+                ),
+            ),
             ("protocol_identity", PROTOCOL_IDENTITY),
             ("experiment_identity", EXPERIMENT_IDENTITY),
         )
@@ -309,10 +337,21 @@ class GE1Config:
                     "{} must equal the inherited value {}".format(name, expected),
                 )
 
+    GRID_ONLY_SERIALIZED_FIELDS = (
+        "grid_magnitude_extrude_loss_weight",
+        "grid_magnitude_revolve_loss_weight",
+    )
+
     def to_dict(self):
         self.validate()
         values = asdict(self)
         values["arm_identity"] = self.arm_identity
+        if not uses_grid_magnitude(self.operation_magnitude_parameterization):
+            # Historical tanh and positive-sigmoid configurations must
+            # serialize byte-for-byte as they did before the grid identity
+            # existed, so grid-only fields are omitted entirely.
+            for name in self.GRID_ONLY_SERIALIZED_FIELDS:
+                values.pop(name, None)
         return values
 
     def to_json(self):

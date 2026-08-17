@@ -25,7 +25,6 @@ except ImportError:  # Static C6 contracts remain importable without PyTorch.
 from .batching import build_paired_batch
 from .config import (
     CHECKPOINT_EPOCH,
-    CHECKPOINT_SCHEMA,
     GE1TrainingConfig,
     MODEL_FAMILY,
     PLATEAU_MOVING_BEST_WINDOW_EPOCHS,
@@ -421,7 +420,7 @@ def run_ge1_training(
                     tensors["profile_targets"],
                 )
                 _assert_finite_tree(
-                    teacher.decoder_output,
+                    teacher,
                     run_identity=run_identity,
                     arm=model.config.encoder,
                     seed=model.config.seed,
@@ -435,6 +434,7 @@ def run_ge1_training(
                     tensors["target"],
                     tensors["profile_targets"],
                     model.config,
+                    grid_magnitude_logits=teacher.grid_magnitude_logits,
                 )
             except C6TrainingError:
                 raise
@@ -607,7 +607,7 @@ def training_checkpoint_payload(
     training_values = training_config.to_dict()
     return {
         "training_state_schema": TRAINING_STATE_SCHEMA,
-        "checkpoint_schema": CHECKPOINT_SCHEMA,
+        "checkpoint_schema": model.config.checkpoint_schema,
         "model_family": MODEL_FAMILY,
         "arm_identity": model.config.arm_identity,
         "encoder_type": model.config.encoder,
@@ -743,7 +743,7 @@ def load_training_checkpoint(
         )
     expected_metadata = {
         "training_state_schema": TRAINING_STATE_SCHEMA,
-        "checkpoint_schema": CHECKPOINT_SCHEMA,
+        "checkpoint_schema": model.config.checkpoint_schema,
         "model_family": MODEL_FAMILY,
         "arm_identity": model.config.arm_identity,
         "encoder_type": model.config.encoder,

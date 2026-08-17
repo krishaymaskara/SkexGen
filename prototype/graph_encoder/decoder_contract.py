@@ -22,13 +22,61 @@ LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION = (
 POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION = (
     "GE1-OPERATION-MAGNITUDE-POSITIVE-v1"
 )
-OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
+GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION = (
+    "GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1"
+)
+# Historical identities keep their exact order and membership; the grid
+# identity is appended so no existing tuple index or prefix changes.
+SCALAR_OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
+OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
+    SCALAR_OPERATION_MAGNITUDE_PARAMETERIZATIONS
+    + (GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,)
 )
 OPERATION_MAGNITUDE_EPSILON_POLICY = "torch.finfo(dtype).tiny"
 OPERATION_MAGNITUDE_SERIALIZED_CHANNELS = (37, 38)
 OPERATION_MAGNITUDE_COMPACT_CHANNELS = (4, 5)
+
+# Versioned decoder/output/checkpoint identities.  The v1 values are the exact
+# historical literals and must never change; the grid identity introduces v2
+# so a legacy or positive-sigmoid checkpoint can never be loaded into a grid
+# model, or the reverse, without a typed failure.
+GRID_SHARED_DECODER_VERSION = "GE1-SHARED-TYPED-EDGE-DECODER-V2"
+GRID_OUTPUT_POSITION_CONTRACT_VERSION = "GE1-DECODER-OUTPUT-POSITIONS-v2"
+LEGACY_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v1"
+GRID_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v2"
+
+
+def uses_grid_magnitude(parameterization):
+    """Return whether one parameterization is the grid-ordinal identity."""
+
+    return parameterization == GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+
+
+def shared_decoder_version_for(parameterization):
+    """Return the decoder identity implied by a magnitude parameterization."""
+
+    if uses_grid_magnitude(parameterization):
+        return GRID_SHARED_DECODER_VERSION
+    return SHARED_DECODER_VERSION
+
+
+def output_position_contract_version_for(parameterization):
+    """Return the output-position identity implied by a parameterization."""
+
+    if uses_grid_magnitude(parameterization):
+        return GRID_OUTPUT_POSITION_CONTRACT_VERSION
+    return OUTPUT_POSITION_CONTRACT_VERSION
+
+
+def checkpoint_schema_for(parameterization):
+    """Return the checkpoint schema implied by a parameterization."""
+
+    if uses_grid_magnitude(parameterization):
+        return GRID_CHECKPOINT_SCHEMA
+    return LEGACY_CHECKPOINT_SCHEMA
 
 
 @dataclass(frozen=True)

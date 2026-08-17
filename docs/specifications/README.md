@@ -30,6 +30,10 @@ succeeded.
   contract](ge1_repaired_representation_screen.md)
 - [GE1 closed-form representation-readout
   contract](ge1_closed_form_representation_readout.md)
+- [GE1 grid-anchored ordinal magnitude implementation
+  contract](ge1_grid_magnitude_repair.md) — connected teacher-forced ordinal
+  loss, GE1-owned diagnostics, axis/magnitude metric routing, synthetic
+  integration coverage, and an unsubmitted corpus-free validation runner.
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

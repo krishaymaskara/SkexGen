@@ -20,8 +20,15 @@ from .shared_decoder import SharedGE1Decoder, copied_shared_decoder
 
 @dataclass(frozen=True)
 class GE1TeacherForcedOutput:
+    """GE1-owned wrapper; the frozen `GraphV1Output` is never extended.
+
+    `grid_magnitude_logits` is `None` for both historical scalar identities so
+    every existing caller keeps its exact previous shape and semantics.
+    """
+
     decoder_output: object
     prequant: torch.Tensor
+    grid_magnitude_logits: object = None
 
 
 class GE1Model(nn.Module):
@@ -79,7 +86,17 @@ class GE1Model(nn.Module):
         output = self.decoder.teacher_forced(
             encoded.memory, target, profile_targets
         )
-        return GE1TeacherForcedOutput(output, encoded.prequant)
+        magnitude_logits = None
+        if getattr(self.decoder, "uses_grid_magnitude", False):
+            # Applied to the already-computed decoder states, so the ordinal
+            # gradient reaches the shared decoder trunk without a second
+            # forward pass through it.
+            magnitude_logits = self.decoder.grid_magnitude_logits(
+                output.decoded_states
+            )
+        return GE1TeacherForcedOutput(
+            output, encoded.prequant, magnitude_logits
+        )
 
 
 def _construct_with_local_seed(seed, constructor):

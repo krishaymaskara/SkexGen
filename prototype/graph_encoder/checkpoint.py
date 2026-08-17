@@ -10,14 +10,14 @@ import torch
 
 from .config import (
     BOTTLENECK_MODE,
-    CHECKPOINT_SCHEMA,
     MODEL_FAMILY,
     frozen_encoder_config,
 )
 from .decoder_contract import (
-    OUTPUT_POSITION_CONTRACT_VERSION,
+    checkpoint_schema_for,
+    output_position_contract_version_for,
+    shared_decoder_version_for,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
-    SHARED_DECODER_VERSION,
     output_position_contract_metadata,
 )
 from .model import build_ge1_model
@@ -80,16 +80,23 @@ def ge1_checkpoint_payload(model, *, code_revision):
         raise GE1CheckpointError("code_revision must be a lowercase commit hash")
     config = model.config
     config.validate()
+    # Every identity-bearing field is resolved from the model's magnitude
+    # parameterization.  Historical identities resolve to the exact previous
+    # literals; the grid identity resolves to v2, so cross-identity loading
+    # fails on the schema comparison rather than on a tensor shape.
+    parameterization = config.operation_magnitude_parameterization
     return {
-        "checkpoint_schema": CHECKPOINT_SCHEMA,
+        "checkpoint_schema": checkpoint_schema_for(parameterization),
         "model_family": MODEL_FAMILY,
         "arm_identity": config.arm_identity,
         "encoder_type": config.encoder,
         "encoder_version": config.arm_identity,
         "encoder_feedforward_width": config.encoder_feedforward_width,
         "relation_basis_count": config.relation_basis_count,
-        "shared_decoder_version": SHARED_DECODER_VERSION,
-        "output_position_contract_version": OUTPUT_POSITION_CONTRACT_VERSION,
+        "shared_decoder_version": shared_decoder_version_for(parameterization),
+        "output_position_contract_version": (
+            output_position_contract_version_for(parameterization)
+        ),
         "output_position_contract": output_position_contract_metadata(),
         "operation_magnitude_parameterization": (
             config.operation_magnitude_parameterization
@@ -147,6 +154,18 @@ def load_ge1_checkpoint(
         payload["code_revision"] != expected_code_revision
     ):
         raise GE1CheckpointError("code revision differs")
+    expected_schema = checkpoint_schema_for(
+        expected_operation_magnitude_parameterization
+    )
+    if payload["checkpoint_schema"] != expected_schema:
+        raise GE1CheckpointError("checkpoint schema differs")
+    if (
+        payload["operation_magnitude_parameterization"]
+        != expected_operation_magnitude_parameterization
+    ):
+        raise GE1CheckpointError(
+            "operation-magnitude parameterization differs"
+        )
     encoder = payload["encoder_type"]
     config_values = payload["config"]
     if not isinstance(config_values, Mapping):
@@ -162,13 +181,6 @@ def load_ge1_checkpoint(
         )
     except Exception as exc:
         raise GE1CheckpointError("configuration cannot be reconstructed") from exc
-    if (
-        payload["operation_magnitude_parameterization"]
-        != expected_operation_magnitude_parameterization
-    ):
-        raise GE1CheckpointError(
-            "operation-magnitude parameterization differs"
-        )
     expected = ge1_checkpoint_payload(
         build_ge1_model(config), code_revision=payload["code_revision"]
     )

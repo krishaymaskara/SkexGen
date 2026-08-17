@@ -449,8 +449,24 @@ def _canonical_prefix_prediction(prediction, canonical_old_indices):
     )
 
 
-def score_condition(condition_result, targets_by_family):
-    """Introduce targets only here, after complete autonomous generation."""
+def score_condition(
+    condition_result,
+    targets_by_family,
+    operation_magnitude_parameterization=None,
+):
+    """Introduce targets only here, after complete autonomous generation.
+
+    The optional parameterization selects a separately versioned GE1 grid
+    diagnostic.  Its default is the historical path and therefore preserves
+    the frozen serialized metric record exactly.
+    """
+
+    from .decoder_contract import uses_grid_magnitude
+
+    grid_identity = (
+        operation_magnitude_parameterization is not None
+        and uses_grid_magnitude(operation_magnitude_parameterization)
+    )
 
     start = time.perf_counter()
     if not condition_result.available:
@@ -472,7 +488,9 @@ def score_condition(condition_result, targets_by_family):
     grouped = {}
     for item in predictions:
         grouped.setdefault(item.family_id, []).append(
-            _score_one(item, targets_by_family[item.family_id])
+            _score_one(
+                item, targets_by_family[item.family_id], grid_identity
+            )
         )
     family_values = {
         family_id: _within_family(tuple(grouped[family_id]))
@@ -493,7 +511,7 @@ def score_condition(condition_result, targets_by_family):
     }
 
 
-def _score_one(item, target):
+def _score_one(item, target, grid_identity=False):
     from prototype.graph_baseline.graph_contract import (
         graph_edge_class_id,
         graph_from_reconstruction_target,
@@ -552,8 +570,10 @@ def _score_one(item, target):
         float(attachment_denominator)
         if attachment_denominator else undefined("zero_target_attachment_denominator")
     )
-    geometry = _geometry_errors(prediction, target)
-    return {
+    geometry = _geometry_errors(
+        prediction, target, exclude_grid_magnitudes=grid_identity
+    )
+    result = {
         "family_id": item.family_id,
         "primary": prefix.normalized_longest_executable_operation_prefix,
         "prefix": prefix.to_dict(),
@@ -578,15 +598,34 @@ def _score_one(item, target):
             prefix.unnormalized_longest_executable_prefix
         ),
     }
+    if grid_identity:
+        from .grid_magnitude_metrics import (
+            autonomous_grid_magnitude_diagnostics,
+        )
+
+        result["grid_magnitude"] = (
+            autonomous_grid_magnitude_diagnostics(prediction, target)
+        )
+        result["grid_geometry_applicability"] = (
+            _grid_geometry_metric_applicability(target)
+        )
+    return result
 
 
-def _geometry_errors(prediction, target):
+def _geometry_errors(
+    prediction, target, *, exclude_grid_magnitudes=False
+):
     nodes = prediction.node_prediction.raw_nodes
     result = {}
     for family, indices in GEOMETRY_CHANNEL_FAMILIES:
         absolute = []
+        target_channel_count = 0
         for node_index in range(min(len(nodes), len(target.geometry))):
             for channel in indices:
+                if target.geometry_mask[node_index][channel]:
+                    target_channel_count += 1
+                if exclude_grid_magnitudes and channel in (37, 38):
+                    continue
                 if target.geometry_mask[node_index][channel]:
                     predicted = nodes[node_index].normalized_geometry[channel]
                     expected = target.geometry[node_index][channel]
@@ -604,7 +643,37 @@ def _geometry_errors(prediction, target):
             "channel_names": [GEOMETRY_CHANNELS[index] for index in indices],
             "success_tolerance": undefined("diagnostic_error_has_no_success_tolerance"),
         }
+        if exclude_grid_magnitudes and family == "operation_parameter":
+            result[family].update({
+                "physical_mae": undefined(
+                    "routed_to_versioned_grid_ordinal_metric"
+                ),
+                "target_channel_denominator": target_channel_count,
+                "metric_routing": "GE1_grid_ordinal_metric",
+                "supported_grid_magnitude_target_treated_as_absent": False,
+            })
     return result
+
+
+def _grid_geometry_metric_applicability(target):
+    axis = 0
+    magnitude = 0
+    for node_index in range(len(target.geometry_mask)):
+        for channel in range(33, 37):
+            axis += int(bool(target.geometry_mask[node_index][channel]))
+        for channel in (37, 38):
+            magnitude += int(bool(target.geometry_mask[node_index][channel]))
+    return {
+        "version": "GE1-GRID-MAGNITUDE-APPLICABILITY-v1",
+        "axis_target_channel_count": axis,
+        "axis_scalar_metric_channel_count": axis,
+        "magnitude_target_channel_count": magnitude,
+        "magnitude_scalar_metric_channel_count": 0,
+        "magnitude_ordinal_metric_channel_count": magnitude,
+        "axis_semantics": "historical_physical_mae_retained",
+        "magnitude_semantics": "versioned_ordinal_grid_metric",
+        "supported_grid_magnitude_target_treated_as_absent": False,
+    }
 
 
 def _within_family(rows):
@@ -641,6 +710,20 @@ def _within_family(rows):
             "defined_sample_denominator": len(defined),
             "sample_record_denominator": len(rows),
         }
+        if "grid_magnitude" in rows[0] and family == "operation_parameter":
+            result["geometry_error_by_channel_family"][family].update({
+                "physical_mae": undefined(
+                    "routed_to_versioned_grid_ordinal_metric"
+                ),
+                "target_channel_denominator": sum(
+                    row["geometry_error_by_channel_family"][family][
+                        "target_channel_denominator"
+                    ]
+                    for row in rows
+                ),
+                "metric_routing": "GE1_grid_ordinal_metric",
+                "supported_grid_magnitude_target_treated_as_absent": False,
+            })
     failure_codes = tuple(row["first_failure_code"] for row in rows)
     failure_stages = tuple(row["stage_of_first_failure"] for row in rows)
     result["first_failure_code"] = (
@@ -651,6 +734,39 @@ def _within_family(rows):
     )
     result["sample_first_failure_codes"] = list(failure_codes)
     result["sample_first_failure_stages"] = list(failure_stages)
+    if "grid_magnitude" in rows[0]:
+        from .grid_magnitude_metrics import (
+            combine_autonomous_grid_magnitude_diagnostics,
+        )
+
+        result["grid_magnitude"] = (
+            combine_autonomous_grid_magnitude_diagnostics(
+                row["grid_magnitude"] for row in rows
+            )
+        )
+        axis = sum(
+            row["grid_geometry_applicability"][
+                "axis_target_channel_count"
+            ]
+            for row in rows
+        )
+        magnitude = sum(
+            row["grid_geometry_applicability"][
+                "magnitude_target_channel_count"
+            ]
+            for row in rows
+        )
+        result["grid_geometry_applicability"] = {
+            "version": "GE1-GRID-MAGNITUDE-APPLICABILITY-v1",
+            "axis_target_channel_count": axis,
+            "axis_scalar_metric_channel_count": axis,
+            "magnitude_target_channel_count": magnitude,
+            "magnitude_scalar_metric_channel_count": 0,
+            "magnitude_ordinal_metric_channel_count": magnitude,
+            "axis_semantics": "historical_physical_mae_retained",
+            "magnitude_semantics": "versioned_ordinal_grid_metric",
+            "supported_grid_magnitude_target_treated_as_absent": False,
+        }
     return result
 
 
@@ -688,6 +804,56 @@ def _macro_aggregates(family_values):
             "defined_family_denominator": len(values),
             "physical_family_denominator": len(families),
             "undefined_reason": None if values else "all_family_values_undefined",
+        }
+        if families and "grid_magnitude" in families[0] and family == (
+            "operation_parameter"
+        ):
+            result["geometry_error_by_channel_family"][family].update({
+                "value": None,
+                "undefined_reason": (
+                    "routed_to_versioned_grid_ordinal_metric"
+                ),
+                "target_channel_denominator": sum(
+                    row["geometry_error_by_channel_family"][family][
+                        "target_channel_denominator"
+                    ]
+                    for row in families
+                ),
+                "metric_routing": "GE1_grid_ordinal_metric",
+                "supported_grid_magnitude_target_treated_as_absent": False,
+            })
+    if families and "grid_magnitude" in families[0]:
+        from .grid_magnitude_metrics import (
+            combine_autonomous_grid_magnitude_diagnostics,
+        )
+
+        result["grid_magnitude"] = (
+            combine_autonomous_grid_magnitude_diagnostics(
+                row["grid_magnitude"] for row in families
+            )
+        )
+        axis = sum(
+            row["grid_geometry_applicability"][
+                "axis_target_channel_count"
+            ]
+            for row in families
+        )
+        magnitude = sum(
+            row["grid_geometry_applicability"][
+                "magnitude_target_channel_count"
+            ]
+            for row in families
+        )
+        result["grid_geometry_applicability"] = {
+            "version": "GE1-GRID-MAGNITUDE-APPLICABILITY-v1",
+            "axis_target_channel_count": axis,
+            "axis_scalar_metric_channel_count": axis,
+            "magnitude_target_channel_count": magnitude,
+            "magnitude_scalar_metric_channel_count": 0,
+            "magnitude_ordinal_metric_channel_count": magnitude,
+            "axis_semantics": "historical_physical_mae_retained",
+            "magnitude_semantics": "versioned_ordinal_grid_metric",
+            "supported_grid_magnitude_target_treated_as_absent": False,
         }
     return result
 

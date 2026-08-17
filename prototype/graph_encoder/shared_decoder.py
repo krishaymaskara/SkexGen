@@ -46,12 +46,16 @@ from prototype.graph_baseline.model import (
 )
 from prototype.node_grammar import NodeGrammarError
 
+from .grid_magnitude import build_grid_magnitude_head
 from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
     OPERATION_MAGNITUDE_COMPACT_CHANNELS,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     OUTPUT_POSITION_CONTRACT_VERSION,
+    output_position_contract_version_for,
+    shared_decoder_version_for,
+    uses_grid_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     SHARED_DECODER_VERSION,
 )
@@ -254,8 +258,27 @@ class SharedGE1Decoder(GraphV1Model):
         self.operation_magnitude_parameterization = (
             operation_magnitude_parameterization
         )
+        self.uses_grid_magnitude = uses_grid_magnitude(
+            operation_magnitude_parameterization
+        )
+        # Per-identity contract versions, so a historical checkpoint can never
+        # be reloaded into a grid model or the reverse.
+        self.shared_decoder_version = shared_decoder_version_for(
+            operation_magnitude_parameterization
+        )
+        self.output_position_contract_version = (
+            output_position_contract_version_for(
+                operation_magnitude_parameterization
+            )
+        )
         for name in _ENCODER_ONLY_MODULES + _EXCLUDED_C1_POSITION_BIAS_MODULES:
             delattr(self, name)
+        if self.uses_grid_magnitude:
+            # Additive module: the historical scalar head is retained and its
+            # axis channels keep their existing supervision.
+            self.grid_magnitude_head = build_grid_magnitude_head(
+                self.config.model_dim
+            )
         self.register_buffer(
             "relative_position_denominator",
             torch.tensor(float(max(self.config.max_nodes - 1, 1))),
@@ -286,8 +309,23 @@ class SharedGE1Decoder(GraphV1Model):
 
         return self.remaining_geometry_head(decoded_states)
 
-    def parameterize_remaining_geometry(self, raw):
-        """Apply the versioned neural geometry output mapping."""
+    def grid_magnitude_logits(self, decoded_states):
+        """Return ordinal cut logits ``[..., 2, 4]`` for the grid identity."""
+
+        if not self.uses_grid_magnitude:
+            raise ValueError(
+                "grid magnitude logits require the grid-ordinal identity"
+            )
+        return self.grid_magnitude_head(decoded_states)
+
+    def parameterize_remaining_geometry(self, raw, decoded_states=None):
+        """Apply the versioned neural geometry output mapping.
+
+        `decoded_states` is required only by the grid-ordinal identity, whose
+        magnitude channels are decoded from the ordinal head rather than from
+        a scalar activation.  The historical identities ignore it entirely and
+        keep their exact previous behaviour.
+        """
 
         legacy = torch.tanh(raw)
         if (
@@ -295,6 +333,22 @@ class SharedGE1Decoder(GraphV1Model):
             == LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION
         ):
             return legacy
+        if self.uses_grid_magnitude:
+            if decoded_states is None:
+                raise ValueError(
+                    "grid-ordinal magnitude decoding requires decoded states"
+                )
+            # Both grids are decoded for every node.  The existing geometry
+            # applicability mask exposes only the channel matching the
+            # autonomously generated node type, so no target operation type
+            # is consulted here.  The decode is discrete, so magnitude
+            # gradient reaches the trunk solely through the ordinal loss.
+            grid_values = self.grid_magnitude_head.normalized_values(
+                self.grid_magnitude_head(decoded_states)
+            ).to(dtype=raw.dtype)
+            return torch.cat(
+                (legacy[..., :4], grid_values), dim=-1
+            ).contiguous()
         epsilon = torch.finfo(raw.dtype).tiny
         operation_raw = raw[..., OPERATION_MAGNITUDE_COMPACT_CHANNELS]
         positive = epsilon + (1.0 - epsilon) * torch.sigmoid(operation_raw)
@@ -325,7 +379,9 @@ class SharedGE1Decoder(GraphV1Model):
         raw = self.raw_remaining_geometry(output.decoded_states)
         return replace(
             output,
-            remaining_geometry=self.parameterize_remaining_geometry(raw),
+            remaining_geometry=self.parameterize_remaining_geometry(
+                raw, output.decoded_states
+            ),
         )
 
     def forward(self, memory, *, node_counts, node_count_source):
@@ -464,12 +520,21 @@ class SharedGE1Decoder(GraphV1Model):
             extent_max=self.config.profile_extent_max,
         )
         raw_remaining = self.raw_remaining_geometry(states)
-        remaining = self.parameterize_remaining_geometry(raw_remaining)
+        remaining = self.parameterize_remaining_geometry(raw_remaining, states)
         scattered = scatter_remaining_geometry(remaining)
         selected_mask = (
             select_remaining_geometry(target["geometry_mask"])
             & target["node_mask"].unsqueeze(-1)
         )
+        if self.uses_grid_magnitude:
+            # Under the grid identity the scalar magnitude outputs are unused
+            # for decoding, so supervising them would train dead outputs and
+            # keep pulling the shared trunk toward a conditional-mean scalar.
+            # Axis channels 0-3 keep their existing supervision untouched, and
+            # both historical identities are unaffected.
+            selected_mask = selected_mask.clone()
+            for compact_channel in OPERATION_MAGNITUDE_COMPACT_CHANNELS:
+                selected_mask[..., compact_channel] = False
         scattered_mask = _scatter_remaining_mask(selected_mask)
         canonical_plane = canonicalize_reference_plane_tensors(
             target["node_type_ids"],
