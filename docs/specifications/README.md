@@ -33,7 +33,9 @@ succeeded.
 - [GE1 grid-anchored ordinal magnitude implementation
   contract](ge1_grid_magnitude_repair.md) — connected teacher-forced ordinal
   loss, GE1-owned diagnostics, axis/magnitude metric routing, synthetic
-  integration coverage, and an unsubmitted corpus-free validation runner.
+  integration coverage, accepted job `3351837` engineering evidence, and a
+  separate non-submitting exact-commit runner for the one authorized
+  operation-template-train-only scientific execution.
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

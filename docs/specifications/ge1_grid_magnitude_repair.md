@@ -4,13 +4,13 @@
 
 | Item | Frozen value |
 |---|---|
-| Status | Implemented; corpus-free validation only; no scientific execution authorized |
+| Status | Accepted; engineering-validated; exactly one separate train-only scientific execution authorized after exact-commit runner validation |
 | Protocol | `GE1-C7-GRID-MAGNITUDE-SUFFICIENCY-v1` |
 | Parameterization | `GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1` |
 | Checkpoint schema | `GE1-CHECKPOINT-v2` |
-| Authority | proposed [ADR-0013](../decisions/ADR-0013-ge1-grid-anchored-ordinal-operation-magnitude-repair.md) |
+| Authority | accepted [ADR-0013](../decisions/ADR-0013-ge1-grid-anchored-ordinal-operation-magnitude-repair.md), Krishay Maskara, August 17, 2026 |
 | Fidelity gate | unchanged |
-| Stage 6 / C8 / repair execution | unauthorized / not begun / unauthorized |
+| Stage 6 / C8 / additional repair | unauthorized / not begun / unauthorized |
 
 This contract describes checked-in behaviour. It does not establish that any
 model was trained, that any accessibility claim holds, or that the repair meets
@@ -152,14 +152,17 @@ behaviour are unchanged. The magnitude head is additive and reads the decoder
 state; it cannot write to structural logits, which a runtime test asserts by
 perturbing only the head and requiring bit-identical node-type logits.
 
-## Validation boundary
+## Engineering-validation record
 
-Corpus-free only. Pure contract tests run anywhere; real-PyTorch tests require
-the authoritative runtime and are expected to run on the engineering-validation
-runner. No corpus, manifest, preserved payload, scientific checkpoint, model
-artifact, protected partition, scientific training, scientific inference, or
-Slurm submission is part of this task. The generated-tensor optimizer-step test
-is explicitly engineering-only.
+Adroit job `3351837` at exact commit
+`bdb7148dc4ebe751bda1a66cd167fcf035495762` is technically valid engineering
+evidence: 28 pure grid contract tests, 14 real-PyTorch runtime tests, 18
+synthetic integration tests, 460 complete graph-encoder tests, all five frozen
+regression suites, and every documentation/source/syntax/preservation check
+passed. The run used Python 3.8.13, PyTorch 1.11.0, CPU only, and one thread. It
+accessed no corpus, manifest, payload, scientific checkpoint/artifact, or
+protected partition and produced no scientific result. Its submission preceded
+prospective authorization and remains recorded as a procedural deviation.
 
 The focused module counts remain exactly 28 PyTorch-independent contract tests
 and 14 real-PyTorch runtime tests. A separate integration module adds six
@@ -178,6 +181,94 @@ requires zero skips in the complete graph-encoder suite under Python 3.8.13 and
 PyTorch 1.11.0. Its only container bind is the detached clean exact-commit
 repository checkout, read-only. No scientific path is declared or mounted.
 
-Passing these checks would establish engineering integrity only. It would not
+Passing these checks establishes engineering integrity only. It does not
 establish accessibility, fidelity-gate success, scientific repair success, or
-authorization for scientific execution, Stage 6, or C8.
+48/48 performance.
+
+## Authorized scientific execution contract
+
+Accepted ADR-0013 authorizes exactly one separately submitted execution of
+`prototype/graph_encoder/adroit/ge1_grid_magnitude_sufficiency_cpu.slurm` from
+a clean standalone detached Adroit checkout at its exact commit. The runner
+never invokes `sbatch` itself. It requires Python 3.8.13, PyTorch 1.11.0,
+CPU-only execution, one task, one CPU thread, 12 GB memory, and a 24-hour wall
+limit with pre-timeout telemetry.
+
+The only container binds are:
+
+1. exact repository checkout, read-only;
+2. authorized controlled corpus, read-only;
+3. a new external scientific-artifact parent, read-write.
+
+No other corpus, preserved feature payload, existing checkpoint, model or
+repaired artifact, CAD-kernel path, development/RR/ER/IID/history-depth/
+geometry-extrapolation partition, Stage 6 path, or C8 path is declared or
+mounted.
+
+### Exact input verification and access order
+
+Before scientific payload loading, the runner requires:
+
+- `corpus_manifest.json` SHA-256
+  `3be4bb2d03e0500ae6e5b5a878cfaafcc8c3a74180a5b9bc2cfc55071b21e2ff`;
+- `manifests/operation_template.json` SHA-256
+  `a9ac86a6dede054fbbba57e0906b210bab26036c3f5c150b332038f78d2dadb7`.
+
+It selects the existing deterministic C7 tiny and scaled train cohorts from
+the exact operation-template manifest. Before the model-data loader opens a
+selected cohort, every selected history must be a regular `samples/` file,
+canonical UTF-8 JSON with its generated final LF, and must reproduce both its
+declared content-derived `sample_id` SHA-256 and physical `source_family_id`.
+Raw file SHA-256 values and an aggregate ordered verification digest are
+recorded in the artifact. No nonselected history payload is opened by this
+verification.
+
+Tiny verification, loading, fresh model construction, training, strict
+checkpoint reload, autonomous generation, and gates occur before scaled
+payload verification or access. Scaled payloads remain unopened unless both
+flat and typed-graph tiny exact-sufficiency and operation-geometry-fidelity
+gates pass.
+
+### Frozen scientific lifecycle
+
+Each subset receives a fresh seed-2026 matched pair with the grid-ordinal
+identity; no model, optimizer, or checkpoint crosses from tiny to scaled.
+
+| Subset | Families | Batch | Epochs | Steps/epoch | Optimizer steps | Presentations/arm |
+|---|---:|---:|---:|---:|---:|---:|
+| tiny | 4 | 8 | 200 | 1 | 200 | 800 |
+| scaled | 32 | 8 | 200 | 4 | 800 | 6,400 |
+
+Both arms use identical arithmetic, separate extrusion/revolve ordinal terms
+weighted `1.0`, fixed epoch 200, and recovery plus inference checkpoint strict
+reloads. There is no warm start, checkpoint reuse, best-loss selection, early
+stopping, outcome-dependent extension, development tuning, or target-bearing
+autonomous interface.
+
+### Gates, diagnostics, and terminal outcomes
+
+For each arm the tiny exact gate and unchanged per-operation
+operation-geometry-fidelity gate are primary. If both arms pass tiny, scaled
+adds the same exact and fidelity gates plus the frozen memory-use gate. The
+artifact records node sequence/graph/dependency correctness, strict conversion,
+analytic completeness, memory interventions, masking, class support, predicted
+counts, confusion matrices, per-class and extreme-class recall, exact grid
+values, and separate extrusion/revolve sample-operation fidelity evidence.
+
+The atomic artifact contains the resolved contract, ordered JSONL metrics,
+recovery and inference checkpoints, artifact manifest, and `SHA256SUMS`.
+Terminal records distinguish:
+
+- infrastructure failure before a finalized scientific decision;
+- timeout before finalization;
+- finalized scientific pass;
+- finalized scientific failure on any exact or fidelity gate;
+- memory-only inconclusive comparison.
+
+A scientifically positive, negative, or inconclusive artifact completes only
+this one execution. Every path records
+`stage6_authorized_by_grid_magnitude_sufficiency=false`,
+`another_scientific_job_authorized=false`, and
+`additional_repair_authorized=false`. No outcome opens Stage 6, C8, protected
+access, a second run, or further repair without a new explicit reviewer
+decision.

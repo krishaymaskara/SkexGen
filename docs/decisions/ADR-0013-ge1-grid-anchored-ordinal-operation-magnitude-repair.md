@@ -1,7 +1,8 @@
 # ADR-0013: GE1 Grid-Anchored Ordinal Operation-Magnitude Repair
 
-- Status: `proposed`
+- Status: `accepted`
 - Proposal date: `2026-08-17`
+- Acceptance date: `2026-08-17`
 - Owner: project research team
 - Designated GE1 reviewer: Krishay Maskara
 - Adds to: [ADR-0009](ADR-0009-ge1-positive-operation-magnitude-repair.md),
@@ -38,12 +39,18 @@ A read-only forensic reconstruction of that artifact established three facts.
    normalization, and train/eval parameterization identity are all correct.
 
 The remaining question is whether magnitude-class information is accessible in
-the decoder state. Adroit job `3351524` is recorded as the completed
-closed-form readout and, as reported by the designated reviewer, **did not
-establish controlled magnitude-class accessibility from the tested
-decoder-state features**. That evidence is reviewer-supplied; its artifact,
-hashes, and per-feature outcomes are not yet cited in this repository and must
-be attached before any scientific execution under this record.
+the decoder state. Adroit job `3351524` completed the closed-form readout and
+**did not establish controlled magnitude-class accessibility from the tested
+decoder-state features**. The supplied transcript and finalized result JSON
+are now cited in the [execution record](../experiments/ge1_closed_form_readout_3351524.md).
+The local JSON SHA-256 is
+`d86aa2d50b017c38456e8dd4e32f0863b0b1e8ffea86924346be23edafc04dab`;
+24 executed pipelines, 8 structured nonexecuted records, 16 primary
+hypotheses, and 999 permutations are present. The transcript records successful
+five-file artifact verification, but the other four artifact files were not
+supplied locally, so an independent manifest-to-JSON checksum link remains
+unavailable. The null/inconclusive readout constrains the historical frozen
+state; it does not prove information absence or capacity exhaustion.
 
 ## Decision
 
@@ -54,6 +61,17 @@ GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1
 GE1-C7-GRID-MAGNITUDE-SUFFICIENCY-v1
 GE1-CHECKPOINT-v2
 ```
+
+The designated reviewer accepts the following choices as frozen v1 decisions:
+
+1. rank-consistent ordinal rather than plain five-way softmax;
+2. class-only decode with no residual in v1;
+3. separate extrusion and revolve loss weights of `1.0`;
+4. the inherited fixed train-only tiny-before-scaled tuning and evaluation
+   lifecycle, with no development, RR, ER, IID, history-depth, geometry-
+   extrapolation, other-corpus, or protected access;
+5. exclusion of compact magnitude channels 4 and 5 from the historical scalar
+   loss under the grid identity only, while preserving axis channels 0-3.
 
 ### Why a null decoder-state readout does not refute this design
 
@@ -136,19 +154,36 @@ their existing supervision, and both historical identities are byte-identical.
 
 ## Authorization boundary
 
-This record authorizes implementation, corpus-free synthetic testing, and an
-unsubmitted exact-commit Adroit engineering-validation runner only. It does not
-authorize scientific execution, Slurm submission, corpus or manifest access,
-external or scientific checkpoint loading, scientific training, Stage 6, C8,
-CAD-kernel use, or any accessibility claim. A temporary generated-state
-round-trip is permitted only as the checkpoint-identity unit test and is
-removed by that test. No result produced under this record may authorize a
-later stage.
+Corpus-free engineering-validation job `3351837` at exact commit
+`bdb7148dc4ebe751bda1a66cd167fcf035495762` is accepted as technically valid.
+Its submission was prospectively unauthorized under the earlier proposed ADR,
+so that procedural deviation is retained in the
+[execution record](../experiments/ge1_grid_magnitude_validation_3351837.md)
+rather than erased or retroactively relabelled.
+
+After the accepted implementation and separate scientific runner pass the
+specified exact-commit validation and transfer checks, this record authorizes
+**exactly one separately submitted train-only scientific execution** of
+`GE1-C7-GRID-MAGNITUDE-SUFFICIENCY-v1`. It may read only the exact-hash-verified
+680-family corpus manifest, the exact-hash-verified operation-template
+manifest, and the frozen tiny/scaled operation-template train payloads. Tiny
+must run before scaled, and scaled payloads may be opened only if both arms pass
+the tiny exact and operation-fidelity gates. Both arms train from scratch with
+the same frozen arithmetic. No development or protected partition, preserved
+feature payload, external/scientific checkpoint, existing model/repaired
+artifact, CAD kernel, warm start, repair, Stage 6, or C8 is authorized.
+
+The runner never submits itself. This authorization is consumed only by a
+separate explicit submission of the exact committed runner. No success,
+failure, inconclusive result, infrastructure failure, or timeout automatically
+authorizes another job, an additional repair, Stage 6, C8, protected access, or
+any later work.
 
 ## Implementation completion record
 
-The corpus-free implementation is complete in the working tree, but the ADR
-remains proposed and no engineering or scientific run is claimed here.
+The corpus-free implementation passed Adroit job `3351837`; no scientific run
+is claimed here. The accepted source also contains a separate, non-submitting
+scientific runner and artifact contract for the one authorized execution.
 
 - The real common training loop passes the ordinal logits already computed by
   `GE1Model.teacher_forced` into `common_ge1_loss`; no second decoder forward is
@@ -183,18 +218,24 @@ remains proposed and no engineering or scientific run is claimed here.
   terminal telemetry. Its log parent must exist before submission; the runner
   neither creates that parent nor submits itself.
 
-These are prerequisites for later engineering validation. They do not show
-decoder-state accessibility, repair success, 48/48 fidelity, or scientific
-authorization.
+The scientific path additionally exact-hash-verifies both authorized manifests
+before payload access, verifies only the selected canonical histories by their
+content-derived sample hashes before scientific loading, trains fresh matched
+pairs at fixed epoch 200, strictly reloads recovery and inference checkpoints,
+and atomically publishes resolved configuration, metrics, both checkpoint
+forms, an artifact manifest, and `SHA256SUMS`. Autonomous metrics retain the
+structural, dependency, conversion, analytic-validity, memory, masking,
+class-support, predicted-count, confusion, recall, grid-value, and separate
+extrusion/revolve fidelity evidence needed to finalize a positive, negative,
+or inconclusive scientific result.
 
-## Open decisions for the reviewer
+## Resolved reviewer decisions
 
-1. Attach the job `3351524` artifact and per-feature outcomes before execution.
-2. Confirm ordinal rather than plain five-way softmax for v1.
-3. Confirm the deferral of the residual to a possible v2.
-4. Confirm equal `1.0` weights and the train-only tuning rule.
-5. Confirm the grid-identity exclusion of compact channels 4 and 5 from the
-   scalar remaining-geometry mask.
+The five implementation choices above, the technical disposition of job
+`3351837`, acceptance of ADR-0013, and the single train-only execution
+authorization were resolved by designated reviewer Krishay Maskara on August
+17, 2026. The incomplete four-file remainder of job `3351524`'s artifact bundle
+is an evidence-retention limitation, not an unresolved design prerequisite.
 
 ## Expectation setting
 

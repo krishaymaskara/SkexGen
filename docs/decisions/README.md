@@ -86,9 +86,11 @@ it superseded by a later ADR.
   ADR-0011, and the representation screen as separate incomplete work.
 - [ADR-0013: GE1 grid-anchored ordinal operation-magnitude
   repair](ADR-0013-ge1-grid-anchored-ordinal-operation-magnitude-repair.md) —
-  proposed; replaces the conditional-mean scalar magnitude readout with a
+  accepted by designated reviewer Krishay Maskara; replaces the
+  conditional-mean scalar magnitude readout with a
   rank-consistent ordinal head over the frozen five-value grids and an
-  undiluted per-operation magnitude loss. Its corpus-free implementation now
-  connects that loss to the real teacher-forced path and adds versioned
-  diagnostics, corrected axis/magnitude routing, synthetic integration tests,
-  and a structural-audit engineering runner; execution remains unauthorized.
+  undiluted per-operation magnitude loss, records job `3351837` as technically
+  valid with a prospective-authorization deviation, and authorizes exactly one
+  separately submitted exact-commit operation-template-train-only scientific
+  execution after implementation and runner validation. No outcome
+  auto-authorizes another job, repair, Stage 6, C8, or protected access.

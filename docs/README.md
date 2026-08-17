@@ -243,7 +243,16 @@ the immediate next action changes.
   contract](specifications/ge1_closed_form_representation_readout.md) —
   additive artifact-only replacement for the timed-out iterative readouts,
   corrected to v2 after v1 job `3351501` exposed the nonlinear-midpoint
-  invariant failure; v2 has not been submitted.
+  invariant failure.
+- [GE1 closed-form readout job
+  3351524](experiments/ge1_closed_form_readout_3351524.md) — valid v2
+  execution that did not establish any prospective controlled accessibility
+  rule; the final JSON and transcript are local, while the other four artifact
+  files remain unavailable for independent manifest linkage.
+- [GE1 grid-magnitude engineering-validation job
+  3351837](experiments/ge1_grid_magnitude_validation_3351837.md) — technically
+  valid corpus-free validation with a recorded prospective-authorization
+  deviation; it produced no scientific result.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

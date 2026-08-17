@@ -22,7 +22,7 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was updated on August 10, 2026 from branch
+This inventory was updated through August 17, 2026 from branch
 `graph-v1-experiment-record`. The documentation commit's literal hash is not
 embedded because it would be self-referential. The audit used:
 
@@ -78,6 +78,8 @@ frozen archive described below is now the primary evidence.
 | GE1 operation-magnitude repair authoritative CPU validation | `12167ce7d0dc025c4b297b7ccb8a3011580bf0fc` | `3345044` | Local stdout/stderr, scheduler record, and verified checksums listed in record | Corpus-free engineering validation of the prospective positive operation-magnitude repair; no training, checkpoint write, CAD kernel, Stage 6, or C8 | `verified-local` | [Record](ge1_operation_magnitude_repair_cpu_validation.md) |
 | GE1 repaired-sufficiency authoritative CPU validation | `6b62cab90ea8f693cde41c2abf0a261024057d45` | `3345161` | Local stdout/stderr, scheduler record, terminal transcript, and verified log checksums listed in record | Corpus-free implementation validation; procedural-fixture backward/optimizer steps only; no manifest, corpus/scientific training, scientific artifact, CAD kernel, Stage 6, or C8 | `verified-local` | [Record](ge1_repaired_sufficiency_cpu_validation.md) |
 | GE1 representation-probe preflight attempt | `4baf596812471ca76a15b09df89ce38d0a4bf30c` | `3346476` | Authoritative transcript; separate raw logs and hashes not supplied | Focused runtime-test implementation failure after 17/17 pure and 6/7 runtime tests; zero source artifact, checkpoint, manifest, payload, or scientific-probe access; no artifact | `reported-only` | [Record](ge1_representation_probe_preflight_attempt_3346476.md) |
+| GE1 closed-form readout v2 | `4dff7e0ed1fea7076b64e2513689088aff4d8078` | `3351524` | Local terminal transcript and finalized result JSON; other four artifact files not supplied | Verified preserved-feature artifact only; no corpus, checkpoint, training, repair, or protected access; artifact-bundle qualification retained | `verified-local` | [Record](ge1_closed_form_readout_3351524.md) |
+| GE1 grid-magnitude engineering validation | `bdb7148dc4ebe751bda1a66cd167fcf035495762` | `3351837` | Local stdout, stderr, sacct, SHA-256 manifest, and terminal transcript | Corpus-free engineering validation; technically valid with recorded prospective-authorization deviation; no manifest, payload, protected partition, or scientific execution | `verified-local` | [Record](ge1_grid_magnitude_validation_3351837.md) |
 
 ### Current-through-August-3 coverage
 
