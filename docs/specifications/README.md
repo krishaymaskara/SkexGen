@@ -56,7 +56,7 @@ awaiting a decision. When its current-state language differs from the
   files preserved by timed-out job `3346513`; implementation and an unsubmitted
   artifact-only runner are present, while execution remains unauthorized.
 - [GE1 closed-form representation readout](ge1_closed_form_representation_readout.md):
-  an accepted additive, artifact-only ridge/SVD diagnostic with synchronized
-  family-block permutations and global centered maxT; implementation and a
-  one-hour unsubmitted runner are present, while scientific execution remains
-  separately unauthorized.
+  an accepted additive v2 artifact-only ridge/SVD diagnostic with a common A/B
+  weak-order baseline, synchronized family-block permutations, and global
+  centered maxT; v1 job `3351501` failed without a finalized result and the v2
+  one-hour runner has not been submitted.

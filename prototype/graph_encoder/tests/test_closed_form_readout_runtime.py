@@ -151,6 +151,26 @@ class ClosedFormReadoutRuntimeTests(unittest.TestCase):
         self.assertEqual(record["per_class_recall"], [1.0, 0.0, 0.0, 0.0, 0.0])
         self.assertTrue(record["class_masking_detected"])
 
+    def test_common_scalar_targets_run_for_both_arms_types_and_permutations(self):
+        from prototype.graph_encoder import closed_form_readout as readout
+
+        features, labels = readout.synthetic_fixture()
+        for arm in readout.PROBE_ARMS:
+            joined = readout.join_detached_rows(features, labels, arm)
+            for operation_type in readout.OPERATION_TYPES:
+                rows = readout.select_cohort(joined, operation_type, "full")
+                targets = readout.target_matrix(rows, 2)
+                result = readout._scalar_targets(rows, targets)
+                self.assertEqual(len(result["raw_values"]), 3)
+                self.assertEqual(len(result["balanced_values"]), 3)
+                equivalence = result["common_grouped"][
+                    "coordinate_prediction_equivalence"
+                ]
+                self.assertEqual(
+                    equivalence["A_physical_predictions_by_key"],
+                    equivalence["B_raw_logit_predictions_by_key"],
+                )
+
     def test_nested_family_LOFO_has_no_family_overlap(self):
         from prototype.graph_encoder import closed_form_readout as readout
 

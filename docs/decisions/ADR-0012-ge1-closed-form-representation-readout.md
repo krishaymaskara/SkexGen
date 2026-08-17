@@ -44,15 +44,42 @@ one-hour allocation. The same observational question can be asked with a
 fully specified closed-form estimator whose feature preprocessing and matrix
 decompositions are independent of labels.
 
+The first closed-form implementation then ran as Adroit job `3351501` at exact
+commit `912e078f216f82ad37c00198adc20dd93eb647c6`. It was an infrastructure
+failure, not a timeout or scientific result: state `FAILED`, exit `1:0`,
+elapsed `00:06:28`, and MaxRSS `611492K`. All 34 focused tests, all 395
+graph-encoder tests, the 86/549/17/40/51 regression suites, documentation,
+compilation, and source audits passed. Synthetic timing projected complete
+B=999 execution at `671.2964434385067` seconds and selected B=999. The three
+frozen inputs were then hash-verified and loaded before execution failed in
+`_scalar_targets()` with `positive_mapping_monotonicity_failure`. The timing
+record, stdout/stderr logs, and `.incomplete-3351501` directory are preserved
+as audit evidence; no finalized artifact or scientific interpretation exists.
+The transcript certifies no corpus, checkpoint, model, inference, training,
+repair, protected partition, Stage 6, or C8 access or execution.
+
+Source review confirmed that v1 independently fitted numeric A-physical and
+B-raw-logit midpoints and required their held-out predictions to match. A is a
+nonlinear monotone transformation of B, so numeric midpoints are not
+transformation-equivariant. Sigmoid saturation can also create an exact A tie
+without a B tie. The equality guard therefore tested an invalid invariant;
+deleting it or choosing the more favorable coordinate would also be invalid.
+
 ## Decision
 
 The project adopts this additive artifact-only diagnostic:
 
 ```text
-GE1-C7-CLOSED-FORM-READOUT-v1
-GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v1
-GE1-C7-CLOSED-FORM-READOUT-RESULTS-v1
+GE1-C7-CLOSED-FORM-READOUT-v2
+GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v2
+GE1-C7-CLOSED-FORM-READOUT-RESULTS-v2
 ```
+
+The v2 identity is required because the common A/B baseline is part of eight
+primary difference hypotheses and therefore changes the frozen estimand and
+permutation seed. Retaining v1 after its preserved-input execution would hide
+a post-failure contract correction. V1 remains immutable failed audit history;
+it produced no result that can be combined with or compared as a v2 result.
 
 The complete scientific and artifact contract is frozen in the
 [closed-form readout specification](../specifications/ge1_closed_form_representation_readout.md).
@@ -79,6 +106,26 @@ across every lambda and across true and permuted one-hot right-hand sides is
 the same algebraic ridge solution, not approximate fitting, omitted
 preprocessing, or reuse of a label-dependent choice. Nested lambda selection
 is rerun for every permuted target.
+
+### Common A/B scalar baseline
+
+V2 continues to report the coordinate-specific A-physical and B-raw-logit
+resubstitution and grouped-threshold analyses descriptively, but neither is
+selected as the primary baseline. Before labels are used, it validates that A
+and B have no strict pairwise ordering inversion. An inversion is a hard
+infrastructure failure. Exact finite-precision ties in either coordinate are
+collapsed transitively, yielding the canonical weak order containing only
+distinctions preserved by both views of the existing scalar path.
+
+LOFO fitting represents each boundary by an ordered upper anchor, never a
+numeric midpoint. A held-out common-order block between two training anchors
+stays on the smaller-class side until it reaches the upper anchor. This
+prospectively freezes the otherwise unidentified within-gap case and preserves
+smallest-class tie behavior. One label-free common order is reused for the
+observed and every permuted target, while the four supervised boundaries are
+refit inside every synchronized permutation. Thus A and B prediction views
+are identical by construction from one common fit, not chosen after outcomes
+are observed.
 
 ### Why slot-gated prequant
 
@@ -123,7 +170,7 @@ statistic spans all 16 primary hypotheses. For each hypothesis the null is
 centered by its own mean; each permutation takes the maximum across all 16;
 the adjusted plus-one empirical p-value compares the observed centered value
 with that global maximum. Step-down correction and kernel ridge are excluded
-from v1.
+from v2.
 
 ### Runtime decision
 
@@ -211,6 +258,9 @@ Rejected. It cannot apply slot-specific mappings to the repeated EE prequant.
 - The representation screen remains separate and incomplete.
 - Jobs `3346513` and `3350017` retain their timeout status and no scientific
   interpretation.
+- Job `3351501` retains its v1 infrastructure-failure status, verified frozen
+  input access, and preserved logs, timing record, and incomplete directory;
+  it has no finalized result or scientific interpretation.
 - Complete negative results finalize with exit code zero.
 - Exactly five final artifact files are created atomically; incomplete staging
   is never authoritative.

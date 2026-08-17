@@ -1296,7 +1296,7 @@ source repaired artifact, or checkpoint.
 ### Closed-form representation readout
 
 `closed_form_readout.py` implements accepted additive ADR-0012 as
-`GE1-C7-CLOSED-FORM-READOUT-v1`. It reads only the same three preserved hashes
+`GE1-C7-CLOSED-FORM-READOUT-v2`. It reads only the same three preserved hashes
 and replaces iterative probe fitting with exact float64 five-output ridge.
 Train-fold-only preprocessing drops zero-variance columns, standardizes
 continuous values, centers binary slot values without variance scaling, and
@@ -1311,13 +1311,32 @@ duplicatively fit. Exactly 16 primary synchronized-permutation hypotheses use
 separate raw/balanced centered global maxT families. Every result carries
 masking, limitations, and non-authorization records.
 
+The common `A/B grouped scalar` baseline uses no coordinate midpoint. It first
+rejects strict A/B ordering inversions, then transitively collapses exact ties
+in either finite-precision coordinate. Fold boundaries are ordered upper
+anchors with held-out same-gap blocks assigned to the smaller class. One
+label-free common order is frozen for observed and permuted targets, while the
+supervised boundaries are refit for each target. Coordinate-specific A and B
+analyses remain descriptive; identical A/B audit prediction views come from
+the single common fit rather than post-outcome selection.
+
+V1 Adroit job `3351501` at commit
+`912e078f216f82ad37c00198adc20dd93eb647c6` failed after verified frozen-input
+loading because independent nonlinear-coordinate midpoints produced different
+held-out predictions. It was not a timeout and produced no finalized result.
+Its logs, B=999 timing record (`671.2964434385067` projected seconds), and
+incomplete directory remain audit evidence. Because the common baseline
+affects primary differences and permutation seeds, the corrected contract is
+v2 rather than a silent v1 implementation change.
+
 The one-hour CPU runner executes repository preflights and representative
 synthetic timing before mounting preserved inputs. It selects only 999 or 499
 permutations under the 45-minute projection gate, otherwise aborting before
 input access. It mounts no corpus, checkpoint, model, repaired artifact, or
 protected partition and writes exactly five files by atomic finalization.
 ADR-0011 and the earlier screen remain incomplete; readout submission,
-scientific execution, repair, Stage 6, and C8 are not authorized.
+scientific interpretation, repair, Stage 6, and C8 are not authorized by the
+implementation itself.
 
 ## Manifest authority and access order
 

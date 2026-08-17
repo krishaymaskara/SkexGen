@@ -42,6 +42,7 @@ from .pilot import (
 )
 from .representation_probe import (
     FEATURE_DIMENSIONS,
+    FIDELITY_ERROR_LIMITS,
     OPERATION_GRIDS,
     OPERATION_TYPES,
     PROBE_ARMS,
@@ -49,15 +50,16 @@ from .representation_probe import (
     PROBE_LABEL_VERSION,
     PROBE_PROTOCOL_VERSION,
     classification_metrics,
+    fit_monotonic_thresholds,
     grouped_threshold_predictions,
-    scalar_analysis,
+    nearest_grid_predictions,
     validate_feature_rows,
 )
 
 
-READOUT_PROTOCOL_VERSION = "GE1-C7-CLOSED-FORM-READOUT-v1"
-READOUT_ARTIFACT_VERSION = "GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v1"
-READOUT_RESULT_VERSION = "GE1-C7-CLOSED-FORM-READOUT-RESULTS-v1"
+READOUT_PROTOCOL_VERSION = "GE1-C7-CLOSED-FORM-READOUT-v2"
+READOUT_ARTIFACT_VERSION = "GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v2"
+READOUT_RESULT_VERSION = "GE1-C7-CLOSED-FORM-READOUT-RESULTS-v2"
 READOUT_SEED = 2026
 SOURCE_FEATURE_COMMIT = "3ea43650bb793d8d55b3d61a1edb70ec7a920089"
 SOURCE_FEATURE_JOB_ID = "3346513"
@@ -144,6 +146,17 @@ def readout_contract():
         },
         "cohorts": copy.deepcopy(COHORT_CONTRACTS),
         "features": copy.deepcopy(FEATURE_CONTRACTS),
+        "scalar_baseline": {
+            "identity": "A/B grouped scalar common finite-precision weak order",
+            "coordinate_specific_analyses": "reported_descriptively_only",
+            "order_contract": (
+                "collapse_exact_ties_in_either_coordinate_transitively_"
+                "and_fail_on_strict_inversion"
+            ),
+            "boundary_representation": "ordered_upper_anchor_no_numeric_midpoints",
+            "held_out_same_gap_policy": "smaller_class_index",
+            "permutation_rule": "refit_same_common_boundaries_for_every_target",
+        },
         "estimator": {
             "name": "five_output_closed_form_ridge",
             "objective": (
@@ -1042,45 +1055,407 @@ def _finite_json_value(value):
     return value
 
 
+def common_scalar_order(rows):
+    """Build the canonical weak order shared by A and B.
+
+    Numeric distances are deliberately excluded. Strict inversions are an
+    invalid positive mapping, while an exact tie in either finite-precision
+    coordinate collapses the observations into one common-information block.
+    Tie collapse is transitive so the result is a single deterministic weak
+    order rather than an outcome-dependent choice of A or B.
+    """
+
+    selected = tuple(rows)
+    if not selected:
+        raise GraphEncoderError("invalid_common_scalar_order", "rows are empty")
+    keys = tuple(row["key"] for row in selected)
+    if len(set(keys)) != len(keys):
+        raise GraphEncoderError("invalid_common_scalar_order", "keys are not unique")
+    pairs = []
+    for row in selected:
+        a_value = float(row["A_physical"])
+        b_value = float(row["B_raw_logit"])
+        if not math.isfinite(a_value) or not math.isfinite(b_value):
+            raise GraphEncoderError(
+                "invalid_common_scalar_order", "A/B values must be finite"
+            )
+        pairs.append((a_value, b_value))
+
+    parents = list(range(len(selected)))
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left, right):
+        left_root = root(left)
+        right_root = root(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    for left in range(len(selected)):
+        for right in range(left + 1, len(selected)):
+            a_left, b_left = pairs[left]
+            a_right, b_right = pairs[right]
+            a_order = (a_left > a_right) - (a_left < a_right)
+            b_order = (b_left > b_right) - (b_left < b_right)
+            if a_order * b_order < 0:
+                raise GraphEncoderError(
+                    "positive_mapping_monotonicity_failure",
+                    "strict A/B ordering inversion between {} and {}".format(
+                        keys[left], keys[right]
+                    ),
+                )
+            if a_order == 0 or b_order == 0:
+                union(left, right)
+
+    components = {}
+    for index in range(len(selected)):
+        components.setdefault(root(index), []).append(index)
+    ordered_components = sorted(
+        components.values(),
+        key=lambda indices: (
+            min(pairs[index][0] for index in indices),
+            min(pairs[index][1] for index in indices),
+            tuple(sorted(keys[index] for index in indices)),
+        ),
+    )
+    blocks = []
+    rank_by_key = {}
+    previous = None
+    for rank, indices in enumerate(ordered_components):
+        a_values = [pairs[index][0] for index in indices]
+        b_values = [pairs[index][1] for index in indices]
+        block = {
+            "rank": rank,
+            "operation_keys": sorted(keys[index] for index in indices),
+            "A_physical_minimum": min(a_values),
+            "A_physical_maximum": max(a_values),
+            "B_raw_logit_minimum": min(b_values),
+            "B_raw_logit_maximum": max(b_values),
+            "collapsed_by_finite_precision_tie": len(indices) > 1,
+        }
+        if previous is not None and not (
+            previous["A_physical_maximum"] < block["A_physical_minimum"]
+            and previous["B_raw_logit_maximum"] < block["B_raw_logit_minimum"]
+        ):
+            raise GraphEncoderError(
+                "positive_mapping_monotonicity_failure",
+                "A/B weak-order blocks are not strictly ordered",
+            )
+        for index in indices:
+            rank_by_key[keys[index]] = rank
+        blocks.append(block)
+        previous = block
+    return {
+        "algorithm": "transitive_intersection_of_A_B_finite_precision_weak_orders",
+        "numeric_midpoints_used": False,
+        "strict_inversion_policy": "fail",
+        "tie_policy": "collapse_exact_ties_in_either_coordinate_transitively",
+        "common_information_interpretation": (
+            "only distinctions preserved by both existing scalar coordinates"
+        ),
+        "block_count": len(blocks),
+        "coordinate_pairs_by_key": {
+            key: [pairs[index][0], pairs[index][1]]
+            for index, key in sorted(enumerate(keys), key=lambda item: item[1])
+        },
+        "rank_by_key": rank_by_key,
+        "blocks": blocks,
+    }
+
+
+def _common_boundary_candidates(ranks):
+    ordered = sorted(set(int(rank) for rank in ranks))
+    if not ordered:
+        raise GraphEncoderError("invalid_common_scalar_order", "training ranks are empty")
+    return tuple(
+        [{"kind": "negative_infinity"}]
+        + [
+            {"kind": "before_common_rank", "upper_anchor_rank": rank}
+            for rank in ordered[1:]
+        ]
+        + [{"kind": "positive_infinity"}]
+    )
+
+
+def _common_boundary_position(boundary):
+    if boundary.get("kind") == "negative_infinity":
+        return -float("inf")
+    if boundary.get("kind") == "positive_infinity":
+        return float("inf")
+    if boundary.get("kind") == "before_common_rank":
+        return float(boundary["upper_anchor_rank"])
+    raise GraphEncoderError("invalid_common_scalar_boundary", "unknown boundary kind")
+
+
+def apply_common_order_boundaries(ranks, boundaries):
+    """Apply four order anchors; same-gap values stay in the smaller class."""
+
+    cuts = tuple(boundaries)
+    positions = tuple(_common_boundary_position(boundary) for boundary in cuts)
+    if len(cuts) != 4 or any(
+        left > right for left, right in zip(positions, positions[1:])
+    ):
+        raise GraphEncoderError(
+            "invalid_common_scalar_boundary", "four nondecreasing boundaries required"
+        )
+    predictions = []
+    for value in ranks:
+        rank = int(value)
+        predictions.append(sum(
+            boundary["kind"] == "negative_infinity"
+            or (
+                boundary["kind"] == "before_common_rank"
+                and rank >= int(boundary["upper_anchor_rank"])
+            )
+            for boundary in cuts
+        ))
+    return tuple(predictions)
+
+
+def fit_common_order_boundaries(ranks, labels):
+    """Fit exact five-class monotonic boundaries on canonical common ranks."""
+
+    scalar_ranks = tuple(int(rank) for rank in ranks)
+    truth = tuple(int(label) for label in labels)
+    if not scalar_ranks or len(scalar_ranks) != len(truth):
+        raise GraphEncoderError(
+            "invalid_common_scalar_order", "rank and label lengths differ"
+        )
+    if any(label < 0 or label > 4 for label in truth):
+        raise GraphEncoderError("invalid_common_scalar_order", "class index differs")
+    candidates = _common_boundary_candidates(scalar_ranks)
+    prefix_matches = []
+    for predicted_class in range(5):
+        counts = []
+        for boundary in candidates:
+            if boundary["kind"] == "negative_infinity":
+                count = 0
+            elif boundary["kind"] == "positive_infinity":
+                count = sum(label == predicted_class for label in truth)
+            else:
+                anchor = int(boundary["upper_anchor_rank"])
+                count = sum(
+                    label == predicted_class and rank < anchor
+                    for rank, label in zip(scalar_ranks, truth)
+                )
+            counts.append(count)
+        prefix_matches.append(tuple(counts))
+
+    states = {
+        index: (prefix_matches[0][index], (index,))
+        for index in range(len(candidates))
+    }
+    for class_index in range(1, 4):
+        next_states = {}
+        for boundary in range(len(candidates)):
+            best = None
+            for previous in range(boundary + 1):
+                previous_score, previous_path = states[previous]
+                segment = (
+                    prefix_matches[class_index][boundary]
+                    - prefix_matches[class_index][previous]
+                )
+                candidate = (previous_score + segment, previous_path + (boundary,))
+                if best is None or candidate[0] > best[0] or (
+                    candidate[0] == best[0] and candidate[1] < best[1]
+                ):
+                    best = candidate
+            next_states[boundary] = best
+        states = next_states
+    best = None
+    total_by_class = [truth.count(index) for index in range(5)]
+    for boundary, (score, path) in states.items():
+        final_score = score + total_by_class[4] - prefix_matches[4][boundary]
+        candidate = (final_score, path)
+        if best is None or candidate[0] > best[0] or (
+            candidate[0] == best[0] and candidate[1] < best[1]
+        ):
+            best = candidate
+    fitted = tuple(dict(candidates[index]) for index in best[1])
+    predictions = apply_common_order_boundaries(scalar_ranks, fitted)
+    return {
+        "algorithm": "dynamic_programming_on_common_order_anchors",
+        "tie_break": "lexicographically_earliest_boundary_tuple",
+        "same_gap_policy": "smaller_class_index",
+        "boundaries": list(fitted),
+        "metrics": classification_metrics(truth, predictions),
+        "predictions": list(predictions),
+    }
+
+
+def common_grouped_scalar_predictions(rows, order_contract=None):
+    """Fit one LOFO scalar baseline on distinctions shared by A and B."""
+
+    values = tuple(rows)
+    common_order = common_scalar_order(values) if order_contract is None else order_contract
+    if set(common_order["rank_by_key"]) != {row["key"] for row in values}:
+        raise GraphEncoderError(
+            "invalid_common_scalar_order", "common-order keys differ from rows"
+        )
+    observed_pairs = {
+        row["key"]: [float(row["A_physical"]), float(row["B_raw_logit"])]
+        for row in values
+    }
+    if common_order.get("coordinate_pairs_by_key") != observed_pairs:
+        raise GraphEncoderError(
+            "invalid_common_scalar_order", "common-order coordinates differ from rows"
+        )
+    ranks = common_order["rank_by_key"]
+    families = tuple(sorted(set(row["family_id"] for row in values)))
+    if len(families) < 2:
+        raise GraphEncoderError(
+            "insufficient_probe_families", "grouped boundaries need two families"
+        )
+    predictions = {}
+    folds = []
+    for held in families:
+        train = tuple(row for row in values if row["family_id"] != held)
+        test = tuple(row for row in values if row["family_id"] == held)
+        fitted = fit_common_order_boundaries(
+            tuple(ranks[row["key"]] for row in train),
+            tuple(row["class_index"] for row in train),
+        )
+        observed = apply_common_order_boundaries(
+            tuple(ranks[row["key"]] for row in test), fitted["boundaries"]
+        )
+        for row, prediction in zip(test, observed):
+            predictions[row["key"]] = prediction
+        folds.append({
+            "held_out_family_id": held,
+            "boundaries": fitted["boundaries"],
+            "train_family_ids": sorted(set(row["family_id"] for row in train)),
+            "same_gap_policy": fitted["same_gap_policy"],
+        })
+    ordered = tuple(sorted(values, key=lambda row: row["key"]))
+    truth = tuple(row["class_index"] for row in ordered)
+    predicted = tuple(predictions[row["key"]] for row in ordered)
+    prediction_view = dict(predictions)
+    return {
+        "split": "leave_one_physical_family_out",
+        "baseline_identity": "A/B grouped scalar common finite-precision weak order",
+        "coordinate_selection": "none_single_prospectively_frozen_common_fit",
+        "metrics": classification_metrics(truth, predicted),
+        "predictions_by_key": prediction_view,
+        "coordinate_prediction_equivalence": {
+            "status": "identical_by_construction_single_common_fit",
+            "A_physical_predictions_by_key": dict(prediction_view),
+            "B_raw_logit_predictions_by_key": dict(prediction_view),
+        },
+        "folds": folds,
+        "common_order": common_order,
+    }
+
+
+def _closed_form_scalar_analysis(rows, operation_type):
+    """Report separate coordinate analyses without choosing the common baseline."""
+
+    selected = tuple(sorted(rows, key=lambda row: row["key"]))
+    labels = tuple(row["class_index"] for row in selected)
+    physical = tuple(float(row["A_physical"]) for row in selected)
+    logits = tuple(float(row["B_raw_logit"]) for row in selected)
+    fidelity_pass_by_key = {
+        row["key"]: abs(
+            row["A_physical"]
+            - OPERATION_GRIDS[operation_type][row["class_index"]]
+        ) < FIDELITY_ERROR_LIMITS[operation_type]
+        for row in selected
+    }
+    family_pass = {}
+    for row in selected:
+        family_pass.setdefault(row["family_id"], True)
+        family_pass[row["family_id"]] = (
+            family_pass[row["family_id"]] and fidelity_pass_by_key[row["key"]]
+        )
+    ranges = {}
+    for name, scalars in (("A_physical", physical), ("B_raw_logit", logits)):
+        ranges[name] = {}
+        for label in range(5):
+            observed = tuple(
+                value for value, truth in zip(scalars, labels) if truth == label
+            )
+            ranges[name][str(label)] = {
+                "support": len(observed),
+                "minimum": min(observed) if observed else None,
+                "maximum": max(observed) if observed else None,
+            }
+    return {
+        "operation_type": operation_type,
+        "class_order": list(OPERATION_GRIDS[operation_type]),
+        "per_class_scalar_ranges": ranges,
+        "rank_order_A": [
+            {"key": selected[index]["key"], "value": physical[index],
+             "class_index": labels[index]}
+            for index in sorted(
+                range(len(selected)), key=lambda index: (physical[index], index)
+            )
+        ],
+        "rank_order_B": [
+            {"key": selected[index]["key"], "value": logits[index],
+             "class_index": labels[index]}
+            for index in sorted(
+                range(len(selected)), key=lambda index: (logits[index], index)
+            )
+        ],
+        "existing_fidelity_gate": {
+            "operation_accuracy": sum(fidelity_pass_by_key.values()) / len(selected),
+            "family_all_operations_accuracy": sum(family_pass.values()) / len(family_pass),
+            "comparison": "unrounded_absolute_physical_error_strictly_below_limit",
+        },
+        "nearest_grid": classification_metrics(
+            labels, nearest_grid_predictions(physical, operation_type)
+        ),
+        "A_scalar_only_resubstitution_ceiling": fit_monotonic_thresholds(
+            physical, labels
+        ),
+        "B_monotonic_resubstitution_ceiling": fit_monotonic_thresholds(
+            logits, labels
+        ),
+        "A_grouped_threshold": grouped_threshold_predictions(
+            selected, value_key="A_physical"
+        ),
+        "B_grouped_threshold": grouped_threshold_predictions(
+            selected, value_key="B_raw_logit"
+        ),
+        "coordinate_specific_grouped_role": (
+            "descriptive_only_not_used_for_primary_baseline_or_selection"
+        ),
+    }
+
+
 def _scalar_targets(rows, targets):
     raw_values = []
     balanced_values = []
     observed_analysis = None
     observed_common = None
+    common_order = common_scalar_order(rows)
     for target_index in range(targets.size(0)):
         relabeled = []
         for row_index, row in enumerate(rows):
             value = dict(row)
             value["class_index"] = int(targets[target_index, row_index])
             relabeled.append(value)
-        a_grouped = grouped_threshold_predictions(relabeled, value_key="A_physical")
-        b_grouped = grouped_threshold_predictions(relabeled, value_key="B_raw_logit")
-        if (
-            a_grouped["predictions_by_key"] != b_grouped["predictions_by_key"]
-            or a_grouped["metrics"] != b_grouped["metrics"]
-        ):
-            raise GraphEncoderError(
-                "positive_mapping_monotonicity_failure",
-                "A/B grouped predictions or metrics differ",
-            )
-        raw_values.append(float(a_grouped["metrics"]["accuracy"]))
-        balanced_values.append(float(a_grouped["metrics"]["balanced_accuracy"]))
+        common = common_grouped_scalar_predictions(relabeled, common_order)
+        raw_values.append(float(common["metrics"]["accuracy"]))
+        balanced_values.append(float(common["metrics"]["balanced_accuracy"]))
         if target_index == 0:
             observed_analysis = _finite_json_value(
-                scalar_analysis(relabeled, rows[0]["operation_type"])
+                _closed_form_scalar_analysis(relabeled, rows[0]["operation_type"])
             )
             ordered = tuple(sorted(relabeled, key=lambda row: row["key"]))
-            predicted = [a_grouped["predictions_by_key"][row["key"]] for row in ordered]
-            observed_common = {
-                "status": "verified_equivalent",
+            predicted = [common["predictions_by_key"][row["key"]] for row in ordered]
+            observed_common = _finite_json_value(dict(common))
+            observed_common.update({
+                "status": "verified_single_common_order_fit",
                 "identity": "A/B grouped scalar",
                 "metrics": metric_record(
                     [row["class_index"] for row in ordered], predicted
                 ),
-                "predictions_by_operation_key": dict(a_grouped["predictions_by_key"]),
-                "A_folds": _finite_json_value(a_grouped["folds"]),
-                "B_folds": _finite_json_value(b_grouped["folds"]),
-            }
+                "predictions_by_operation_key": dict(common["predictions_by_key"]),
+            })
     return {
         "analysis": observed_analysis,
         "common_grouped": observed_common,

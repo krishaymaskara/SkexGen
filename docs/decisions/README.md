@@ -80,7 +80,7 @@ it superseded by a later ADR.
   unsubmitted runner, and local bundle preparation.
 - [ADR-0012: GE1 closed-form representation
   readout](ADR-0012-ge1-closed-form-representation-readout.md) — accepted by
-  designated reviewer Krishay Maskara; adds a one-hour artifact-only,
-  permutation-controlled ridge readout over the detached files preserved by
-  job `3346513`, while preserving ADR-0011 and the representation screen as
-  separate incomplete work and authorizing no scientific execution or repair.
+  designated reviewer Krishay Maskara; v2 corrects the common A/B scalar
+  baseline to an order-invariant contract after v1 job `3351501` failed
+  without a result, while preserving the one-hour artifact-only ridge design,
+  ADR-0011, and the representation screen as separate incomplete work.

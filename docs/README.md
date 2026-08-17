@@ -84,12 +84,14 @@ the immediate next action changes.
   `3345280`.
 - [ADR-0012: GE1 closed-form representation
   readout](decisions/ADR-0012-ge1-closed-form-representation-readout.md) —
-  accepted additive governance for a one-hour artifact-only ridge diagnostic;
+  accepted additive governance for the corrected v2 one-hour artifact-only
+  ridge diagnostic; v1 job `3351501` failed without a scientific result, and
   ADR-0011 and the representation screen remain separate and incomplete.
 - [GE1 closed-form representation-readout
   contract](specifications/ge1_closed_form_representation_readout.md) —
-  frozen C/P/slot-gated feature, nested LOFO, family-block permutation,
-  centered maxT, timing-ladder, access, and five-file artifact contract.
+  frozen common A/B weak-order baseline, C/P/slot-gated feature, nested LOFO,
+  family-block permutation, centered maxT, timing-ladder, access, and
+  five-file artifact contract.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
@@ -240,7 +242,8 @@ the immediate next action changes.
 - [GE1 closed-form representation-readout
   contract](specifications/ge1_closed_form_representation_readout.md) —
   additive artifact-only replacement for the timed-out iterative readouts,
-  designed for a one-hour CPU allocation; execution remains unauthorized.
+  corrected to v2 after v1 job `3351501` exposed the nonlinear-midpoint
+  invariant failure; v2 has not been submitted.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

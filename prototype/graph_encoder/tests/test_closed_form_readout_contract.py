@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +23,18 @@ RUNNER = ROOT / "prototype/graph_encoder/adroit/ge1_closed_form_readout_cpu.slur
 def _joined_rows(arm="flat"):
     features, labels = readout.synthetic_fixture()
     return readout.join_detached_rows(features, labels, arm)
+
+
+def _scalar_rows(b_values, a_values, labels):
+    return tuple({
+        "key": "operation-{}".format(index),
+        "family_id": "family-{}".format(index),
+        "class_index": label,
+        "A_physical": a_value,
+        "B_raw_logit": b_value,
+    } for index, (b_value, a_value, label) in enumerate(
+        zip(b_values, a_values, labels)
+    ))
 
 
 def _negative_results():
@@ -76,15 +89,91 @@ def _negative_results():
 
 class ClosedFormReadoutContractTests(unittest.TestCase):
     def test_protocol_artifact_and_results_identities_are_exact(self):
-        self.assertEqual(readout.READOUT_PROTOCOL_VERSION, "GE1-C7-CLOSED-FORM-READOUT-v1")
+        self.assertEqual(readout.READOUT_PROTOCOL_VERSION, "GE1-C7-CLOSED-FORM-READOUT-v2")
         self.assertEqual(
             readout.READOUT_ARTIFACT_VERSION,
-            "GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v1",
+            "GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v2",
         )
         self.assertEqual(
             readout.READOUT_RESULT_VERSION,
-            "GE1-C7-CLOSED-FORM-READOUT-RESULTS-v1",
+            "GE1-C7-CLOSED-FORM-READOUT-RESULTS-v2",
         )
+
+    def test_common_scalar_avoids_nonlinear_midpoint_failure(self):
+        b_values = (0.0, 1.0, 2.0)
+        rows = _scalar_rows(
+            b_values, tuple(math.exp(value) for value in b_values), (0, 0, 1)
+        )
+        a_separate = readout.grouped_threshold_predictions(
+            rows, value_key="A_physical"
+        )
+        b_separate = readout.grouped_threshold_predictions(
+            rows, value_key="B_raw_logit"
+        )
+        self.assertNotEqual(
+            a_separate["predictions_by_key"], b_separate["predictions_by_key"]
+        )
+        common = readout.common_grouped_scalar_predictions(rows)
+        self.assertFalse(common["common_order"]["numeric_midpoints_used"])
+        views = common["coordinate_prediction_equivalence"]
+        self.assertEqual(
+            views["A_physical_predictions_by_key"],
+            views["B_raw_logit_predictions_by_key"],
+        )
+
+    def test_common_scalar_collapses_saturation_ties(self):
+        rows = _scalar_rows(
+            (0.0, 1.0, 2.0, 3.0),
+            (0.5, 1.0, 1.0, 1.0),
+            (0, 1, 2, 3),
+        )
+        order = readout.common_scalar_order(rows)
+        self.assertEqual(order["block_count"], 2)
+        self.assertEqual(
+            order["rank_by_key"]["operation-1"],
+            order["rank_by_key"]["operation-3"],
+        )
+        result = readout.common_grouped_scalar_predictions(rows, order)
+        self.assertEqual(
+            result["coordinate_prediction_equivalence"]["status"],
+            "identical_by_construction_single_common_fit",
+        )
+
+    def test_common_scalar_rejects_genuine_ordering_inversion(self):
+        rows = _scalar_rows((0.0, 1.0, 2.0), (0.5, 0.4, 0.9), (0, 1, 2))
+        with self.assertRaises(GraphEncoderError) as context:
+            readout.common_scalar_order(rows)
+        self.assertEqual(context.exception.code, "positive_mapping_monotonicity_failure")
+        self.assertIn("strict A/B ordering inversion", context.exception.detail)
+
+    def test_common_baseline_is_shared_for_observed_and_permuted_targets(self):
+        for arm in readout.PROBE_ARMS:
+            for operation_type in readout.OPERATION_TYPES:
+                rows = readout.select_cohort(
+                    _joined_rows(arm), operation_type, "full"
+                )
+                common_order = readout.common_scalar_order(rows)
+                permuted = readout.permute_family_blocks(rows, operation_type, 0)
+                for labels in (
+                    {row["key"]: row["class_index"] for row in rows}, permuted
+                ):
+                    relabeled = []
+                    for row in rows:
+                        value = dict(row)
+                        value["class_index"] = labels[row["key"]]
+                        relabeled.append(value)
+                    result = readout.common_grouped_scalar_predictions(
+                        relabeled, common_order
+                    )
+                    views = result["coordinate_prediction_equivalence"]
+                    self.assertEqual(
+                        views["A_physical_predictions_by_key"],
+                        views["B_raw_logit_predictions_by_key"],
+                    )
+                    self.assertEqual(
+                        result["common_order"]["rank_by_key"],
+                        common_order["rank_by_key"],
+                    )
 
     def test_exact_three_frozen_input_hashes(self):
         self.assertEqual(readout.READOUT_INPUT_HASHES, {
@@ -101,6 +190,14 @@ class ClosedFormReadoutContractTests(unittest.TestCase):
         ])
         self.assertEqual(contract["permutations"]["ladder"], [999, 499])
         self.assertIn("(1/(2n))", contract["estimator"]["objective"])
+        self.assertEqual(
+            contract["scalar_baseline"]["boundary_representation"],
+            "ordered_upper_anchor_no_numeric_midpoints",
+        )
+        self.assertEqual(
+            contract["scalar_baseline"]["held_out_same_gap_policy"],
+            "smaller_class_index",
+        )
         self.assertEqual(len(readout._primary_definitions()), 16)
 
     def test_cohort_structure_and_sensitivity_are_exact(self):
@@ -257,6 +354,8 @@ class ClosedFormReadoutContractTests(unittest.TestCase):
         self.assertNotIn("CHECKPOINT_DIR", text)
         self.assertIn("closed_form_permutation_progress", SOURCE.read_text(encoding="utf-8"))
         self.assertIn("indeterminate_not_terminally_certified", text)
+        self.assertIn("GE1-C7-CLOSED-FORM-READOUT-v2", text)
+        self.assertNotIn("GE1-C7-CLOSED-FORM-READOUT-v1", text)
         timing_position = text.index("synthetic-timing")
         input_check_position = text.index('test -d "$INPUT_DIR"')
         self.assertLess(timing_position, input_check_position)

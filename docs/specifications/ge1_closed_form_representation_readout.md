@@ -4,18 +4,27 @@
 
 | Item | Frozen value |
 |---|---|
-| Status | Accepted for implementation, synthetic validation, an unsubmitted runner, and exact-source preparation |
-| Protocol | `GE1-C7-CLOSED-FORM-READOUT-v1` |
-| Artifact | `GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v1` |
-| Results | `GE1-C7-CLOSED-FORM-READOUT-RESULTS-v1` |
+| Status | Accepted v2 contract correction, synthetic validation, runner, and exact-source preparation |
+| Protocol | `GE1-C7-CLOSED-FORM-READOUT-v2` |
+| Artifact | `GE1-C7-CLOSED-FORM-READOUT-ARTIFACT-v2` |
+| Results | `GE1-C7-CLOSED-FORM-READOUT-RESULTS-v2` |
 | Source | Three detached files preserved by timed-out job `3346513` |
 | Runtime | Adroit CPU, Python 3.8.13, PyTorch 1.11.0, one thread, one hour |
 | ADR-0011 / screen | Accepted and incomplete / separate and incomplete |
-| Scientific execution | Separately unauthorized |
+| Scientific execution | V1 job `3351501` failed without a result; v2 is not yet submitted |
 
 This is an observational accessibility diagnostic. Every result must carry
 the complete limitations and non-authorization block from
 [ADR-0012](../decisions/ADR-0012-ge1-closed-form-representation-readout.md).
+
+V1 is immutable failed audit history. Job `3351501` at commit
+`912e078f216f82ad37c00198adc20dd93eb647c6` failed with exit `1:0` after
+`00:06:28` and MaxRSS `611492K`, after hash verification and loading of all
+three frozen inputs. Its B=999 projection was `671.2964434385067` seconds.
+No finalized scientific result exists. Preserve its stdout/stderr, timing
+record, and incomplete directory without deletion or mutation. V2 is a
+required identity bump because the repaired common scalar baseline affects
+primary difference hypotheses and the protocol-derived permutation seeds.
 
 ## Immutable inputs and access order
 
@@ -53,12 +62,30 @@ is a structured `not_applicable_full_cohort_already_one_to_one` record.
 ## Scalar baseline
 
 Run the existing A-physical and B-raw-logit scalar definitions, physical
-fidelity scoring, monotonic resubstitution ceilings, and physical-family LOFO
-grouped thresholds. Report raw/balanced accuracy, confusion, fixed-five-class
-support/recall, and predictions. A and B are monotonic views of one path; their
-grouped predictions and metrics must be identical for observed and every
-permuted target. Any mismatch is an infrastructure failure. The verified
-common result is `A/B grouped scalar`.
+fidelity scoring, monotonic resubstitution ceilings, and coordinate-specific
+physical-family LOFO grouped thresholds. Report their raw/balanced accuracy,
+confusion, fixed-five-class support/recall, and predictions descriptively.
+Never choose between their coordinate-specific results for a primary test.
+
+Before using labels, construct one common finite-precision weak order. Reject
+any pair whose strict order in A is reversed in B. Collapse exact ties in
+either coordinate transitively; sigmoid saturation therefore removes a
+distinction from the common path even if B retains it. The resulting ordered
+blocks contain exactly the distinctions preserved by both coordinates.
+
+For each LOFO training fold, candidate class boundaries are negative infinity,
+positive infinity, or an upper common-order anchor. Numeric A/B midpoints are
+forbidden. A held-out block between adjacent training anchors remains on the
+smaller-class side until the upper anchor, prospectively freezing the
+same-gap ambiguity. Fit four nondecreasing boundaries by the existing exact
+five-class dynamic-programming objective and lexicographically earliest
+boundary tie break.
+
+The label-free common order is frozen once per arm/type cohort. Refit the four
+supervised boundaries for the observed target and every synchronized
+permutation. Emit identical A and B audit views from this single fit. This
+result is the only `A/B grouped scalar` baseline used in C-minus-A/B primary
+differences; the separate A and B fits remain descriptive.
 
 ## Features and execution matrix
 
@@ -139,9 +166,9 @@ For each operation type and permutation index, derive one seed from protocol,
 2026, operation type, and index only. Within each template, shuffle complete
 family label blocks. Preserve class support and the ordered EE pair. Apply the
 same map to both arms and every feature; restrict the full extrusion map for
-the E+RE sensitivity. Pair extrusion/revolve permutation indices. Rerun grouped
-threshold fitting and nested lambda selection. Only X preprocessing and SVDs
-are reusable.
+the E+RE sensitivity. Pair extrusion/revolve permutation indices. Refit the
+common ordered boundaries and nested lambda selection for every permuted
+target. Only label-free common ranks, X preprocessing, and SVDs are reusable.
 
 Synthetic timing uses actual cohort/fold counts, dimensions 2/32/34/66,
 batched targets, all executed/structured combinations, metrics, and maxT. Its

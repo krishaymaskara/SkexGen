@@ -16,7 +16,7 @@ INPUT_ACCESS_STATUS="not_accessed"
 terminal_failure() {
   status=$?
   trap - ERR
-  printf '{"event":"closed_form_readout_terminal_failure","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v1","commit":"%s","job_id":"%s","exit_status":%s,"preserved_input_content_access_status":"%s","corpus_accessed":false,"operation_template_manifest_accessed":false,"source_repaired_checkpoint_accessed":false,"ge1_model_constructed_or_loaded":false,"ge1_training_performed":false,"ge1_backward_pass_performed":false,"repair_performed":false,"protected_partition_accessed":false,"stage6_performed":false,"c8_or_later_performed":false}\n' \
+  printf '{"event":"closed_form_readout_terminal_failure","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v2","commit":"%s","job_id":"%s","exit_status":%s,"preserved_input_content_access_status":"%s","corpus_accessed":false,"operation_template_manifest_accessed":false,"source_repaired_checkpoint_accessed":false,"ge1_model_constructed_or_loaded":false,"ge1_training_performed":false,"ge1_backward_pass_performed":false,"repair_performed":false,"protected_partition_accessed":false,"stage6_performed":false,"c8_or_later_performed":false}\n' \
     "${EXPECTED_COMMIT:-unresolved}" "${SLURM_JOB_ID:-unresolved}" "$status" \
     "$INPUT_ACCESS_STATUS" >&2
   exit "$status"
@@ -88,7 +88,7 @@ test "$CHECKED_OUT_COMMIT" = "$EXPECTED_COMMIT"
 test -z "$SOURCE_STATUS"
 git cat-file -e "${SOURCE_FEATURE_COMMIT}^{commit}"
 
-printf '{"event":"closed_form_readout_job_start","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v1","commit":"%s","job_id":"%s","host":"%s","source_clean":true,"standalone_checkout":true,"execution_device":"cpu","preserved_input_content_access_status":"not_accessed","corpus_accessed":false,"checkpoint_accessed":false,"model_accessed":false,"protected_partition_accessed":false}\n' \
+printf '{"event":"closed_form_readout_job_start","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v2","commit":"%s","job_id":"%s","host":"%s","source_clean":true,"standalone_checkout":true,"execution_device":"cpu","preserved_input_content_access_status":"not_accessed","corpus_accessed":false,"checkpoint_accessed":false,"model_accessed":false,"protected_partition_accessed":false}\n' \
   "$CHECKED_OUT_COMMIT" "$SLURM_JOB_ID" "$(hostname)"
 
 preflight_python -B - <<'PY'
@@ -224,7 +224,7 @@ preflight_python -B - <<'PY'
 import prototype.graph_encoder as package
 import prototype.graph_encoder.closed_form_readout as readout
 
-assert readout.READOUT_PROTOCOL_VERSION == "GE1-C7-CLOSED-FORM-READOUT-v1"
+assert readout.READOUT_PROTOCOL_VERSION == "GE1-C7-CLOSED-FORM-READOUT-v2"
 assert "READOUT_PROTOCOL_VERSION" in package.__all__
 assert "verify_readout_artifact" in package.__all__
 print("CLOSED_FORM_IMPORT_EXPORT_AUDIT=PASS", flush=True)
@@ -309,5 +309,5 @@ PY
 
 test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-printf '{"event":"closed_form_readout_terminal_success","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v1","commit":"%s","job_id":"%s","preserved_input_content_access_status":"verified_and_loaded","corpus_accessed":false,"checkpoint_accessed":false,"model_accessed":false,"training_performed":false,"backward_pass_performed":false,"repair_performed":false,"protected_partition_accessed":false,"stage6_performed":false,"c8_or_later_performed":false}\n' \
+printf '{"event":"closed_form_readout_terminal_success","protocol_version":"GE1-C7-CLOSED-FORM-READOUT-v2","commit":"%s","job_id":"%s","preserved_input_content_access_status":"verified_and_loaded","corpus_accessed":false,"checkpoint_accessed":false,"model_accessed":false,"training_performed":false,"backward_pass_performed":false,"repair_performed":false,"protected_partition_accessed":false,"stage6_performed":false,"c8_or_later_performed":false}\n' \
   "$EXPECTED_COMMIT" "$SLURM_JOB_ID"
