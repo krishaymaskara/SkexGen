@@ -1293,6 +1293,32 @@ C8 is authorized. The prepared one-hour CPU runner mounts the preserved
 directory read-only only after all preflights and mounts no corpus, manifest,
 source repaired artifact, or checkpoint.
 
+### Closed-form representation readout
+
+`closed_form_readout.py` implements accepted additive ADR-0012 as
+`GE1-C7-CLOSED-FORM-READOUT-v1`. It reads only the same three preserved hashes
+and replaces iterative probe fitting with exact float64 five-output ridge.
+Train-fold-only preprocessing drops zero-variance columns, standardizes
+continuous values, centers binary slot values without variance scaling, and
+uses an unpenalized intercept. Thin SVDs are reused exactly across the frozen
+lambda grid and batched true/permuted targets; an uncached primal solve is a
+synthetic-test oracle.
+
+The full matrix fits C/P plus extrusion-only D-additive, D-gated, and
+context-only features, with E+RE as a secondary one-extrusion sensitivity.
+Revolve D/context variants and revolve sensitivity are structured rather than
+duplicatively fit. Exactly 16 primary synchronized-permutation hypotheses use
+separate raw/balanced centered global maxT families. Every result carries
+masking, limitations, and non-authorization records.
+
+The one-hour CPU runner executes repository preflights and representative
+synthetic timing before mounting preserved inputs. It selects only 999 or 499
+permutations under the 45-minute projection gate, otherwise aborting before
+input access. It mounts no corpus, checkpoint, model, repaired artifact, or
+protected partition and writes exactly five files by atomic finalization.
+ADR-0011 and the earlier screen remain incomplete; readout submission,
+scientific execution, repair, Stage 6, and C8 are not authorized.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

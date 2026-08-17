@@ -82,6 +82,14 @@ the immediate next action changes.
   feature, split, probe, permutation-control, loss-audit, provenance, and
   non-authorization contract over immutable repaired-sufficiency job
   `3345280`.
+- [ADR-0012: GE1 closed-form representation
+  readout](decisions/ADR-0012-ge1-closed-form-representation-readout.md) —
+  accepted additive governance for a one-hour artifact-only ridge diagnostic;
+  ADR-0011 and the representation screen remain separate and incomplete.
+- [GE1 closed-form representation-readout
+  contract](specifications/ge1_closed_form_representation_readout.md) —
+  frozen C/P/slot-gated feature, nested LOFO, family-block permutation,
+  centered maxT, timing-ladder, access, and five-file artifact contract.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
@@ -229,6 +237,10 @@ the immediate next action changes.
   16-pipeline real-label-only screen over the three preserved files from
   timed-out job `3346513`; no permutations, corpus, checkpoint, GE1 model,
   repair, Stage 6, or C8 authority.
+- [GE1 closed-form representation-readout
+  contract](specifications/ge1_closed_form_representation_readout.md) —
+  additive artifact-only replacement for the timed-out iterative readouts,
+  designed for a one-hour CPU allocation; execution remains unauthorized.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

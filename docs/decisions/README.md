@@ -78,3 +78,9 @@ it superseded by a later ADR.
   scalar/decoder-state/encoder-memory accessibility diagnostic over immutable
   job `3345280`, while authorizing only implementation, synthetic testing, an
   unsubmitted runner, and local bundle preparation.
+- [ADR-0012: GE1 closed-form representation
+  readout](ADR-0012-ge1-closed-form-representation-readout.md) — accepted by
+  designated reviewer Krishay Maskara; adds a one-hour artifact-only,
+  permutation-controlled ridge readout over the detached files preserved by
+  job `3346513`, while preserving ADR-0011 and the representation screen as
+  separate incomplete work and authorizing no scientific execution or repair.

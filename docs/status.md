@@ -10,11 +10,11 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | Repaired-sufficiency job `3345280` remains an immutable valid train-only scientific failure; ADR-0011 probe job `3346513` timed out after preserving complete feature/label inputs, and the separately identified 16-pipeline representation screen is implemented with synthetic tests and an unsubmitted artifact-only runner; no screen execution, accessibility claim, repair, Stage 6, or C8 is authorized |
+| Current reviewed revision | Repaired-sufficiency job `3345280` remains an immutable valid train-only scientific failure; ADR-0011 job `3346513` and representation-screen job `3350017` timed out without finalized scientific results; accepted additive ADR-0012 implements a closed-form artifact-only readout and unsubmitted one-hour runner; no readout execution, accessibility claim, repair, Stage 6, or C8 is authorized |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 14, 2026 |
+| Status recorded | August 16, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
@@ -39,6 +39,8 @@ specifications or new decision records.
 | GE1 representation-probe preflight attempt | Adroit job `3346476` at exact commit `4baf596812471ca76a15b09df89ce38d0a4bf30c` failed after 17/17 pure and 6/7 real-PyTorch focused tests because the extractor conflated the `[B,2,32]` decoder memory with the frozen `[B,2,16]` prequant probe bottleneck; no source artifact, checkpoint, manifest, payload, scientific probe, training, or later-stage work was accessed or performed, and no artifact exists |
 | GE1 representation-probe timeout | Job `3346513` at exact commit `3ea43650bb793d8d55b3d61a1edb70ec7a920089` timed out during its large workload; its three verified preserved files contain the complete 96-row target-free feature and 48-row label stage, but no finalized ADR-0011 result, significance analysis, or authority |
 | GE1 preserved-feature representation screen | `GE1-C7-REPAIRED-REPRESENTATION-SCREEN-v1` is implemented as a separate 16-pipeline non-permuted real-label screen with a one-hour artifact-only CPU runner; implementation validation and bundle preparation do not authorize submission, formal accessibility claims, repair, Stage 6, C8, corpus/checkpoint access, or relabeling job `3346513` |
+| GE1 representation-screen timeout | Job `3350017` at exact commit `8a1ce734abfdbdb7468d6900a0f34a4b914608b5` timed out: state `TIMEOUT`, elapsed `01:00:15`, batch elapsed `01:00:16`, batch state `CANCELLED`, batch exit `0:15`, MaxRSS `622608K`; 12/12 focused and 361/361 graph-encoder tests plus the 86/549/17/40/51 regression suites, documentation, compilation, source audit, and import/export audit passed; its incomplete directory was empty and no finalized result or conclusion exists; preserved-input content access is `indeterminate_not_terminally_certified` because staging precedes loading and no terminal telemetry survived |
+| GE1 closed-form representation readout | Accepted [ADR-0012](decisions/ADR-0012-ge1-closed-form-representation-readout.md) adds `GE1-C7-CLOSED-FORM-READOUT-v1`: 24 closed-form ridge pipelines, explicit revolve degeneracies/non-applicabilities, exactly 16 primary synchronized-permutation hypotheses, metric-specific centered maxT, a 999/499/abort synthetic timing ladder, and an unsubmitted one-hour artifact-only CPU runner; ADR-0011 and the screen remain incomplete, and scientific submission/execution, corpus/checkpoint/model access, repair, protected access, Stage 6, and C8 remain unauthorized |
 | GE1 reviewer | Krishay Maskara |
 | Systematic partition accessed | `false` |
 | Held-out test partition accessed | `false` |
@@ -436,6 +438,26 @@ analysis finalized. It remains incomplete. The separate
 uses only those three hashes and the existing 16 non-permuted real-label
 pipelines. Its descriptive 0.40/0.40 LOFO flag is not significance evidence
 and cannot authorize a repair or later stage.
+
+That screen was attempted as Adroit job `3350017` at commit
+`8a1ce734abfdbdb7468d6900a0f34a4b914608b5` and timed out after `01:00:15`
+(`01:00:16` batch elapsed, batch `CANCELLED`, exit `0:15`, MaxRSS `622608K`).
+All preflights completed, but the incomplete artifact directory was empty and
+no scientific result exists. Because the module creates staging before input
+loading and Slurm produced no terminal telemetry, preserved-input content
+access is `indeterminate_not_terminally_certified`. Mount restrictions still
+establish that no corpus, checkpoint, model, protected partition, training,
+repair, Stage 6, or C8 path was available.
+
+Accepted [ADR-0012](decisions/ADR-0012-ge1-closed-form-representation-readout.md)
+and its [closed-form contract](specifications/ge1_closed_form_representation_readout.md)
+replace neither incomplete protocol. They add a five-output closed-form ridge
+readout over only the three preserved hashes, with slot-gated extrusion
+prequant, structurally reduced revolve features, synchronized family-block
+permutations, 16-primary-hypothesis centered maxT, and a pre-input synthetic
+999/499/abort timing gate. Implementation, synthetic validation, and an
+unsubmitted runner are authorized; submission and scientific execution are
+not.
 
 ## Documentation and artifact maintenance
 

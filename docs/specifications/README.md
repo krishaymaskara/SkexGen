@@ -28,6 +28,8 @@ succeeded.
   contract](ge1_repaired_representation_probe.md)
 - [GE1 preserved-feature representation-screening
   contract](ge1_repaired_representation_screen.md)
+- [GE1 closed-form representation-readout
+  contract](ge1_closed_form_representation_readout.md)
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -53,3 +55,8 @@ awaiting a decision. When its current-state language differs from the
   a short, separately identified non-permuted screen over the three verified
   files preserved by timed-out job `3346513`; implementation and an unsubmitted
   artifact-only runner are present, while execution remains unauthorized.
+- [GE1 closed-form representation readout](ge1_closed_form_representation_readout.md):
+  an accepted additive, artifact-only ridge/SVD diagnostic with synchronized
+  family-block permutations and global centered maxT; implementation and a
+  one-hour unsubmitted runner are present, while scientific execution remains
+  separately unauthorized.
