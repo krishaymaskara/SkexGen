@@ -272,3 +272,17 @@ this one execution. Every path records
 `additional_repair_authorized=false`. No outcome opens Stage 6, C8, protected
 access, a second run, or further repair without a new explicit reviewer
 decision.
+
+## Finalized scientific execution and separate engineering question
+
+Job `3352404` consumed the single scientific authorization and finalized a
+scientific failure: both tiny exact gates passed, both tiny revolve-fidelity
+gates failed on the same two 90-degree targets decoded as 45 degrees, and all
+six scaled gates were `not_run` with scaled payload access false. The result
+does not authorize a scientific retry or repair.
+
+The separately authorized generated-state engineering question is frozen in
+the [grid-ordinal trajectory diagnostic
+contract](ge1_grid_ordinal_trajectory_diagnostic.md). It uses the actual
+unchanged head, loss, and optimizer without any corpus or checkpoint and may
+be submitted exactly once only after exact-commit transfer and validation.

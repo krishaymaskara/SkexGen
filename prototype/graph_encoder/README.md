@@ -1338,6 +1338,25 @@ ADR-0011 and the earlier screen remain incomplete; readout submission,
 scientific interpretation, repair, Stage 6, and C8 are not authorized by the
 implementation itself.
 
+## Grid-ordinal generated-state trajectory diagnostic
+
+After ADR-0013 scientific job `3352404` failed both tiny revolve-fidelity
+gates, the reviewer authorized one separate corpus-free and checkpoint-free
+engineering diagnostic of the actual unchanged ordinal head and loss. The
+implementation in `grid_ordinal_trajectory.py` runs 20 independently seeded
+generated-state conditions: both operations, both raw-gap initializations
+`0.0` and diagnostic-only `0.5`, and all five target classes. It records step 0
+plus 200 AdamW updates without constructing an encoder/full decoder or opening
+scientific data or state.
+
+The five-file `GE1-GRID-ORDINAL-TRAJECTORY-ARTIFACT-v1` bundle records 4,020
+canonical trajectory rows and per-condition summaries. The separate 2 GB,
+15-minute CPU runner binds only the repository read-only and artifact parent
+read-write, validates the unchanged source, runs the diagnostic exactly once,
+and never submits itself. The observation cannot establish job `3352404`
+checkpoint behavior or authorize initialization changes, another job, repair,
+protected access, Stage 6, or C8.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

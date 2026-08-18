@@ -66,3 +66,8 @@ awaiting a decision. When its current-state language differs from the
   weak-order baseline, synchronized family-block permutations, and global
   centered maxT; v1 job `3351501` failed without a finalized result and the v2
   one-hour runner has not been submitted.
+- [GE1 grid-ordinal trajectory diagnostic](ge1_grid_ordinal_trajectory_diagnostic.md):
+  an exactly-once-authorized corpus/checkpoint-free engineering trajectory of
+  the unchanged real head and loss over fixed generated states, with 20 fresh
+  conditions, 200 updates, an atomic five-file artifact, and no scientific or
+  repair authority.

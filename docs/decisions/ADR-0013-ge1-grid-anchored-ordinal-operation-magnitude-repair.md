@@ -237,6 +237,35 @@ authorization were resolved by designated reviewer Krishay Maskara on August
 17, 2026. The incomplete four-file remainder of job `3351524`'s artifact bundle
 is an evidence-retention limitation, not an unresolved design prerequisite.
 
+## Post-execution trajectory-diagnostic authorization
+
+Scientific job `3352404` at exact commit
+`de80d93208a1a98196a38d2af5cd47afd525d14f` validly finalized as a scientific
+failure. Both arms passed tiny exact structural sufficiency and decoded every
+extrusion magnitude correctly, while both decoded the two 90-degree revolve
+targets as 45 degrees and failed the strict revolve-fidelity gate. Scaled
+access remained closed. That execution consumed the one scientific-job
+authorization above; it does not authorize a retry, another repair, protected
+access, Stage 6, or C8.
+
+On August 17, 2026, designated reviewer Krishay Maskara separately authorized
+exactly one **corpus-free, checkpoint-free, engineering-only** Adroit execution
+of `GE1-GRID-ORDINAL-TRAJECTORY-DIAGNOSTIC-v1`. The diagnostic may instantiate
+only the unchanged real grid-ordinal head and loss over generated fixed
+decoder states. It records the optimization trajectory for all five classes,
+both operation types, and raw-gap initializations `0.0` and diagnostic-only
+`0.5` for exactly 200 AdamW updates. The `0.5` intervention is in-memory only
+and does not change a source default.
+
+This authorization permits implementation, validation, an unsubmitted runner,
+complete-history bundle transfer, and one later explicit submission of that
+exact committed runner. It permits no corpus, manifest, payload, checkpoint,
+model/repaired artifact, CAD kernel, protected partition, scientific training
+or inference, repair, Stage 6, or C8 resource. Its outcome is observation, not
+an artifact-validity gate, and cannot establish what occurred inside job
+`3352404`'s checkpoints or authorize a source change. Failure, timeout, or
+infrastructure error does not authorize a retry.
+
 ## Expectation setting
 
 The gate requires 48/48 operations and 32/32 families. Current per-operation

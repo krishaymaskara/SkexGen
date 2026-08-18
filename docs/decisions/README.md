@@ -93,4 +93,7 @@ it superseded by a later ADR.
   valid with a prospective-authorization deviation, and authorizes exactly one
   separately submitted exact-commit operation-template-train-only scientific
   execution after implementation and runner validation. No outcome
-  auto-authorizes another job, repair, Stage 6, C8, or protected access.
+  auto-authorizes another scientific job, repair, Stage 6, C8, or protected
+  access. Its post-execution record notes scientific failure job `3352404` and
+  separately authorizes one corpus/checkpoint-free actual-head/loss trajectory
+  diagnostic without authorizing a production change or retry.

@@ -92,6 +92,11 @@ the immediate next action changes.
   frozen common A/B weak-order baseline, C/P/slot-gated feature, nested LOFO,
   family-block permutation, centered maxT, timing-ladder, access, and
   five-file artifact contract.
+- [GE1 grid-ordinal trajectory diagnostic
+  contract](specifications/ge1_grid_ordinal_trajectory_diagnostic.md) —
+  one authorized corpus/checkpoint-free engineering trajectory over the
+  unchanged actual ordinal head and loss on fixed generated states; its runner
+  is unsubmitted and no outcome authorizes a source change or scientific work.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
