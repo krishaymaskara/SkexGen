@@ -266,6 +266,18 @@ an artifact-validity gate, and cannot establish what occurred inside job
 `3352404`'s checkpoints or authorize a source change. Failure, timeout, or
 infrastructure error does not authorize a retry.
 
+Engineering job `3352969` at commit
+`4ab68f517af84d1cde76c0cb4e408fa6420c0269` failed before the diagnostic entry
+point. All focused and complete test gates passed with zero skips, but the
+runner's preservation allowlist omitted the intentionally changed
+`prototype/graph_encoder/README.md` and rejected its own governed commit. No
+trajectory artifact or diagnostic result exists. On August 17, 2026,
+designated reviewer Krishay Maskara directed correction, commit preparation,
+and commands to run the corrected job. This is an explicit authorization for
+exactly one replacement execution at the corrected exact commit. It is not a
+scientific retry and does not authorize any further retry or excluded resource
+or operation.
+
 ## Expectation setting
 
 The gate requires 48/48 operations and 32/32 families. Current per-operation

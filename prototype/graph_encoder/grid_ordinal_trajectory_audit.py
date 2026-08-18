@@ -66,7 +66,8 @@ def audit_grid_ordinal_trajectory(package_root, runner_path):
     if any(value in source for value in forbidden_source):
         raise AssertionError("diagnostic source declares a forbidden data path")
 
-    shell = _executable_shell_source(runner.read_text(encoding="utf-8"))
+    runner_source = runner.read_text(encoding="utf-8")
+    shell = _executable_shell_source(runner_source)
     if re.search(r"(^|\s)sbatch(\s|$)", shell):
         raise AssertionError("runner submits a Slurm job")
     if shell.count("--bind") != 2:
@@ -102,6 +103,23 @@ def audit_grid_ordinal_trajectory(package_root, runner_path):
     ):
         if required_shell not in shell:
             raise AssertionError("runner omits {}".format(required_shell))
+    preservation = re.search(
+        r"allowed = \{(?P<body>.*?)\}\noutput = subprocess\.check_output",
+        runner_source,
+        re.DOTALL,
+    )
+    expected_preservation_paths = {
+        "prototype/graph_encoder/README.md",
+        "prototype/graph_encoder/grid_ordinal_trajectory.py",
+        "prototype/graph_encoder/grid_ordinal_trajectory_audit.py",
+        "prototype/graph_encoder/adroit/ge1_grid_ordinal_trajectory_cpu.slurm",
+        "prototype/graph_encoder/tests/test_grid_ordinal_trajectory_contract.py",
+        "prototype/graph_encoder/tests/test_grid_ordinal_trajectory_runtime.py",
+    }
+    if preservation is None or set(re.findall(
+        r'"([^"]+)"', preservation.group("body")
+    )) != expected_preservation_paths:
+        raise AssertionError("runner production-preservation allowlist differs")
     return {
         "version": AUDIT_VERSION,
         "python_ast_import_audit": "pass",

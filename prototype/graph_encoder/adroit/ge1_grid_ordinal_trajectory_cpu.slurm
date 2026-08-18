@@ -189,6 +189,7 @@ import sys
 
 parent, commit = sys.argv[1:]
 allowed = {
+    "prototype/graph_encoder/README.md",
     "prototype/graph_encoder/grid_ordinal_trajectory.py",
     "prototype/graph_encoder/grid_ordinal_trajectory_audit.py",
     "prototype/graph_encoder/adroit/ge1_grid_ordinal_trajectory_cpu.slurm",

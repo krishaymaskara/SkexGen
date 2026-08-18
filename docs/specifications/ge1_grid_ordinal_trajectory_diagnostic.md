@@ -93,3 +93,13 @@ The authorized remote parents are:
 
 No outcome automatically authorizes another job, retry, production change,
 repair, protected access, Stage 6, or C8.
+
+## Replacement execution after runner-gate failure
+
+Job `3352969` at commit
+`4ab68f517af84d1cde76c0cb4e408fa6420c0269` failed after all test and source
+audits passed but before the diagnostic invocation. The preservation gate
+incorrectly treated the governed graph-encoder README update as production
+drift. It produced no artifact and no diagnostic finding. The designated
+reviewer explicitly authorizes exactly one replacement execution of the
+corrected exact-commit runner; no failure or outcome authorizes another retry.

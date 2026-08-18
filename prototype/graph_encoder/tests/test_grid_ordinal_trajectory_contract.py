@@ -281,6 +281,10 @@ class SourceBoundaryTests(unittest.TestCase):
         result = audit_grid_ordinal_trajectory(package, runner)
         self.assertEqual(result["bind_count"], 2)
         self.assertEqual(result["scientific_entry_point_count"], 0)
+        self.assertIn(
+            '"prototype/graph_encoder/README.md"',
+            runner.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":
