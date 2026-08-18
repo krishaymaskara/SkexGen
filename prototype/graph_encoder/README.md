@@ -1357,6 +1357,22 @@ and never submits itself. The observation cannot establish job `3352404`
 checkpoint behavior or authorize initialization changes, another job, repair,
 protected access, Stage 6, or C8.
 
+## Grid-ordinal extended-horizon diagnostic
+
+The separately versioned `grid_ordinal_horizon.py` engineering diagnostic asks
+whether upper classes that remained below class 2 through 200 updates are slow
+or persistent over 2,000 updates. It constructs six fresh seed-2026 heads:
+extrude and revolve crossed with classes 2, 3, and 4, all using the unchanged
+zero raw-gap initialization, real grid-v2 target construction, real ordinal
+loss, and fixed `[1,0,...,0]` generated states.
+
+Every step records parameters, logits, decoding, full active parameter-group
+gradients before and after clipping, global clipping state, and AdamW moments.
+Summaries freeze milestones at 200, 500, 1,000, and 2,000 updates. The separate
+runner uses only a read-only repository bind and read-write artifact-parent
+bind. It is untransferred and unsubmitted; no outcome authorizes a production
+change or scientific activity.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

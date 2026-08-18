@@ -97,6 +97,10 @@ the immediate next action changes.
   one authorized corpus/checkpoint-free engineering trajectory over the
   unchanged actual ordinal head and loss on fixed generated states; its runner
   is unsubmitted and no outcome authorizes a source change or scientific work.
+- [GE1 grid-ordinal horizon diagnostic
+  contract](specifications/ge1_grid_ordinal_horizon_diagnostic.md) — extends
+  only classes 2–4 to 2,000 updates on fresh generated-state heads, recording
+  clipping and AdamW state without changing or opening scientific resources.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

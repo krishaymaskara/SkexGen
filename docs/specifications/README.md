@@ -71,3 +71,7 @@ awaiting a decision. When its current-state language differs from the
   the unchanged real head and loss over fixed generated states, with 20 fresh
   conditions, 200 updates, an atomic five-file artifact, and no scientific or
   repair authority.
+- [GE1 grid-ordinal horizon diagnostic](ge1_grid_ordinal_horizon_diagnostic.md):
+  a separately versioned six-condition, 2,000-update generated-state diagnostic
+  for distinguishing slow upper-cut progress from persistence, with complete
+  clipping and AdamW-state records and no production or scientific mutation.

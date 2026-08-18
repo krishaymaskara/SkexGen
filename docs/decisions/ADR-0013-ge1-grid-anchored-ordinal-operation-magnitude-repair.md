@@ -278,6 +278,22 @@ exactly one replacement execution at the corrected exact commit. It is not a
 scientific retry and does not authorize any further retry or excluded resource
 or operation.
 
+Replacement job `3353008` at commit
+`c9b519201bca80b4adfb03d5b7ad56d51ffe43b1` validly completed the generated-
+state trajectory diagnostic. With zero raw gaps, class 1 finished as class 0
+in both operations, but classes 2–4 never decoded above class 1 at any recorded
+step. The diagnostic-only `0.5` gaps corrected class 1 but did not correct
+class 3. This is engineering evidence about the unchanged real head/loss on
+fixed generated states, not evidence about the scientific checkpoints.
+
+On August 18, 2026, designated reviewer Krishay Maskara authorized preparation
+of exactly one separately versioned, corpus-free and checkpoint-free horizon
+diagnostic for classes 2–4 over 2,000 updates. The implementation may record
+full clipping and AdamW state and prepare an unsubmitted runner, bundle, and
+exact commands. This turn may not transfer or submit it. No outcome is an
+artifact-validity gate or authorizes a production change, scientific job,
+repair, protected access, Stage 6, C8, or an additional diagnostic.
+
 ## Expectation setting
 
 The gate requires 48/48 operations and 32/32 families. Current per-operation
