@@ -32,7 +32,9 @@ implementation.
 An eventual separately authorized execution uses the accepted matched flat
 chronological and position-free typed-graph encoders, shared decoder,
 grid-ordinal geometry implementation, loss assembly, optimizer, and capacity
-controls without source changes.
+controls without scientific-design changes. Execution device is selected
+prospectively as exactly `cpu` or `cuda:0` by timing-v2; CPU remains the
+default for every caller outside this separately versioned Stage 6 path.
 
 - operation-template train: exactly 407 families;
 - operation-template development: exactly 45 E/R/EE/RE families;
@@ -50,6 +52,44 @@ from prospective timing before results exist and recorded with
 projections with the frozen 20% contingency. Three seeds are used when they
 fit; two are used only when three do not fit and two do; neither fitting aborts.
 Both fallback seed effects must be nonnegative.
+
+## Narrow preparation and hardware timing
+
+`GE1-STAGE6-NARROW-BUILDER-v1` prepares only the authoritative 407-family
+train and 45-family development assignments. It runs the established strict
+corpus and operation-template validators, copies only canonical continuous and
+quantized E/R/EE/RE payloads into isolated roots, and publishes canonical
+`GE1-STAGE6-NARROW-INDEX-v1` indexes only after the independent narrow loader
+accepts them. A job-scoped preparation receipt binds both indexes, allowlists,
+payload-digest aggregates, assignment hashes, and access declarations without
+recording source absolute payload paths. A two-package request stages and
+validates both sides before governed publication; no receipt means an
+interrupted pair is nonauthoritative.
+
+The current producer requires
+`GE1-STAGE6-STRUCTURE-ONLY-TIMING-v2`; timing-v1 is historical and cannot
+authorize it. One future separately authorized GPU-allocation timing job
+benchmarks both `cpu` and `cuda:0` using one fresh untimed five-epoch warm-up
+and three independently fresh five-epoch measurements per arm/device. It uses
+the slowest seconds-per-epoch observation, projects the unchanged 200-epoch
+two-arm budget, and applies the exact 20% contingency. Development and all
+scientific outcomes remain unavailable to timing.
+
+If either device fits all three seeds, retain all three and select the feasible
+device with the smallest contingent three-seed projection. Only when neither
+device fits three may timing select seeds 2026/2027 using the smallest feasible
+two-seed projection. Exact timing ties prefer CPU. If neither fits two, abort
+as resource-infeasible. Queue time, loss direction, predictions, accuracy, and
+scientific results cannot affect selection.
+
+CUDA is explicit and cannot fall back to CPU. It requires one visible GPU,
+PyTorch 1.11.0 with CUDA, deterministic algorithms, seeded Python/NumPy/CPU and
+CUDA RNGs, `CUBLAS_WORKSPACE_CONFIG=:4096:8`, TF32 disabled, and recorded CUDA,
+cuDNN, GPU-name, compute-capability, memory, host, and thread identities. The
+producer must match the selected timing hardware identity. Checkpoints bind
+the selected device and runtime, preserve CUDA RNG state on CUDA, recover on
+the selected device through an explicit governed map location, and remain
+portable to CPU only for a future separately authorized consumer.
 
 ## Primary structural endpoint
 
@@ -176,12 +216,23 @@ files: resolved configuration, family metrics JSONL, summary, manifest, and
 `SHA256SUMS`. Verification recomputes every structural prefix, paired primary
 effect, memory gate, validity gate, and interpretation.
 
-The producer runner has no final allocation directives: reviewed prospective
-timing must determine CPU/GPU, memory, and wall-time arguments at a later,
-separately authorized submission boundary. It binds only the repository,
-narrow declared train and development roots, and output parent. The finalizer
-runner binds only the repository, verified producer artifact, and artifact
-parent. Neither runner contains `sbatch`.
+The preparation runner binds only repository/corpus/output. The GPU hardware
+timing runner uses `--nv`, exposes no development path, and binds only
+repository/train/output. The existing CPU producer and separate GPU producer
+each bind repository/train/development/output, require timing-v2 to select
+their exact device, and reject the other selection. The GPU producer uses
+`--nv`, requires the reviewed GPU identity, and reports peak device memory.
+The finalizer remains CPU-only, tensor-independent, and checkpoint-blind. No
+runner contains `sbatch`; timing and producer allocation flags remain future
+reviewer inputs.
+
+Implementation does not create a real package, run real timing, authorize data
+access, or authorize execution. The remaining operational order is exactly:
+
+```text
+package creation -> hash review -> timing -> allocation review ->
+producer -> producer audit -> finalizer
+```
 
 Exact train/development allowlists and SHA-256 values, their safe Adroit bind
 layout, timing evidence, final allocation, source and runner hashes at a future

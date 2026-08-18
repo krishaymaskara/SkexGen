@@ -29,6 +29,7 @@ from prototype.graph_encoder.stage6_structure_only_producer import (
     producer_config,
     optimization_reliability,
     unresolved_input_declaration,
+    validate_checkpoint_identity,
     validate_input_declaration,
     validate_timing_evidence,
     verify_declared_input_files,
@@ -36,35 +37,21 @@ from prototype.graph_encoder.stage6_structure_only_producer import (
     verify_checkpoint_bundle,
     _grammar_valid,
 )
+from prototype.graph_encoder.tests.test_stage6_timing_contract import record as timing_record
 from prototype.graph_encoder.stage6_structure_only_producer_audit import audit
 from prototype.graph_encoder.tests.test_stage6_structure_only_contract import synthetic_payload
 
 
 def _timing(feasible=True):
-    per_arm = {"flat": 1.0, "typed_graph": 2.0}
-    projected = sum(per_arm.values()) * EPOCHS * len(FULL_SEEDS)
-    projected_two = sum(per_arm.values()) * EPOCHS * 2
-    available = projected * 1.2 + (1.0 if feasible else -1.0)
-    return {
-        "version": TIMING_VERSION,
-        "measured_before_scientific_outcomes": True,
-        "observed_results_used": False,
-        "corpus_accessed": False,
-        "mode": "corpus_free",
-        "seconds_per_epoch_by_arm": per_arm,
-        "projected_three_seed_seconds": projected,
-        "projected_three_seed_seconds_with_contingency": projected * 1.2,
-        "projected_two_seed_seconds": projected_two,
-        "projected_two_seed_seconds_with_contingency": projected_two * 1.2,
-        "contingency_fraction": 0.20,
-        "available_wall_seconds": available,
-        "three_seed_feasible": feasible,
-        "two_seed_feasible": True,
-        "fallback_reason": None if feasible else "prospective allocation limit",
-    }
+    return (
+        timing_record(cpu=1.0, cuda=2.0)
+        if feasible
+        else timing_record(cpu=1.0, cuda=2.0, cpu_wall=1000.0, cuda_wall=1.0)
+    )
 
 
 def _checkpoint(arm, seed):
+    timing = _timing()
     return {
         **checkpoint_identity(
             arm=arm,
@@ -77,6 +64,8 @@ def _checkpoint(arm, seed):
             parameter_count=1000,
             training_arithmetic={"epochs": 200, "batch_size": 8},
             checkpoint_sha256="d" * 64,
+            runtime_identity=timing["candidates"]["cpu"]["runtime_identity"],
+            timing_hardware_identity=timing["selected_timing_hardware_identity"],
         ),
         "stage6_wrapper_sha256": "e" * 64,
     }
@@ -156,8 +145,7 @@ class ProducerPureContractTests(unittest.TestCase):
     def test_timing_recomputes_projection_and_fallback_is_prospective(self):
         self.assertEqual(validate_timing_evidence(_timing(), allow_fallback=False), FULL_SEEDS)
         broken = _timing()
-        broken["projected_three_seed_seconds"] += 1
-        broken["projected_three_seed_seconds_with_contingency"] = broken["projected_three_seed_seconds"] * 1.2
+        broken["candidates"]["cpu"]["projected_three_seed_seconds"] += 1
         with self.assertRaises(GraphEncoderError):
             validate_timing_evidence(broken, allow_fallback=False)
         self.assertEqual(
@@ -167,25 +155,22 @@ class ProducerPureContractTests(unittest.TestCase):
 
     def test_timing_exact_boundaries_neither_feasible_and_outcome_informed(self):
         full = _timing()
-        full["available_wall_seconds"] = full[
-            "projected_three_seed_seconds_with_contingency"
-        ]
+        full = timing_record(cpu=1.0, cuda=2.0, cpu_wall=1440.0, cuda_wall=1.0)
         self.assertEqual(validate_timing_evidence(full, allow_fallback=False), FULL_SEEDS)
-        fallback = _timing(False)
-        fallback["available_wall_seconds"] = fallback[
-            "projected_two_seed_seconds_with_contingency"
-        ]
+        fallback = timing_record(cpu=1.0, cuda=2.0, cpu_wall=960.0, cuda_wall=1.0)
         self.assertEqual(validate_timing_evidence(
             fallback, allow_fallback=False
         ), FALLBACK_SEEDS)
-        neither = copy.deepcopy(fallback)
-        neither["available_wall_seconds"] -= 1
         with self.assertRaises(GraphEncoderError):
-            validate_timing_evidence(neither, allow_fallback=True)
+            timing_record(cpu=1.0, cuda=2.0, cpu_wall=959.0, cuda_wall=1.0)
         informed = _timing()
         informed["observed_results_used"] = True
         with self.assertRaises(GraphEncoderError):
             validate_timing_evidence(informed, allow_fallback=True)
+        with self.assertRaises(GraphEncoderError):
+            validate_timing_evidence({
+                "version": "GE1-STAGE6-STRUCTURE-ONLY-TIMING-v1"
+            })
 
     def test_capacity_tolerance_is_inclusive(self):
         self.assertTrue(capacity_gate(1000, 1050)["pass"])
@@ -244,6 +229,9 @@ class ProducerPureContractTests(unittest.TestCase):
         self.assertEqual(row["version"], CHECKPOINT_VERSION)
         self.assertEqual(row["epoch"], 200)
         self.assertEqual(row["operation_magnitude_parameterization"], GRID_MAGNITUDE_PARAMETERIZATION)
+        extra = dict(row, unexpected=True)
+        with self.assertRaises(GraphEncoderError):
+            validate_checkpoint_identity(extra, expected=extra)
         broken = copy.deepcopy(row)
         broken["source_commit"] = "z" * 40
         with self.assertRaises(GraphEncoderError):

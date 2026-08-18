@@ -38,6 +38,8 @@ def audit(repository_root, runner_path):
     ):
         if forbidden in source:
             raise AssertionError("forbidden scoring dependency: " + forbidden)
+    if "execution_evidence" not in source or "timing_hardware_identity" not in source:
+        raise AssertionError("finalizer must preserve device provenance")
     if "--execution-record" in source or 'parser.add_argument("--producer-artifact", required=True)' not in source:
         raise AssertionError("authoritative finalization must require producer artifact")
     shell = runner.read_text(encoding="utf-8")
@@ -78,6 +80,7 @@ def audit(repository_root, runner_path):
         "protected_partition_inputs": 0,
         "scientific_loader_imports": 0,
         "submission_command_invoked": False,
+        "tensor_and_device_independent": True,
     }
 
 

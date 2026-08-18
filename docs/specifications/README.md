@@ -39,8 +39,10 @@ succeeded.
 - [GE1 Stage 6 structure-only graph-versus-flat comparison
   contract](ge1_stage6_structure_only_comparison.md) — prospectively freezes
   the conversion-independent structural prefix, paired seed aggregation,
-  structural memory gate, artifact contract, and non-submitting derived-record
-  runner without authorizing scientific execution or development access.
+  structural memory gate, governed narrow-package preparation, timing-v2
+  CPU/CUDA selection, artifact contract, and non-submitting runners without
+  authorizing real package creation, timing, scientific execution, or
+  development access.
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the

@@ -84,7 +84,7 @@ import sys
 from pathlib import Path
 from prototype.graph_encoder.stage6_structure_only_producer import validate_timing_evidence
 timing = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-validate_timing_evidence(timing, allow_fallback=True)
+validate_timing_evidence(timing, allow_fallback=True, required_device="cpu")
 print('{"event":"stage6_structure_only_prospective_gates_passed"}', flush=True)
 PY
 
@@ -160,7 +160,8 @@ container_python -B -m prototype.graph_encoder.stage6_structure_only_producer \
   --repository-root "$REPOSITORY" \
   --expected-commit "$EXPECTED_COMMIT" \
   --job-id "$SLURM_JOB_ID" \
-  --allow-fallback
+  --allow-fallback \
+  --require-selected-device cpu
 producer_status=$?
 set -e
 if [[ "$producer_status" -eq 42 ]]; then

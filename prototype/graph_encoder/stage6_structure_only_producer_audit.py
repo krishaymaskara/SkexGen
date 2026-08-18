@@ -32,6 +32,8 @@ def audit(repository_root, runner_path):
         'shuffle_scope="batch"', "_grammar_valid(",
         "create_checkpoint_bundle(", "verify_checkpoint_bundle(",
         "validate_scored_alignment", "source_evidence", "input_evidence",
+        "from .stage6_timing import TIMING_VERSION", "execution_device",
+        "timing_hardware_identity", "cuda_rng_preserved",
     ):
         if required not in source and required not in (
             root / "prototype/graph_encoder/stage6_structure_only.py"
@@ -58,6 +60,12 @@ def audit(repository_root, runner_path):
     )
     if executable.count("--bind") != 4 or any(item not in executable for item in required_binds):
         raise AssertionError("producer runner bind set differs")
+    gpu_runner = runner.name.endswith("_gpu.slurm")
+    if gpu_runner:
+        if "--nv" not in executable or "--require-selected-device cuda:0" not in executable:
+            raise AssertionError("GPU producer device boundary differs")
+    elif "--nv" in executable or "--require-selected-device cpu" not in executable:
+        raise AssertionError("CPU producer device boundary differs")
     invocation = re.findall(
         r"-m\s+prototype\.graph_encoder\.stage6_structure_only_producer(?=\s|$)",
         executable,
@@ -85,6 +93,8 @@ def audit(repository_root, runner_path):
         "prospective_gates_precede_loaders": True,
         "protected_bind_count": 0,
         "submission_command_invoked": False,
+        "selected_device_bound_to_timing": True,
+        "gpu_passthrough": gpu_runner,
     }
 
 

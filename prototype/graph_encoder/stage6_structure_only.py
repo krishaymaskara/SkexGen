@@ -621,6 +621,7 @@ def validate_governance_evidence(payload, *, require_producer_artifact=False,
     source = payload.get("source_evidence")
     inputs = payload.get("input_evidence")
     bundle = payload.get("checkpoint_bundle_reference")
+    execution = payload.get("execution_evidence")
     if (
         not isinstance(source, dict)
         or source.get("verification_status") != "pass"
@@ -661,6 +662,58 @@ def validate_governance_evidence(payload, *, require_producer_artifact=False,
         or len(bundle["bundle_sha256"]) != 64
     ):
         raise GraphEncoderError("invalid_stage6_checkpoint_bundle", "reference differs")
+    if (
+        not isinstance(execution, dict)
+        or set(execution) != {
+            "selected_execution_device", "runtime_identity",
+            "timing_hardware_identity", "timing_version",
+            "device_selected_only_by_timing", "cuda_peak_memory_bytes",
+            "verification_status",
+        }
+        or execution.get("verification_status") != "pass"
+        or execution.get("device_selected_only_by_timing") is not True
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_execution_evidence", "execution evidence differs"
+        )
+    from .stage6_timing import (
+        TIMING_VERSION, validate_runtime_identity, validate_timing_evidence,
+    )
+    if execution.get("timing_version") != TIMING_VERSION:
+        raise GraphEncoderError(
+            "invalid_stage6_execution_evidence", "timing version differs"
+        )
+    selection = validate_timing_evidence(
+        payload.get("timing_fallback", {}).get("evidence", {}),
+        required_device=execution.get("selected_execution_device"),
+    )
+    device = execution.get("selected_execution_device")
+    validate_runtime_identity(execution.get("runtime_identity"), device)
+    from .stage6_device import timing_hardware_identity
+    timing_record = payload["timing_fallback"]["evidence"]
+    peak_memory = execution.get("cuda_peak_memory_bytes")
+    if execution.get("timing_hardware_identity") != selection[
+        "timing_hardware_identity"
+    ] or execution.get("timing_hardware_identity") != timing_hardware_identity(
+        execution["runtime_identity"]
+    ) or (device == "cpu" and peak_memory is not None) or (
+        device == "cuda:0" and (
+            isinstance(peak_memory, bool)
+            or not isinstance(peak_memory, int)
+            or peak_memory <= 0
+        )
+    ) or timing_record.get("source_identity") != {
+        "source_commit": source["source_commit"],
+        "source_tree_sha256": source["source_tree_sha256"],
+    } or timing_record.get("train_input_identity") != {
+        "index_identity_sha256": inputs["train"]["index_identity_sha256"],
+        "payload_digests_sha256": inputs["train"][
+            "observed_payload_digests_sha256"
+        ],
+    }:
+        raise GraphEncoderError(
+            "invalid_stage6_execution_evidence", "hardware identity differs"
+        )
     if require_producer_artifact:
         producer = payload.get("producer_artifact_evidence")
         if (
@@ -705,6 +758,13 @@ def _validate_execution_metadata(payload):
     ):
         raise GraphEncoderError("invalid_stage6_partition", "partition differs")
     runs = payload.get("training_runs", [])
+    selected_device = payload.get("execution_evidence", {}).get(
+        "selected_execution_device"
+    )
+    if selected_device not in ("cpu", "cuda:0"):
+        raise GraphEncoderError(
+            "invalid_stage6_execution_evidence", "selected device differs"
+        )
     expected = {(arm, seed) for arm in ARMS for seed in seeds}
     observed = {(row.get("arm"), row.get("seed")) for row in runs}
     if observed != expected or len(runs) != len(expected):
@@ -724,6 +784,7 @@ def _validate_execution_metadata(payload):
             or row.get("development_used_for_selection") is not False
             or row.get("warm_start") is not False
             or row.get("training_family_count") != TRAIN_FAMILY_COUNT
+            or row.get("execution_device") != selected_device
         ):
             raise GraphEncoderError("invalid_stage6_training", "frozen run differs")
         capacities[row["arm"]] = row.get("trainable_parameter_count")
@@ -882,6 +943,7 @@ def create_artifact(payload, output_dir, expected_commit, job_id):
             "input_evidence": payload.get("input_evidence"),
             "checkpoint_bundle_reference": payload.get("checkpoint_bundle_reference"),
             "producer_artifact_evidence": payload.get("producer_artifact_evidence"),
+            "execution_evidence": payload.get("execution_evidence"),
             **AUTHORITY,
         }
         _write(staging / "resolved_config.json", (_canonical(resolved) + "\n").encode())
@@ -986,6 +1048,8 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         "input_evidence": resolved.get("input_evidence"),
         "checkpoint_bundle_reference": resolved.get("checkpoint_bundle_reference"),
         "producer_artifact_evidence": resolved.get("producer_artifact_evidence"),
+        "execution_evidence": resolved.get("execution_evidence"),
+        "timing_fallback": resolved.get("timing_fallback"),
     }, require_producer_artifact=True, expected_commit=expected_commit)
     _validate_execution_metadata({
         "schema_version": INPUT_VERSION,
@@ -993,6 +1057,7 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         "timing_fallback": resolved.get("timing_fallback"),
         "partition": resolved.get("partition"),
         "training_runs": resolved.get("training_runs"),
+        "execution_evidence": resolved.get("execution_evidence"),
     })
     records = []
     raw = (root / "family_metrics.jsonl").read_text(encoding="utf-8")

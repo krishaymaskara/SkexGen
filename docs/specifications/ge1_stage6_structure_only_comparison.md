@@ -14,6 +14,11 @@
 | Checkpoint | `GE1-STAGE6-STRUCTURE-ONLY-CHECKPOINT-v1` |
 | Checkpoint bundle | `GE1-STAGE6-STRUCTURE-ONLY-CHECKPOINT-BUNDLE-v1` |
 | Narrow index | `GE1-STAGE6-NARROW-INDEX-v1` |
+| Narrow builder | `GE1-STAGE6-NARROW-BUILDER-v1` |
+| Preparation receipt | `GE1-STAGE6-NARROW-PREPARATION-v1` |
+| Hardware timing | `GE1-STAGE6-STRUCTURE-ONLY-TIMING-v2` |
+| Timing selection | `GE1-STAGE6-FASTEST-FEASIBLE-DEVICE-v1` |
+| Execution devices | exactly `cpu`, `cuda:0` |
 | Current authority | implementation/preparation only |
 
 ## Question and isolation
@@ -37,10 +42,14 @@ AdamW `0.001/0.0`, clipping `1.0`, fixed epoch 200, parameter counts, loss and
 plateau diagnostics, and absence of early stopping, warm start, or development
 selection.
 
-Timing evidence independently records raw and 20%-contingency projections for
-both three and two seeds plus available wall time. The full set has priority;
-fallback is permitted only when full does not fit and two does. If neither
-fits, execution is resource-infeasible before scientific input access.
+Timing-v2 independently records CPU and CUDA runtime/hardware identities, one
+fresh untimed five-epoch warm-up and three fresh five-epoch measurements per
+arm/device, every raw duration, the slowest valid seconds-per-epoch value, and
+raw and 20%-contingency projections for both three and two seeds. Three seeds
+have global priority: choose the fastest feasible three-seed device whenever
+either fits. Consider two seeds only when neither fits three; ties prefer CPU.
+If neither device fits two, execution is resource-infeasible. Timing-v1 cannot
+authorize the producer.
 
 For every retained seed, arm, memory condition, cohort, and physical family,
 the record contains preserved autonomous structural evidence. Counts are 407
@@ -121,6 +130,47 @@ training, all strict recovery, train interventions and reliability, then and
 only then development index/load and interventions. Development cannot affect
 timing, seeds, training, checkpoint selection, or recovery.
 
+## Governed narrow-package preparation
+
+The separately versioned builder accepts an exact authoritative corpus root,
+output parent, decimal preparation job ID, fixed manifest hash, and an explicit
+train/development/both choice. It uses the unchanged strict authoritative
+manifest and physical-example loaders and never exports RR, ER/test, IID,
+history-depth, geometry-extrapolation, checkpoint, model, repaired, or
+preserved-feature content. It selects exactly 407/814 train and 45/90
+development family/sample records with one continuous and one quantized
+variant per E/R/EE/RE family.
+
+Payload names derive only from trusted family/sample identity. Inputs and
+outputs reject absolute or parent-relative paths, symlinks, nonregular files,
+unexpected files, noncanonical or nonfinite JSON, incomplete variants,
+identity/metadata/physical disagreement, and existing destinations. Each
+package is staged as `stage6-<partition>.incomplete-<job_id>` and independently
+loaded before publication. For a paired build, both pass before either is
+published; rollback plus the absence of the final preparation receipt makes an
+interrupted pair nonauthoritative. The receipt records only governed hashes,
+counts, and access declarations outside payload roots.
+
+Real preparation, package hashes, and access remain unresolved reviewer work.
+
+## Explicit execution device and deterministic CUDA
+
+All shared helper additions default to CPU. Stage 6 alone passes the selected
+timing-v2 device explicitly through model placement, every training input,
+target, mask, index and edge tensor, loss operands, autonomous inference,
+memory intervention, checkpoint save/recovery, and scoring extraction. Model
+architecture, initialization, batches, updates, optimizer, loss, clipping,
+epoch 200, scoring, and interpretation are unchanged.
+
+CUDA requires exactly `cuda:0`, one visible GPU, CUDA-enabled PyTorch 1.11.0,
+deterministic algorithms, seeded Python/NumPy/torch CPU/CUDA RNGs,
+`CUBLAS_WORKSPACE_CONFIG=:4096:8`, and both TF32 switches disabled. Runtime,
+CUDA/cuDNN, GPU name/capability/memory, host/thread, deterministic, TF32, RNG,
+and timing-hardware identities reach checkpoint, bundle, producer, and final
+artifacts. Strict recovery uses the selected device and exact hardware identity
+and restores model, optimizer, CPU RNG, and CUDA RNG. No silent CPU fallback or
+runtime device override is permitted.
+
 ## Artifacts
 
 The producer first atomically creates six files: `resolved_config.json`,
@@ -152,16 +202,19 @@ memory ratios, validity, and interpretation.
 
 ## Prepared runners
 
-`prototype/graph_encoder/adroit/ge1_stage6_structure_only_producer.slurm` has
-no guessed allocation directives. A future authorized `sbatch` must supply the
-reviewed allocation derived from prospective evidence. It verifies timing and
-input declarations before accessing narrow roots, has exactly four binds, and
-invokes the producer once. `ge1_stage6_structure_only_cpu.slurm` is the
-separate finalizer and consumes the producer artifact read-only.
+`ge1_stage6_narrow_builder_cpu.slurm` has exactly three preparation binds.
+`ge1_stage6_hardware_timing_gpu.slurm` has `--nv`, three binds, no development
+path, and measures both devices once. The unchanged CPU-default producer runner
+and separate `ge1_stage6_structure_only_producer_gpu.slurm` each have four
+binds and reject timing that selected the other device; the GPU runner has
+`--nv` and reports peak GPU memory. Allocation flags are not guessed. The
+`ge1_stage6_structure_only_cpu.slurm` finalizer remains CPU-only and consumes
+only the producer artifact.
 
-The runner exposes no corpus, manifest, checkpoint, model artifact, RR, ER,
-IID, history-depth, or geometry-extrapolation path. It cannot generate the
-derived scientific record and is not authorized for transfer or submission.
+No runner submits itself. Implementation creates no real package or timing
+record and authorizes no transfer, data access, timing, or scientific run.
+Operational order is package creation, hash review, timing, allocation review,
+producer, producer audit, then finalizer.
 
 ## Remaining prerequisites
 

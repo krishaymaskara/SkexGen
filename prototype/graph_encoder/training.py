@@ -291,6 +291,8 @@ def run_ge1_training(
     fixed_protocol_final_epoch=None,
     checkpoint_coordinate="epoch",
     selected_checkpoint_epoch=CHECKPOINT_EPOCH,
+    execution_device="cpu",
+    timing_protocol_final_epoch=None,
 ):
     """Run one common training loop for either arm.
 
@@ -304,6 +306,7 @@ def run_ge1_training(
     """
 
     _require_torch()
+    execution_device = _validate_execution_device(execution_device)
     # Imported only for real training so the frozen plateau/checkpoint metadata
     # remains inspectable on documentation hosts without PyTorch installed.
     from .losses import common_ge1_loss
@@ -311,11 +314,18 @@ def run_ge1_training(
         raise TypeError("training_config must be GE1TrainingConfig")
     training_config.validate()
     model.config.validate()
+    parameter_devices = {str(parameter.device) for parameter in model.parameters()}
+    if parameter_devices != {execution_device}:
+        raise GraphEncoderError(
+            "stage6_mixed_device",
+            "model parameters must already be on the selected execution device",
+        )
     _validate_execution_epoch(
         final_epoch,
         engineering_smoke,
         extended_final_epoch=extended_final_epoch,
         fixed_protocol_final_epoch=fixed_protocol_final_epoch,
+        timing_protocol_final_epoch=timing_protocol_final_epoch,
     )
     checkpoint_schedule = _validate_checkpoint_schedule(
         final_epoch, checkpoint_epochs, checkpoint_coordinate
@@ -339,7 +349,7 @@ def run_ge1_training(
             partition_identity_sha256=partition_digest,
             seed=model.config.seed,
             encoder_arm=model.config.encoder,
-            device="cpu",
+            device=execution_device,
             operation_magnitude_parameterization=(
                 model.config.operation_magnitude_parameterization
             ),
@@ -359,7 +369,7 @@ def run_ge1_training(
     family_order_history = []
     plateau = plateau_state(())
     if resume_checkpoint is None:
-        _seed_run(model.config.seed)
+        _seed_run(model.config.seed, execution_device=execution_device)
     else:
         resumed = load_training_checkpoint(
             resume_checkpoint,
@@ -369,6 +379,7 @@ def run_ge1_training(
             partition_identity=partition_identity,
             expected_code_revision=expected_commit,
             restore_rng=True,
+            map_location=execution_device,
         )
         completed_epoch = resumed.completed_epoch
         optimizer_steps = resumed.optimizer_step_count
@@ -409,7 +420,9 @@ def run_ge1_training(
             boundaries.append(batch_ids)
             data_start = time.perf_counter()
             paired = build_paired_batch(tuple(by_id[item] for item in batch_ids))
-            tensors = _training_tensors(paired, model.config.encoder)
+            tensors = _training_tensors(
+                paired, model.config.encoder, execution_device=execution_device
+            )
             epoch_data_seconds += time.perf_counter() - data_start
             train_start = time.perf_counter()
             optimizer.zero_grad(set_to_none=True)
@@ -622,7 +635,9 @@ def training_checkpoint_payload(
         "optimizer_step_count": int(optimizer_step_count),
         "training_example_presentations": int(training_example_presentations),
         "seed": int(model.config.seed),
-        "rng_states": _capture_rng_states(data_order_random_state),
+        "rng_states": _capture_rng_states(
+            data_order_random_state, preserve_cuda=provenance.device == "cuda:0"
+        ),
         "plateau_state": plateau.to_dict(),
         "epoch_records": [item.to_dict() for item in epoch_records],
         "provenance": provenance.to_dict(),
@@ -725,11 +740,13 @@ def load_training_checkpoint(
     expected_code_revision,
     restore_rng,
     expected_selected_checkpoint_epoch=CHECKPOINT_EPOCH,
+    map_location="cpu",
 ):
     """Strictly reload model, optimizer, counters, plateau, and RNG state."""
 
     _require_torch()
-    payload = torch.load(str(path), map_location="cpu")
+    map_location = _validate_execution_device(map_location)
+    payload = torch.load(str(path), map_location=map_location)
     if not isinstance(payload, dict):
         raise GraphEncoderError("invalid_training_checkpoint", "payload must be a dict")
     missing = TRAINING_CHECKPOINT_FIELDS - set(payload)
@@ -812,25 +829,33 @@ def load_training_checkpoint(
     )
 
 
-def _training_tensors(paired, encoder):
+def _training_tensors(paired, encoder, execution_device="cpu"):
     from prototype.constrained_profile_decoder import profile_targets_for_loss
+    from .stage6_device import assert_tensor_tree_device, move_tensor_tree
 
-    flat = paired.flat_input.to_torch(torch)
-    target = paired.target.to_torch(torch)
+    execution_device = _validate_execution_device(execution_device)
+    flat = move_tensor_tree(paired.flat_input.to_torch(torch), execution_device)
+    target = move_tensor_tree(paired.target.to_torch(torch), execution_device)
     profiles = profile_targets_for_loss(paired.target, flat["geometry"])
     if encoder == "flat":
         encoder_input = flat
     elif encoder == "typed_graph":
-        encoder_input = paired.graph_input.to_torch(torch)
-        bookkeeping = paired.graph_bookkeeping.to_torch(torch)
+        encoder_input = move_tensor_tree(
+            paired.graph_input.to_torch(torch), execution_device
+        )
+        bookkeeping = move_tensor_tree(
+            paired.graph_bookkeeping.to_torch(torch), execution_device
+        )
         encoder_input["graph_offsets"] = bookkeeping["graph_offsets"]
     else:
         raise GraphEncoderError("invalid_configuration", "unknown encoder arm")
-    return {
+    result = {
         "encoder_input": encoder_input,
         "target": target,
         "profile_targets": profiles,
     }
+    assert_tensor_tree_device(result, execution_device, "training")
+    return result
 
 
 def _validate_execution_epoch(
@@ -838,18 +863,32 @@ def _validate_execution_epoch(
     engineering_smoke,
     *,
     extended_final_epoch=None,
-    fixed_protocol_final_epoch=None
+    fixed_protocol_final_epoch=None,
+    timing_protocol_final_epoch=None,
 ):
     if isinstance(final_epoch, bool) or not isinstance(final_epoch, int):
         raise GraphEncoderError("invalid_training_budget", "final epoch must be integer")
     if (
-        extended_final_epoch is not None
-        and fixed_protocol_final_epoch is not None
+        sum(value is not None for value in (
+            extended_final_epoch, fixed_protocol_final_epoch,
+            timing_protocol_final_epoch,
+        )) > 1
     ):
         raise GraphEncoderError(
             "invalid_training_budget",
             "diagnostic and fixed-protocol budgets are mutually exclusive",
         )
+    if timing_protocol_final_epoch is not None:
+        if (
+            timing_protocol_final_epoch != 5
+            or final_epoch != timing_protocol_final_epoch
+            or engineering_smoke
+        ):
+            raise GraphEncoderError(
+                "invalid_training_budget",
+                "Stage 6 timing lifecycle must use exactly five epochs",
+            )
+        return
     if extended_final_epoch is not None:
         if (
             isinstance(extended_final_epoch, bool)
@@ -1042,7 +1081,7 @@ def _terminal_failure(code, detail, run_identity, arm, seed, epoch, batch_index,
     raise C6TrainingError(code, detail, record)
 
 
-def _capture_rng_states(data_order_random_state):
+def _capture_rng_states(data_order_random_state, preserve_cuda=False):
     states = {
         "python_global": random.getstate(),
         "numpy": None if np is None else np.random.get_state(),
@@ -1050,7 +1089,11 @@ def _capture_rng_states(data_order_random_state):
         "torch_cuda": None,
         "data_order_random": data_order_random_state,
     }
-    if torch.cuda.is_available():
+    if preserve_cuda:
+        if not torch.cuda.is_available():
+            raise GraphEncoderError(
+                "invalid_training_checkpoint", "CUDA RNG requested without CUDA"
+            )
         states["torch_cuda"] = torch.cuda.get_rng_state_all()
     return states
 
@@ -1064,21 +1107,43 @@ def _restore_rng_states(states):
         if np is None:
             raise GraphEncoderError("invalid_training_checkpoint", "NumPy RNG cannot be restored")
         np.random.set_state(states["numpy"])
-    torch.set_rng_state(states["torch_cpu"])
+    cpu_rng_state = states["torch_cpu"]
+    if hasattr(cpu_rng_state, "cpu"):
+        cpu_rng_state = cpu_rng_state.cpu()
+    torch.set_rng_state(cpu_rng_state)
     if states["torch_cuda"] is not None:
         if not torch.cuda.is_available():
             raise GraphEncoderError("invalid_training_checkpoint", "CUDA RNG cannot be restored")
-        torch.cuda.set_rng_state_all(states["torch_cuda"])
+        cuda_rng_states = [
+            item.cpu() if hasattr(item, "cpu") else item
+            for item in states["torch_cuda"]
+        ]
+        torch.cuda.set_rng_state_all(cuda_rng_states)
     return states["data_order_random"]
 
 
-def _seed_run(seed):
+def _seed_run(seed, execution_device="cpu"):
+    execution_device = _validate_execution_device(execution_device)
     random.seed(seed)
     if np is not None:
         np.random.seed(seed)
     torch.manual_seed(seed)
+    if execution_device == "cuda:0":
+        if not torch.cuda.is_available():
+            raise GraphEncoderError(
+                "invalid_execution_device", "CUDA execution requires available CUDA"
+            )
+        torch.cuda.manual_seed_all(seed)
     if hasattr(torch, "use_deterministic_algorithms"):
         torch.use_deterministic_algorithms(True)
+
+
+def _validate_execution_device(value):
+    if value not in ("cpu", "cuda:0"):
+        raise GraphEncoderError(
+            "invalid_execution_device", "execution device must be cpu or cuda:0"
+        )
+    return value
 
 
 def _strict_state_load(model, state):

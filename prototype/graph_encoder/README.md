@@ -1405,11 +1405,33 @@ structural credit. Exact epoch-200 wrappers are retained in a separate atomic
 checkpoint bundle. Development loading is delayed until all train-side work
 and reliability checks pass, and all incomplete staging is job-specific.
 
+`stage6_narrow_builder.py` is the separately versioned, non-overwriting
+preparation path. It exports only the frozen train and development selections,
+copies canonical payload bytes into isolated package roots, validates both
+packages through the independent narrow loader, and publishes a canonical
+receipt only after governed two-package publication succeeds. Its CPU runner
+has exactly the repository, authoritative-corpus, and output-parent binds.
+
+`stage6_timing.py` implements timing-v2. Inside one reviewed single-GPU
+allocation it measures both CPU and `cuda:0` using a five-epoch bounded
+lifecycle, one fresh warm-up and three fresh measurements per arm and device.
+The slowest measurement drives exact 200-epoch projections and the 20%
+contingency. If any device fits all three seeds, the fastest such device wins;
+only otherwise may the fastest feasible two-seed device be selected, with CPU
+winning exact timing ties. Timing binds train only and records no scientific
+outcome. CPU remains the shared-helper default; CUDA is explicit, fail-closed,
+deterministic, hardware-bound, and available only through the separate GPU
+producer runner. The finalizer remains CPU-only and tensor-independent.
+
 Separate producer and finalizer audits reject broad/protected binds, submission
-commands, loader drift, and multiple entry-point invocation. The producer
-runner deliberately leaves allocation directives unresolved pending reviewed
-timing. Exact future hashes, safe Adroit roots, resources, transfer, data
-access, and execution still require reviewer decisions and authorization.
+commands, loader drift, and multiple entry-point invocation. Allocation
+directives remain unresolved pending reviewed hardware and wall-time choices.
+The remaining operational order is package creation, hash review, GPU timing,
+allocation review, the timing-selected CPU or GPU producer, producer audit,
+and CPU finalization. This implementation performs and authorizes none of
+those real preparation or execution steps. Exact future hashes, safe Adroit
+roots, resources, transfer, data access, and execution still require reviewer
+decisions and authorization.
 
 ## Manifest authority and access order
 

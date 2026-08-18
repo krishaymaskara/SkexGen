@@ -78,21 +78,31 @@ class AutonomousEvaluationResult:
     conditions: tuple
 
 
-def autonomous_input_from_paired(paired, arm, torch_module=None):
+def autonomous_input_from_paired(
+    paired, arm, torch_module=None, execution_device="cpu"
+):
     """Remove the target boundary and expose only the selected arm input."""
 
     runtime = torch if torch_module is None else torch_module
     if runtime is None:
         raise RuntimeError("autonomous inference requires PyTorch")
+    from .stage6_device import move_tensor_tree, validate_execution_device
+    execution_device = validate_execution_device(execution_device)
     family_ids = tuple(paired.family_ids)
     if not family_ids:
         raise GraphEncoderError("empty_autonomous_batch", "batch is empty")
     if arm == "flat":
-        encoder_input = paired.flat_input.to_torch(runtime)
+        encoder_input = move_tensor_tree(
+            paired.flat_input.to_torch(runtime), execution_device
+        )
         node_counts = tuple(sum(row) for row in paired.flat_input.padding_mask)
     elif arm == "typed_graph":
-        encoder_input = paired.graph_input.to_torch(runtime)
-        bookkeeping = paired.graph_bookkeeping.to_torch(runtime)
+        encoder_input = move_tensor_tree(
+            paired.graph_input.to_torch(runtime), execution_device
+        )
+        bookkeeping = move_tensor_tree(
+            paired.graph_bookkeeping.to_torch(runtime), execution_device
+        )
         encoder_input["graph_offsets"] = bookkeeping["graph_offsets"]
         offsets = paired.graph_bookkeeping.graph_offsets
         node_counts = tuple(
@@ -132,11 +142,15 @@ def deterministic_derangement(family_ids, seed):
 
 
 def run_autonomous_evaluation(model, input_batches, *, seed,
-                              shuffle_scope="cohort"):
+                              shuffle_scope="cohort", execution_device="cpu"):
     """Encode once and decode P_true/P_shuffle/P_mean through one helper."""
 
     if torch is None:
         raise RuntimeError("autonomous inference requires PyTorch")
+    from .stage6_device import (
+        assert_tensor_tree_device, validate_execution_device,
+    )
+    execution_device = validate_execution_device(execution_device)
     batches = tuple(input_batches)
     if not batches:
         raise GraphEncoderError("empty_autonomous_set", "input batches are empty")
@@ -148,6 +162,16 @@ def run_autonomous_evaluation(model, input_batches, *, seed,
         )
     if any(not isinstance(batch, AutonomousInputBatch) for batch in batches):
         raise TypeError("every batch must be AutonomousInputBatch")
+    for batch in batches:
+        assert_tensor_tree_device(
+            batch.encoder_input, execution_device, "autonomous input"
+        )
+    if hasattr(model, "parameters"):
+        devices = {str(parameter.device) for parameter in model.parameters()}
+        if devices and devices != {execution_device}:
+            raise GraphEncoderError(
+                "stage6_mixed_device", "autonomous model placement differs"
+            )
 
     was_training = model.training
     model.eval()

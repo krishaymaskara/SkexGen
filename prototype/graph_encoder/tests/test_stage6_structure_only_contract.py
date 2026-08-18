@@ -173,6 +173,7 @@ def synthetic_payload(seeds=FULL_SEEDS):
                 "optimization_reliable": True,
                 "final_loss": 0.1,
                 "plateau_relative_improvement": 0.0,
+                "execution_device": "cpu",
             })
     fallback = tuple(seeds) == FALLBACK_SEEDS
     source_evidence = {
@@ -186,8 +187,8 @@ def synthetic_payload(seeds=FULL_SEEDS):
             "index_identity_sha256": "c" * 64,
             "expected_allowlist_sha256": "d" * 64,
             "observed_allowlist_sha256": "d" * 64,
-            "expected_payload_digests_sha256": "e" * 64,
-            "observed_payload_digests_sha256": "e" * 64,
+            "expected_payload_digests_sha256": "d" * 64,
+            "observed_payload_digests_sha256": "d" * 64,
             "expected_payload_sha256": {"a": "e" * 64},
             "observed_payload_sha256": {"a": "e" * 64},
             "verification_status": "pass",
@@ -208,6 +209,12 @@ def synthetic_payload(seeds=FULL_SEEDS):
         "bundle_sha256": "3" * 64, "source_evidence": source_evidence,
         "input_evidence": input_evidence, "verification_status": "pass",
     }
+    from prototype.graph_encoder.tests.test_stage6_timing_contract import record
+    timing_evidence = (
+        record(cpu=1.0, cuda=2.0)
+        if not fallback
+        else record(cpu=1.0, cuda=2.0, cpu_wall=1000.0, cuda_wall=1.0)
+    )
     return {
         "schema_version": INPUT_VERSION,
         "retained_seeds": list(seeds),
@@ -216,6 +223,20 @@ def synthetic_payload(seeds=FULL_SEEDS):
             "prospective": fallback,
             "observed_results_used": False,
             "reason": "prospective timing projection" if fallback else None,
+            "evidence": timing_evidence,
+        },
+        "execution_evidence": {
+            "selected_execution_device": "cpu",
+            "runtime_identity": timing_evidence["candidates"]["cpu"][
+                "runtime_identity"
+            ],
+            "timing_hardware_identity": timing_evidence[
+                "selected_timing_hardware_identity"
+            ],
+            "timing_version": timing_evidence["version"],
+            "device_selected_only_by_timing": True,
+            "cuda_peak_memory_bytes": None,
+            "verification_status": "pass",
         },
         "partition": {
             "training_name": "operation_template_train",

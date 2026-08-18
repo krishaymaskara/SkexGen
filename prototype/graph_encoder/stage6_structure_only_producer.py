@@ -39,6 +39,7 @@ from .stage6_structure_only import (
     score_family_record,
     summarize_execution,
 )
+from .stage6_timing import TIMING_VERSION
 
 
 PRODUCER_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-PRODUCER-v1"
@@ -47,8 +48,18 @@ PRODUCER_ARTIFACT_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-PRODUCER-ARTIFACT-v1"
 CHECKPOINT_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-CHECKPOINT-v1"
 CHECKPOINT_BUNDLE_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-CHECKPOINT-BUNDLE-v1"
 INPUT_POLICY_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-INPUT-POLICY-v1"
-TIMING_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-TIMING-v1"
+LEGACY_TIMING_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-TIMING-v1"
 ACCESS_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-ACCESS-v1"
+CHECKPOINT_IDENTITY_FIELDS = {
+    "version", "protocol_version", "source_commit", "source_digest", "arm",
+    "seed", "epoch", "model_config", "operation_magnitude_parameterization",
+    "training_partition_identity", "training_partition_hashes",
+    "training_arithmetic", "parameter_count", "checkpoint_schema",
+    "checkpoint_sha256", "execution_device", "runtime_identity",
+    "timing_hardware_identity", "cuda_rng_preserved",
+    "governed_map_location", "external_checkpoint", "warm_start",
+    "checkpoint_reuse",
+}
 
 EPOCHS = 200
 BATCH_SIZE = 8
@@ -119,10 +130,15 @@ def producer_config():
         "development_checkpoint_selection": False,
         "warm_start": False,
         "checkpoint_reuse": False,
+        "timing_version": TIMING_VERSION,
+        "supported_execution_devices": ["cpu", "cuda:0"],
+        "execution_device_selected_only_by_timing": True,
     }
 
 
-def validate_timing_evidence(record, *, allow_fallback):
+def validate_legacy_timing_evidence(record):
+    """Validate timing-v1 only for historical regression; never authorize v2."""
+
     required = {
         "version", "measured_before_scientific_outcomes", "observed_results_used",
         "corpus_accessed", "mode", "seconds_per_epoch_by_arm",
@@ -131,7 +147,7 @@ def validate_timing_evidence(record, *, allow_fallback):
         "contingency_fraction", "available_wall_seconds",
         "three_seed_feasible", "two_seed_feasible", "fallback_reason",
     }
-    if set(record) != required or record.get("version") != TIMING_VERSION:
+    if set(record) != required or record.get("version") != LEGACY_TIMING_VERSION:
         raise GraphEncoderError("invalid_stage6_timing", "timing fields differ")
     if (
         record["measured_before_scientific_outcomes"] is not True
@@ -184,6 +200,16 @@ def validate_timing_evidence(record, *, allow_fallback):
     if not two_feasible or not record["fallback_reason"]:
         raise GraphEncoderError("stage6_resource_infeasible", "fallback unavailable")
     return FALLBACK_SEEDS
+
+
+def validate_timing_evidence(record, *, allow_fallback=False,
+                             required_device=None, return_selection=False):
+    """Require timing-v2; timing-v1 cannot authorize the current producer."""
+
+    del allow_fallback  # Feasibility, not an imperative flag, governs fallback.
+    from .stage6_timing import validate_timing_evidence as validate_v2
+    selection = validate_v2(record, required_device=required_device)
+    return selection if return_selection else selection["retained_seeds"]
 
 
 def unresolved_timing_record():
@@ -387,9 +413,24 @@ def optimization_reliability(training_runs, train_scores, retained_seeds):
 def checkpoint_identity(*, arm, seed, source_commit, source_digest,
                         model_config, partition_identity,
                         partition_hashes, parameter_count,
-                        training_arithmetic, checkpoint_sha256):
+                        training_arithmetic, checkpoint_sha256,
+                        execution_device="cpu", runtime_identity=None,
+                        timing_hardware_identity=None,
+                        cuda_rng_preserved=False):
     if arm not in ARMS or seed not in FULL_SEEDS:
         raise GraphEncoderError("invalid_stage6_checkpoint", "arm/seed differs")
+    from .stage6_device import validate_execution_device
+    execution_device = validate_execution_device(execution_device)
+    if runtime_identity is None:
+        runtime_identity = {
+            "execution_device": execution_device,
+            "historical_fixture_default": True,
+        }
+    if timing_hardware_identity is None:
+        timing_hardware_identity = {
+            "execution_device": execution_device,
+            "historical_fixture_default": True,
+        }
     record = {
         "version": CHECKPOINT_VERSION,
         "protocol_version": PROTOCOL_VERSION,
@@ -406,6 +447,11 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
         "parameter_count": parameter_count,
         "checkpoint_schema": model_config.get("checkpoint_schema"),
         "checkpoint_sha256": checkpoint_sha256,
+        "execution_device": execution_device,
+        "runtime_identity": runtime_identity,
+        "timing_hardware_identity": timing_hardware_identity,
+        "cuda_rng_preserved": bool(cuda_rng_preserved),
+        "governed_map_location": execution_device,
         "external_checkpoint": False,
         "warm_start": False,
         "checkpoint_reuse": False,
@@ -415,7 +461,7 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
 
 
 def validate_checkpoint_identity(record, *, expected):
-    if set(record) != set(expected):
+    if set(record) != CHECKPOINT_IDENTITY_FIELDS or set(expected) != CHECKPOINT_IDENTITY_FIELDS:
         raise GraphEncoderError("invalid_stage6_checkpoint", "fields differ")
     for name, value in expected.items():
         if record.get(name) != value:
@@ -429,6 +475,12 @@ def validate_checkpoint_identity(record, *, expected):
         or record.get("external_checkpoint") is not False
         or record.get("warm_start") is not False
         or record.get("checkpoint_reuse") is not False
+        or record.get("execution_device") not in ("cpu", "cuda:0")
+        or record.get("governed_map_location") != record.get("execution_device")
+        or not isinstance(record.get("runtime_identity"), dict)
+        or not isinstance(record.get("timing_hardware_identity"), dict)
+        or record.get("cuda_rng_preserved")
+        is not (record.get("execution_device") == "cuda:0")
     ):
         raise GraphEncoderError("invalid_stage6_checkpoint", "identity differs")
     lengths = {"source_commit": 40, "source_digest": 64, "checkpoint_sha256": 64}
@@ -794,6 +846,58 @@ def verify_producer_artifact(path, *, return_payload=False):
     payload["training_runs"] = training
     payload["family_records"] = families
     retained = tuple(payload.get("retained_seeds", ()))
+    execution = payload.get("execution_evidence", {})
+    if set(execution) != {
+        "selected_execution_device", "runtime_identity",
+        "timing_hardware_identity", "timing_version",
+        "device_selected_only_by_timing", "cuda_peak_memory_bytes",
+        "verification_status",
+    } or execution.get("timing_version") != TIMING_VERSION or execution.get(
+        "device_selected_only_by_timing"
+    ) is not True or execution.get("verification_status") != "pass":
+        raise GraphEncoderError(
+            "invalid_stage6_producer_artifact", "execution evidence differs"
+        )
+    timing_selection = validate_timing_evidence(
+        payload.get("timing_fallback", {}).get("evidence", {}),
+        required_device=execution["selected_execution_device"],
+        return_selection=True,
+    )
+    from .stage6_device import timing_hardware_identity
+    from .stage6_timing import validate_runtime_identity
+    validate_runtime_identity(
+        execution["runtime_identity"], execution["selected_execution_device"]
+    )
+    peak_memory = execution["cuda_peak_memory_bytes"]
+    if (
+        retained != timing_selection["retained_seeds"]
+        or execution["timing_hardware_identity"]
+        != timing_selection["timing_hardware_identity"]
+        or execution["timing_hardware_identity"]
+        != timing_hardware_identity(execution["runtime_identity"])
+        or (
+            execution["selected_execution_device"] == "cpu"
+            and peak_memory is not None
+        )
+        or (
+            execution["selected_execution_device"] == "cuda:0"
+            and (
+                isinstance(peak_memory, bool)
+                or not isinstance(peak_memory, int)
+                or peak_memory <= 0
+            )
+        )
+        or any(
+            row.get("execution_device") != execution["selected_execution_device"]
+            or row.get("runtime_identity") != execution["runtime_identity"]
+            or row.get("timing_hardware_identity")
+            != execution["timing_hardware_identity"]
+            for row in checkpoints
+        )
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_producer_artifact", "device provenance differs"
+        )
     expected_checkpoints = {(arm, seed) for arm in ARMS for seed in retained}
     observed_checkpoints = {(row.get("arm"), row.get("seed")) for row in checkpoints}
     if observed_checkpoints != expected_checkpoints or len(checkpoints) != len(expected_checkpoints):
@@ -894,6 +998,10 @@ def save_stage6_checkpoint(generic_checkpoint_path, stage6_path, identity):
     if torch is None:
         raise RuntimeError("Stage 6 checkpoint writing requires PyTorch")
     validate_checkpoint_identity(identity, expected=identity)
+    if _sha(generic_checkpoint_path) != identity["checkpoint_sha256"]:
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "generic checkpoint hash differs"
+        )
     generic = torch.load(str(generic_checkpoint_path), map_location="cpu")
     if (
         not isinstance(generic, dict)
@@ -905,8 +1013,15 @@ def save_stage6_checkpoint(generic_checkpoint_path, stage6_path, identity):
         or generic.get("checkpoint_schema") != identity["checkpoint_schema"]
         or generic.get("provenance", {}).get("git_commit")
         != identity["source_commit"]
+        or generic.get("provenance", {}).get("device")
+        != identity["execution_device"]
     ):
         raise GraphEncoderError("invalid_stage6_checkpoint", "generic payload differs")
+    cuda_state = generic.get("rng_states", {}).get("torch_cuda")
+    if (cuda_state is not None) is not identity["cuda_rng_preserved"]:
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "CUDA RNG preservation differs"
+        )
     wrapper = {
         "version": CHECKPOINT_VERSION,
         "identity": identity,
@@ -926,14 +1041,37 @@ def save_stage6_checkpoint(generic_checkpoint_path, stage6_path, identity):
 
 def load_stage6_checkpoint(path, *, expected_identity, model, optimizer,
                            training_config, partition_identity,
-                           restore_rng=False):
+                           restore_rng=False, execution_device="cpu",
+                           portable_cpu_mapping=False,
+                           expected_wrapper_sha256=None):
     """Strictly recover through the existing C6 loader into a fresh model."""
 
     if torch is None:
         raise RuntimeError("Stage 6 checkpoint recovery requires PyTorch")
     from .training import load_training_checkpoint
 
-    wrapper = torch.load(str(path), map_location="cpu")
+    from .stage6_device import validate_execution_device
+    execution_device = validate_execution_device(execution_device)
+    identity_device = expected_identity.get("execution_device")
+    if execution_device != identity_device and not (
+        portable_cpu_mapping and execution_device == "cpu"
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "governed map_location differs"
+        )
+    if expected_wrapper_sha256 is not None and (
+        not isinstance(expected_wrapper_sha256, str)
+        or len(expected_wrapper_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in expected_wrapper_sha256
+        )
+        or _sha(path) != expected_wrapper_sha256
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "Stage 6 wrapper hash differs"
+        )
+    wrapper = torch.load(str(path), map_location=execution_device)
     if not isinstance(wrapper, dict) or set(wrapper) != {
         "version", "identity", "training_checkpoint"
     } or wrapper.get("version") != CHECKPOINT_VERSION:
@@ -952,6 +1090,7 @@ def load_stage6_checkpoint(path, *, expected_identity, model, optimizer,
             expected_code_revision=expected_identity["source_commit"],
             restore_rng=restore_rng,
             expected_selected_checkpoint_epoch=EPOCHS,
+            map_location=execution_device,
         )
     finally:
         try:
@@ -1188,7 +1327,8 @@ def family_record_from_prediction(item, target, *, template, representation_iden
     }
 
 
-def generate_autonomous_records(model, examples, *, cohort, arm, seed):
+def generate_autonomous_records(model, examples, *, cohort, arm, seed,
+                                execution_device="cpu"):
     """Generate all memory conditions before constructing any target mapping."""
 
     from .autonomous import autonomous_input_from_paired, run_autonomous_evaluation
@@ -1200,12 +1340,14 @@ def generate_autonomous_records(model, examples, *, cohort, arm, seed):
         raise GraphEncoderError("invalid_stage6_family_count", cohort)
     input_batches = tuple(
         autonomous_input_from_paired(
-            build_paired_batch(ordered[start:start + BATCH_SIZE]), arm
+            build_paired_batch(ordered[start:start + BATCH_SIZE]), arm,
+            execution_device=execution_device,
         )
         for start in range(0, len(ordered), BATCH_SIZE)
     )
     autonomous = run_autonomous_evaluation(
-        model, input_batches, seed=seed, shuffle_scope="batch"
+        model, input_batches, seed=seed, shuffle_scope="batch",
+        execution_device=execution_device,
     )
     # This is the first point targets enter the evaluation path.
     targets = {item.physical_family_id: item.target for item in ordered}
@@ -1236,7 +1378,7 @@ def generate_autonomous_records(model, examples, *, cohort, arm, seed):
 
 
 def _training_run_record(training, *, arm, seed, parameter_count,
-                         capacity_pass):
+                         capacity_pass, execution_device="cpu"):
     losses = [float(row.mean_loss) for row in training.epoch_records]
     gradient_norms = []
     for row in training.epoch_records:
@@ -1274,12 +1416,14 @@ def _training_run_record(training, *, arm, seed, parameter_count,
         "first_plateau_epoch": training.plateau_state.first_plateau_epoch,
         "selected_checkpoint_is_fixed_epoch_200": True,
         "checkpoint_reuse": False,
+        "execution_device": execution_device,
     }
 
 
 def _train_arm(model, train_examples, *, work_root, repository_root,
                expected_commit, train_input_evidence, parameter_count,
-               capacity_pass):
+               capacity_pass, execution_device, runtime_identity,
+               timing_hardware):
     from .config import GE1TrainingConfig
     from .model import build_ge1_model
     from .provenance import training_partition_identity
@@ -1303,6 +1447,7 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
         fixed_protocol_final_epoch=EPOCHS,
         checkpoint_coordinate="epoch",
         selected_checkpoint_epoch=EPOCHS,
+        execution_device=execution_device,
     )
     if (
         training.completed_epoch != EPOCHS
@@ -1343,13 +1488,17 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
         parameter_count=parameter_count,
         training_arithmetic=arithmetic,
         checkpoint_sha256=generic_sha,
+        execution_device=execution_device,
+        runtime_identity=runtime_identity,
+        timing_hardware_identity=timing_hardware,
+        cuda_rng_preserved=execution_device == "cuda:0",
     )
     wrapper_path = Path(work_root) / "stage6-{}-seed{}.pt".format(arm, seed)
     wrapper_sha = save_stage6_checkpoint(generic_path, wrapper_path, identity)
     identity = {**identity, "stage6_wrapper_sha256": wrapper_sha}
     training_record = _training_run_record(
         training, arm=arm, seed=seed, parameter_count=parameter_count,
-        capacity_pass=capacity_pass,
+        capacity_pass=capacity_pass, execution_device=execution_device,
     )
     return {
         "trained_model": model,
@@ -1361,14 +1510,14 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
     }
 
 
-def _recover_arm(trained):
+def _recover_arm(trained, *, execution_device):
     from .model import build_ge1_model
 
     model = trained["trained_model"]
     identity = trained["identity"]
     expected_for_loader = {key: value for key, value in identity.items()
                            if key != "stage6_wrapper_sha256"}
-    fresh = build_ge1_model(model.config)
+    fresh = build_ge1_model(model.config).to(execution_device)
     optimizer = torch.optim.AdamW(
         fresh.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
@@ -1379,7 +1528,9 @@ def _recover_arm(trained):
         optimizer=optimizer,
         training_config=trained["training_config"],
         partition_identity=trained["partition_identity"],
-        restore_rng=False,
+        restore_rng=True,
+        execution_device=execution_device,
+        expected_wrapper_sha256=identity["stage6_wrapper_sha256"],
     )
     if resume.completed_epoch != EPOCHS:
         raise GraphEncoderError("invalid_stage6_checkpoint", "recovery differs")
@@ -1390,22 +1541,81 @@ def _recover_arm(trained):
         for name in expected_state
     ):
         raise GraphEncoderError("invalid_stage6_checkpoint", "tensor reload differs")
+    if not _state_tree_equal(
+        optimizer.state_dict(), resume.payload.get("optimizer_state")
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "optimizer reload differs"
+        )
+    rng_states = resume.payload.get("rng_states", {})
+    expected_cpu_rng = rng_states.get("torch_cpu")
+    if hasattr(expected_cpu_rng, "cpu"):
+        expected_cpu_rng = expected_cpu_rng.cpu()
+    if expected_cpu_rng is None or not torch.equal(
+        torch.get_rng_state(), expected_cpu_rng
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "CPU RNG reload differs"
+        )
+    if execution_device == "cuda:0":
+        expected_cuda_rng = rng_states.get("torch_cuda")
+        observed_cuda_rng = torch.cuda.get_rng_state_all()
+        if (
+            not isinstance(expected_cuda_rng, (tuple, list))
+            or len(expected_cuda_rng) != len(observed_cuda_rng)
+            or any(
+                not torch.equal(observed, expected.cpu())
+                for observed, expected in zip(observed_cuda_rng, expected_cuda_rng)
+            )
+        ):
+            raise GraphEncoderError(
+                "invalid_stage6_checkpoint", "CUDA RNG reload differs"
+            )
     return fresh
+
+
+def _state_tree_equal(left, right):
+    if torch is not None and torch.is_tensor(left):
+        return torch.is_tensor(right) and torch.equal(left, right)
+    if isinstance(left, dict):
+        return isinstance(right, dict) and set(left) == set(right) and all(
+            _state_tree_equal(left[key], right[key]) for key in left
+        )
+    if isinstance(left, (tuple, list)):
+        return isinstance(right, type(left)) and len(left) == len(right) and all(
+            _state_tree_equal(a, b) for a, b in zip(left, right)
+        )
+    return left == right
 
 
 def run_stage6_producer(*, train_index, train_root, development_index,
                         development_root, timing_evidence, output_dir,
                         checkpoint_bundle_dir, repository_root, expected_commit,
-                        job_id, allow_fallback=False):
+                        job_id, allow_fallback=False,
+                        required_execution_device=None):
     """Execute the governed lifecycle after all prospective gates pass."""
 
     from .pilot import _source_identity, _verify_source_unchanged
 
-    _require_runtime()
     job_id = _job_id(job_id)
-    retained_seeds = validate_timing_evidence(
-        timing_evidence, allow_fallback=allow_fallback
+    timing_selection = validate_timing_evidence(
+        timing_evidence, allow_fallback=allow_fallback,
+        required_device=required_execution_device, return_selection=True,
     )
+    retained_seeds = timing_selection["retained_seeds"]
+    execution_device = timing_selection["execution_device"]
+    _require_runtime(execution_device)
+    from .stage6_device import (
+        configure_stage6_runtime, require_timing_hardware,
+    )
+    runtime_identity = configure_stage6_runtime(
+        torch, execution_device, seed=FULL_SEEDS[0]
+    )
+    require_timing_hardware(
+        runtime_identity, timing_selection["timing_hardware_identity"]
+    )
+    if execution_device == "cuda:0":
+        torch.cuda.reset_peak_memory_stats(0)
     source = _source_identity(repository_root, expected_commit)
     if source["detached_head"] is not True or source["git_dirty"] is not False:
         raise GraphEncoderError("invalid_stage6_source", "detached clean source required")
@@ -1416,6 +1626,13 @@ def run_stage6_producer(*, train_index, train_root, development_index,
         "detached_head": True,
         "verification_status": "pass",
     }
+    if timing_evidence["source_identity"] != {
+        "source_commit": source_evidence["source_commit"],
+        "source_tree_sha256": source_evidence["source_tree_sha256"],
+    }:
+        raise GraphEncoderError(
+            "invalid_stage6_timing", "timing source identity differs"
+        )
     from .model import build_matched_ge1_models
     from .stage6_narrow_loader import (
         NARROW_LOADER_VERSION, load_stage6_development, load_stage6_train,
@@ -1427,6 +1644,15 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     train_examples, train_input_evidence = load_stage6_train(train_index, train_root)
     if len(train_examples) != TRAIN_FAMILY_COUNT:
         raise GraphEncoderError("invalid_stage6_family_count", "train differs")
+    if timing_evidence["train_input_identity"] != {
+        "index_identity_sha256": train_input_evidence["index_identity_sha256"],
+        "payload_digests_sha256": train_input_evidence[
+            "observed_payload_digests_sha256"
+        ],
+    }:
+        raise GraphEncoderError(
+            "invalid_stage6_timing", "timing train input identity differs"
+        )
     training_runs = []
     trained_runs = []
     recovered_models = []
@@ -1442,6 +1668,8 @@ def run_stage6_producer(*, train_index, train_root, development_index,
         flat, graph = build_matched_ge1_models(
             seed, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION,
         )
+        flat = flat.to(execution_device)
+        graph = graph.to(execution_device)
         counts = {
             "flat": sum(parameter.numel() for parameter in flat.parameters()
                         if parameter.requires_grad),
@@ -1460,18 +1688,23 @@ def run_stage6_producer(*, train_index, train_root, development_index,
             repository_root=repository_root, expected_commit=expected_commit,
             train_input_evidence=train_input_evidence,
             parameter_count=parameter_count, capacity_pass=capacity_pass,
+            execution_device=execution_device,
+            runtime_identity=runtime_identity,
+            timing_hardware=timing_selection["timing_hardware_identity"],
         )
         trained_runs.append(trained)
         training_runs.append(trained["training_record"])
     # Every trained checkpoint is strictly recovered before train inference.
     for trained in trained_runs:
         recovered_models.append((
-            _recover_arm(trained), trained["identity"]["arm"],
+            _recover_arm(trained, execution_device=execution_device),
+            trained["identity"]["arm"],
             trained["identity"]["seed"],
         ))
     for model, arm, seed in recovered_models:
         train_records.extend(generate_autonomous_records(
-            model, train_examples, cohort="train", arm=arm, seed=seed
+            model, train_examples, cohort="train", arm=arm, seed=seed,
+            execution_device=execution_device,
         ))
     scored_train = [score_family_record(row) for row in train_records]
     train_scores = {}
@@ -1513,7 +1746,8 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     development_records = []
     for model, arm, seed in recovered_models:
         development_records.extend(generate_autonomous_records(
-            model, development_examples, cohort="development", arm=arm, seed=seed
+            model, development_examples, cohort="development", arm=arm,
+            seed=seed, execution_device=execution_device,
         ))
     family_records = train_records + development_records
     input_evidence = {
@@ -1539,8 +1773,22 @@ def run_stage6_producer(*, train_index, train_root, development_index,
             "invoked": fallback,
             "prospective": True,
             "observed_results_used": False,
-            "reason": timing_evidence["fallback_reason"] if fallback else None,
+            "reason": timing_selection["fallback_reason"] if fallback else None,
             "evidence": timing_evidence,
+        },
+        "execution_evidence": {
+            "selected_execution_device": execution_device,
+            "runtime_identity": runtime_identity,
+            "timing_hardware_identity": timing_selection[
+                "timing_hardware_identity"
+            ],
+            "timing_version": TIMING_VERSION,
+            "device_selected_only_by_timing": True,
+            "cuda_peak_memory_bytes": (
+                int(torch.cuda.max_memory_allocated(0))
+                if execution_device == "cuda:0" else None
+            ),
+            "verification_status": "pass",
         },
         "partition": {
             "training_name": "operation_template_train",
@@ -1572,7 +1820,7 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     return result
 
 
-def _require_runtime():
+def _require_runtime(execution_device="cpu"):
     if torch is None:
         raise RuntimeError("Stage 6 producer requires PyTorch")
     if sys.version_info[:3] != (3, 8, 13):
@@ -1581,6 +1829,12 @@ def _require_runtime():
         raise GraphEncoderError("environment_mismatch", "PyTorch 1.11.0 required")
     if torch.get_num_threads() != 1:
         raise GraphEncoderError("environment_mismatch", "one thread required")
+    from .stage6_device import validate_execution_device
+    device = validate_execution_device(execution_device)
+    if device == "cuda:0" and (
+        not torch.cuda.is_available() or torch.cuda.device_count() != 1
+    ):
+        raise GraphEncoderError("stage6_cuda_unavailable", "cuda:0 required")
 
 
 def main(argv=None):
@@ -1596,6 +1850,9 @@ def main(argv=None):
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--job-id", default=os.environ.get("SLURM_JOB_ID"))
     parser.add_argument("--allow-fallback", action="store_true")
+    parser.add_argument(
+        "--require-selected-device", choices=("cpu", "cuda:0"), required=True
+    )
     args = parser.parse_args(argv)
     timing = _load_json_file(args.timing_evidence, "invalid_stage6_timing")
     try:
@@ -1611,6 +1868,7 @@ def main(argv=None):
             expected_commit=args.expected_commit,
             job_id=args.job_id,
             allow_fallback=args.allow_fallback,
+            required_execution_device=args.require_selected_device,
         )
     except GraphEncoderError as exc:
         if exc.code == "stage6_train_reliability_failure":

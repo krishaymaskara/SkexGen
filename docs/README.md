@@ -78,9 +78,10 @@ the immediate next action changes.
   for implementation, synthetic validation, and runner preparation.
 - [GE1 Stage 6 structure-only comparison
   contract](specifications/ge1_stage6_structure_only_comparison.md) — frozen
-  structural prefix, governed producer and strict recovery,
-  producer-to-finalizer artifact boundary, paired seed aggregation, memory
-  gate, access, and prepared-runner boundary.
+  structural prefix, governed narrow-package/receipt preparation, CPU-versus-
+  CUDA timing-v2 selection, strict recovery, producer-to-finalizer artifact
+  boundary, paired seed aggregation, memory gate, access, and prepared-runner
+  boundary.
 - [ADR-0011: GE1 repaired-checkpoint representation
   probe](decisions/ADR-0011-ge1-repaired-representation-probe.md) — accepted
   governance record for a detached-feature, train-only diagnostic of scalar,

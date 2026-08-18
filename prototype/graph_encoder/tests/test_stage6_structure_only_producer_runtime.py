@@ -133,7 +133,9 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
         )
         config = GE1TrainingConfig()
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.0)
-        family_ids = ("procedural-a", "procedural-b")
+        family_ids = (
+            "procedural-a", "procedural-b", "procedural-c", "procedural-d",
+        )
         partition = training_partition_identity(family_ids)
         records = tuple(EpochTrainingRecord(
             epoch, 1.0, (("total", 1.0),), epoch, epoch * 2,
