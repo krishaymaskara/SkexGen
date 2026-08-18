@@ -97,3 +97,10 @@ it superseded by a later ADR.
   access. Its post-execution record notes scientific failure job `3352404` and
   separately authorizes one corpus/checkpoint-free actual-head/loss trajectory
   diagnostic without authorizing a production change or retry.
+- [ADR-0014: GE1 Stage 6 structure-only graph-versus-flat
+  comparison](ADR-0014-ge1-stage6-structure-only-comparison.md) — accepted
+  prospectively by designated reviewer Krishay Maskara for implementation and
+  preparation only; freezes a conversion-independent autonomous structural
+  prefix, paired seed/family comparison, and structure-only memory gate while
+  leaving scientific execution, development access, transfer, submission,
+  RR, Stage 7, and every protected partition unauthorized.

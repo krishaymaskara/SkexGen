@@ -1373,6 +1373,44 @@ runner uses only a read-only repository bind and read-write artifact-parent
 bind. It is untransferred and unsubmitted; no outcome authorizes a production
 change or scientific activity.
 
+## Stage 6 structure-only comparison preparation
+
+Accepted prospective ADR-0014 introduces the separate
+`GE1-STAGE6-STRUCTURE-ONLY-COMPARISON-v1` question without changing the
+existing model or scientific path. `stage6_structure_only.py` supplies pure
+structural-prefix scoring, paired family-within-seed aggregation, independent
+train/development structural memory gates, interpretation, and atomic
+five-file artifact finalization.
+
+The primary score uses only preserved target-free autonomous raw/constrained
+evidence joined to targets after generation. Grammar completion, operation
+type/order, canonical graph, applicable `depends_on`, and local
+ownership/attachments determine the longest structural operation prefix.
+Geometry, magnitude, strict conversion, and analytic validity are report-only
+and cannot change the primary score or memory gate.
+
+`stage6_structure_only_producer.py` adds the separately versioned governed
+producer and strict Stage 6 checkpoint wrapper. It validates prospective timing
+and exact narrow input hashes before its only train/development loaders, trains
+fresh matched arms through fixed epoch 200, strictly reloads into fresh models,
+and records target-free true/shuffled/mean autonomous outputs in an atomic
+six-file producer artifact. The pure finalizer now verifies and consumes that
+artifact without opening corpus or checkpoint content.
+
+Stage 6 uses only independently reviewed partition-scoped narrow indexes and
+payload-only roots through `stage6_narrow_loader.py`; it never invokes the
+complete-corpus loaders. Shuffle is a deterministic within-batch derangement,
+grammar is computed under V5, and exact generation is required for full
+structural credit. Exact epoch-200 wrappers are retained in a separate atomic
+checkpoint bundle. Development loading is delayed until all train-side work
+and reliability checks pass, and all incomplete staging is job-specific.
+
+Separate producer and finalizer audits reject broad/protected binds, submission
+commands, loader drift, and multiple entry-point invocation. The producer
+runner deliberately leaves allocation directives unresolved pending reviewed
+timing. Exact future hashes, safe Adroit roots, resources, transfer, data
+access, and execution still require reviewer decisions and authorization.
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

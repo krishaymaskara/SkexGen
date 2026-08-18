@@ -131,7 +131,8 @@ def deterministic_derangement(family_ids, seed):
     return mapping
 
 
-def run_autonomous_evaluation(model, input_batches, *, seed):
+def run_autonomous_evaluation(model, input_batches, *, seed,
+                              shuffle_scope="cohort"):
     """Encode once and decode P_true/P_shuffle/P_mean through one helper."""
 
     if torch is None:
@@ -171,9 +172,11 @@ def run_autonomous_evaluation(model, input_batches, *, seed):
         model.train(was_training)
     encoding_seconds = time.perf_counter() - encoding_start
 
+    if shuffle_scope not in ("cohort", "batch"):
+        raise GraphEncoderError("invalid_shuffle_scope", str(shuffle_scope))
     conditions = (
         _true_condition(model, tuple(encoded_rows)),
-        _shuffle_condition(model, tuple(encoded_rows), seed),
+        _shuffle_condition(model, tuple(encoded_rows), seed, shuffle_scope),
         _mean_condition(model, tuple(encoded_rows)),
     )
     return AutonomousEvaluationResult(
@@ -189,7 +192,7 @@ def _true_condition(model, rows):
     return _decode_condition(model, P_TRUE, supplied, False, False, (), 0.0)
 
 
-def _shuffle_condition(model, rows, seed):
+def _shuffle_condition(model, rows, seed, shuffle_scope):
     intervention_start = time.perf_counter()
     if len(rows) < 2:
         return AutonomousConditionResult(
@@ -207,7 +210,26 @@ def _shuffle_condition(model, rows, seed):
             0.0,
         )
     by_id = {row.family_id: row for row in rows}
-    mapping = deterministic_derangement(tuple(by_id), seed)
+    if shuffle_scope == "batch":
+        by_batch = {}
+        for row in rows:
+            by_batch.setdefault(row.batch_identity, []).append(row.family_id)
+        if any(len(members) < 2 for members in by_batch.values()):
+            raise GraphEncoderError(
+                "shuffle_unavailable", "batch-local P_shuffle rejects singleton batches"
+            )
+        mapping = tuple(
+            pair
+            for batch_identity in sorted(by_batch)
+            for pair in deterministic_derangement(
+                tuple(by_batch[batch_identity]),
+                int.from_bytes(hashlib.sha256(
+                    "{}:{}".format(int(seed), batch_identity).encode("utf-8")
+                ).digest()[:8], "big"),
+            )
+        )
+    else:
+        mapping = deterministic_derangement(tuple(by_id), seed)
     supplied = tuple(
         (by_id[recipient], donor, by_id[donor].memory)
         for recipient, donor in mapping
@@ -216,11 +238,8 @@ def _shuffle_condition(model, rows, seed):
         not torch.equal(row.memory, memory)
         for row, unused_donor, memory in supplied
     )
-    distinct = any(
-        not torch.equal(left.memory, right.memory)
-        for index, left in enumerate(rows)
-        for right in rows[index + 1:]
-    )
+    distinct = any(not torch.equal(by_id[recipient].memory, by_id[donor].memory)
+                   for recipient, donor in mapping)
     if distinct and not changed:
         raise GraphEncoderError(
             "memory_intervention_failure", "P_shuffle did not alter memory"

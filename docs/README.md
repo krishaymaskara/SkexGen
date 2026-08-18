@@ -72,6 +72,15 @@ the immediate next action changes.
   contract](specifications/ge1_c7_v2_operation_parameter_diagnostic.md) —
   read-only train-only diagnosis of the five scaled analytic operation-
   parameter failures, with CAD-kernel outcomes explicitly unavailable.
+- [ADR-0014: GE1 Stage 6 structure-only
+  comparison](decisions/ADR-0014-ge1-stage6-structure-only-comparison.md) —
+  prospective conversion-independent structural comparison authorized only
+  for implementation, synthetic validation, and runner preparation.
+- [GE1 Stage 6 structure-only comparison
+  contract](specifications/ge1_stage6_structure_only_comparison.md) — frozen
+  structural prefix, governed producer and strict recovery,
+  producer-to-finalizer artifact boundary, paired seed aggregation, memory
+  gate, access, and prepared-runner boundary.
 - [ADR-0011: GE1 repaired-checkpoint representation
   probe](decisions/ADR-0011-ge1-repaired-representation-probe.md) — accepted
   governance record for a detached-feature, train-only diagnostic of scalar,
