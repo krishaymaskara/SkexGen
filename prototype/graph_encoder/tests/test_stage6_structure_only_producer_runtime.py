@@ -110,7 +110,8 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
         # The target is joined only after both autonomous evaluations complete.
         predicted_prefixes, target_prefixes, predicted_count = (
             structural_records_from_prediction(
-                by_name["P_true"].predictions[0], examples[0].target
+                by_name["P_true"].predictions[0].constrained_prediction,
+                examples[0].target,
             )
         )
         self.assertEqual(len(predicted_prefixes), 1)

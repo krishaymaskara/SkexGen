@@ -1126,6 +1126,7 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
     ):
         raise GraphEncoderError("invalid_stage6_artifact", "summary recomputation differs")
     return {
+        "verification_status": "pass",
         "artifact_version": ARTIFACT_VERSION,
         "protocol_version": PROTOCOL_VERSION,
         "source_commit": expected_commit,

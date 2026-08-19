@@ -29,7 +29,8 @@ class Stage6TimingRuntimeTests(unittest.TestCase):
         from prototype.graph_encoder.training import run_ge1_training
         base = procedural_fixture("E").physical
         examples = tuple(replace(
-            base, physical_family_id="timing-{}".format(index), partition="train",
+            base, physical_family_id="timing-{}".format(index),
+            split_name="operation_template", partition="train",
             metadata=replace(base.metadata, sample_ids=(
                 "timing-{}-continuous".format(index),
                 "timing-{}-quantized".format(index),

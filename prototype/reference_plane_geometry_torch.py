@@ -77,7 +77,10 @@ def canonicalize_reference_plane_tensors(
                 canonical_reference_plane_values(name)
             )
             plane_region = geometry[..., :9]
-            plane_region[selected] = values
+            selected_region = plane_region[selected]
+            plane_region[selected] = values.unsqueeze(0).expand_as(
+                selected_region
+            ).contiguous()
     geometry_mask[..., :9] = applicable.unsqueeze(-1).expand(
         leading_shape + (9,)
     )
