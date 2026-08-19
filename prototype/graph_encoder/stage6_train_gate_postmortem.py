@@ -62,6 +62,7 @@ DIAGNOSTIC_VERSION = "GE1-STAGE6-TRAIN-GATE-POSTMORTEM-v1"
 ARTIFACT_VERSION = "GE1-STAGE6-TRAIN-GATE-POSTMORTEM-ARTIFACT-v1"
 PRODUCER_SOURCE_COMMIT = "5f4542f86756dae44435af27a6e072db6f27a8ef"
 PRODUCER_JOB_ID = "3354961"
+HISTORICAL_INNER_SLURM_JOB_ID = None
 EXPECTED_OPTIMIZER_STEPS = EPOCHS * ((TRAIN_FAMILY_COUNT + BATCH_SIZE - 1) // BATCH_SIZE)
 EXPECTED_TRAINING_PRESENTATIONS = EPOCHS * TRAIN_FAMILY_COUNT
 EXPECTED_FAMILY_RECORD_COUNT = (
@@ -118,6 +119,8 @@ PRODUCER_EXECUTION_EVIDENCE = {
     "scientific_failure_code": "stage6_train_reliability_failure",
     "development_accessed": False,
     "checkpoint_wrapper_count": 6,
+    "inner_checkpoint_slurm_job_id": HISTORICAL_INNER_SLURM_JOB_ID,
+    "inner_checkpoint_job_id_not_forwarded_by_cleanenv": True,
     "evidence_source": (
         "reviewed supplied stdout, stderr, sacct transcript, and "
         "retained-work inventory"
@@ -305,6 +308,86 @@ def _training_record(resume, *, arm, seed, wrapper_name, wrapper_sha256):
     }
 
 
+def _validate_retained_inner_checkpoint(
+    resume, *, arm, seed, train_family_ids, producer_source_digest,
+):
+    """Validate every retained inner field with field-specific failures."""
+
+    def require(name, observed, expected):
+        if observed != expected:
+            _fail(
+                "invalid_stage6_postmortem_checkpoint",
+                "inner checkpoint field {} differs".format(name),
+            )
+
+    require("completed_epoch", resume.completed_epoch, EPOCHS)
+    require(
+        "optimizer_step_count",
+        resume.optimizer_step_count,
+        EXPECTED_OPTIMIZER_STEPS,
+    )
+    require(
+        "training_example_presentations",
+        resume.training_example_presentations,
+        EXPECTED_TRAINING_PRESENTATIONS,
+    )
+    require("epoch_records.count", len(resume.epoch_records), EPOCHS)
+    require("family_order_history.count", len(resume.family_order_history), EPOCHS)
+    expected_families = tuple(train_family_ids)
+    for index, order in enumerate(resume.family_order_history):
+        try:
+            observed_families = tuple(sorted(order))
+        except (TypeError, ValueError):
+            observed_families = None
+        require(
+            "family_order_history[{}]".format(index),
+            observed_families,
+            expected_families,
+        )
+
+    payload = resume.payload
+    if not isinstance(payload, dict):
+        _fail(
+            "invalid_stage6_postmortem_checkpoint",
+            "inner checkpoint field payload differs",
+        )
+    provenance = payload.get("provenance")
+    if not isinstance(provenance, dict):
+        _fail(
+            "invalid_stage6_postmortem_checkpoint",
+            "inner checkpoint field provenance differs",
+        )
+    expected_provenance = {
+        "git_commit": PRODUCER_SOURCE_COMMIT,
+        "source_tree_sha256": producer_source_digest,
+        "device": "cpu",
+        "slurm_job_id": HISTORICAL_INNER_SLURM_JOB_ID,
+        "encoder_arm": arm,
+        "seed": seed,
+    }
+    for name, expected in expected_provenance.items():
+        if name not in provenance:
+            _fail(
+                "invalid_stage6_postmortem_checkpoint",
+                "inner checkpoint field provenance.{} is absent".format(name),
+            )
+        require("provenance." + name, provenance[name], expected)
+
+    rng_states = payload.get("rng_states")
+    if not isinstance(rng_states, dict):
+        _fail(
+            "invalid_stage6_postmortem_checkpoint",
+            "inner checkpoint field rng_states differs",
+        )
+    if "torch_cuda" not in rng_states:
+        _fail(
+            "invalid_stage6_postmortem_checkpoint",
+            "inner checkpoint field rng_states.torch_cuda is absent",
+        )
+    require("rng_states.torch_cuda", rng_states["torch_cuda"], None)
+    return True
+
+
 def _load_retained_checkpoint(
     path, *, expected_wrapper_sha256, arm, seed, train_family_ids,
     train_input_evidence, producer_source_digest,
@@ -359,25 +442,13 @@ def _load_retained_checkpoint(
         execution_device="cpu",
         expected_wrapper_sha256=expected_wrapper_sha256,
     )
-    payload = resume.payload
-    provenance = payload.get("provenance", {})
-    if (
-        resume.completed_epoch != EPOCHS
-        or resume.optimizer_step_count != EXPECTED_OPTIMIZER_STEPS
-        or resume.training_example_presentations != EXPECTED_TRAINING_PRESENTATIONS
-        or len(resume.epoch_records) != EPOCHS
-        or len(resume.family_order_history) != EPOCHS
-        or any(tuple(sorted(order)) != tuple(train_family_ids)
-               for order in resume.family_order_history)
-        or provenance.get("git_commit") != PRODUCER_SOURCE_COMMIT
-        or provenance.get("source_tree_sha256") != producer_source_digest
-        or provenance.get("device") != "cpu"
-        or provenance.get("slurm_job_id") != PRODUCER_JOB_ID
-        or provenance.get("encoder_arm") != arm
-        or provenance.get("seed") != seed
-        or payload.get("rng_states", {}).get("torch_cuda") is not None
-    ):
-        _fail("invalid_stage6_postmortem_checkpoint", "inner checkpoint differs")
+    _validate_retained_inner_checkpoint(
+        resume,
+        arm=arm,
+        seed=seed,
+        train_family_ids=train_family_ids,
+        producer_source_digest=producer_source_digest,
+    )
     record = _training_record(
         resume, arm=arm, seed=seed, wrapper_name=expected_name,
         wrapper_sha256=observed_wrapper_sha256,
@@ -956,6 +1027,7 @@ def run_postmortem(
     training = []
     family_records = []
     checkpoint_evidence = []
+    validated_models = []
     for seed in FULL_SEEDS:
         for arm in ARMS:
             name = "stage6-{}-seed{}.pt".format(arm, seed)
@@ -970,10 +1042,12 @@ def run_postmortem(
             )
             training.append(record)
             checkpoint_evidence.append(evidence)
-            family_records.extend(generate_autonomous_records(
-                model, train_examples, cohort="train", arm=arm, seed=seed,
-                execution_device="cpu",
-            ))
+            validated_models.append((model, arm, seed))
+    for model, arm, seed in validated_models:
+        family_records.extend(generate_autonomous_records(
+            model, train_examples, cohort="train", arm=arm, seed=seed,
+            execution_device="cpu",
+        ))
     analysis = analyze_postmortem(training, family_records)
     resolved = {
         "diagnostic_version": DIAGNOSTIC_VERSION,

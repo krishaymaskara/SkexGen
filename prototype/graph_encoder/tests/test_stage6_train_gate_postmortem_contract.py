@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import copy
+import inspect
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from prototype.graph_encoder.errors import GraphEncoderError
@@ -23,15 +26,20 @@ from prototype.graph_encoder.stage6_train_gate_postmortem import (
     ARTIFACT_VERSION,
     DIAGNOSTIC_VERSION,
     EXPECTED_FAMILY_RECORD_COUNT,
+    EXPECTED_OPTIMIZER_STEPS,
+    EXPECTED_TRAINING_PRESENTATIONS,
     EXPECTED_WRAPPER_NAMES,
+    HISTORICAL_INNER_SLURM_JOB_ID,
     PRODUCER_JOB_ID,
     PRODUCER_EXECUTION_EVIDENCE,
     PRODUCER_SOURCE_COMMIT,
     _expected_training_arithmetic,
+    _validate_retained_inner_checkpoint,
     analyze_postmortem,
     finalize_artifact,
     parse_checkpoint_hashes,
     source_commit_python_sha256,
+    run_postmortem,
     verify_artifact,
 )
 from prototype.graph_encoder.stage6_train_gate_postmortem_audit import audit
@@ -42,6 +50,8 @@ from prototype.graph_encoder.tests.test_stage6_structure_only_contract import (
 
 DIAGNOSTIC_COMMIT = "d" * 40
 DIAGNOSTIC_JOB = "3355999"
+INNER_SOURCE_DIGEST = "e" * 64
+INNER_FAMILY_IDS = ("family-a", "family-b")
 
 
 def _training_runs():
@@ -56,6 +66,37 @@ def _training_runs():
         }
         for seed in FULL_SEEDS for arm in ARMS
     ]
+
+
+def _inner_resume():
+    return SimpleNamespace(
+        completed_epoch=200,
+        optimizer_step_count=EXPECTED_OPTIMIZER_STEPS,
+        training_example_presentations=EXPECTED_TRAINING_PRESENTATIONS,
+        epoch_records=[None] * 200,
+        family_order_history=[INNER_FAMILY_IDS] * 200,
+        payload={
+            "provenance": {
+                "git_commit": PRODUCER_SOURCE_COMMIT,
+                "source_tree_sha256": INNER_SOURCE_DIGEST,
+                "device": "cpu",
+                "slurm_job_id": None,
+                "encoder_arm": "flat",
+                "seed": 2026,
+            },
+            "rng_states": {"torch_cuda": None},
+        },
+    )
+
+
+def _validate_inner(resume):
+    return _validate_retained_inner_checkpoint(
+        resume,
+        arm="flat",
+        seed=2026,
+        train_family_ids=INNER_FAMILY_IDS,
+        producer_source_digest=INNER_SOURCE_DIGEST,
+    )
 
 
 def _train_records():
@@ -114,6 +155,112 @@ def _checkpoint_evidence():
 
 
 class Stage6TrainGatePostmortemContractTests(unittest.TestCase):
+    def test_historical_cleanenv_proves_inner_slurm_job_id_is_none(self):
+        root = Path(__file__).resolve().parents[3]
+        runner = subprocess.check_output((
+            "git", "show", PRODUCER_SOURCE_COMMIT
+            + ":prototype/graph_encoder/adroit/"
+            "ge1_stage6_structure_only_producer.slurm",
+        ), cwd=str(root), universal_newlines=True)
+        provenance = subprocess.check_output((
+            "git", "show", PRODUCER_SOURCE_COMMIT
+            + ":prototype/graph_encoder/provenance.py",
+        ), cwd=str(root), universal_newlines=True)
+        producer = subprocess.check_output((
+            "git", "show", PRODUCER_SOURCE_COMMIT
+            + ":prototype/graph_encoder/stage6_structure_only_producer.py",
+        ), cwd=str(root), universal_newlines=True)
+        container = runner[
+            runner.index("container_python()"):
+            runner.index("test -d \"$REPOSITORY/.git\"")
+        ]
+        self.assertIn("apptainer exec --cleanenv", container)
+        self.assertNotIn("SLURM_JOB_ID", container)
+        self.assertIn('--job-id "$SLURM_JOB_ID"', runner)
+        self.assertIn('os.environ.get("SLURM_JOB_ID")', provenance)
+        run_body = producer[
+            producer.index("def run_stage6_producer("):
+            producer.index("def _require_runtime(")
+        ]
+        self.assertNotIn('os.environ["SLURM_JOB_ID"]', run_body)
+        self.assertIs(HISTORICAL_INNER_SLURM_JOB_ID, None)
+
+    def test_exact_historical_inner_provenance_passes(self):
+        self.assertTrue(_validate_inner(_inner_resume()))
+
+    def test_missing_or_incorrect_inner_job_id_fails_exactly(self):
+        for value in ("3354961", "3355101", "arbitrary"):
+            resume = _inner_resume()
+            resume.payload["provenance"]["slurm_job_id"] = value
+            with self.subTest(value=value), self.assertRaises(
+                GraphEncoderError
+            ) as raised:
+                _validate_inner(resume)
+            self.assertEqual(
+                raised.exception.detail,
+                "inner checkpoint field provenance.slurm_job_id differs",
+            )
+        resume = _inner_resume()
+        del resume.payload["provenance"]["slurm_job_id"]
+        with self.assertRaises(GraphEncoderError) as raised:
+            _validate_inner(resume)
+        self.assertEqual(
+            raised.exception.detail,
+            "inner checkpoint field provenance.slurm_job_id is absent",
+        )
+
+    def test_every_other_inner_field_remains_strict_before_inference(self):
+        cases = []
+        resume = _inner_resume()
+        resume.completed_epoch = 199
+        cases.append(("completed_epoch", resume))
+        resume = _inner_resume()
+        resume.optimizer_step_count -= 1
+        cases.append(("optimizer_step_count", resume))
+        resume = _inner_resume()
+        resume.training_example_presentations -= 1
+        cases.append(("training_example_presentations", resume))
+        resume = _inner_resume()
+        resume.epoch_records.pop()
+        cases.append(("epoch_records.count", resume))
+        resume = _inner_resume()
+        resume.family_order_history.pop()
+        cases.append(("family_order_history.count", resume))
+        resume = _inner_resume()
+        resume.family_order_history[0] = ("family-a",)
+        cases.append(("family_order_history[0]", resume))
+        for name, value in (
+            ("git_commit", "f" * 40),
+            ("source_tree_sha256", "f" * 64),
+            ("device", "cuda:0"),
+            ("encoder_arm", "typed_graph"),
+            ("seed", 2027),
+        ):
+            resume = _inner_resume()
+            resume.payload["provenance"][name] = value
+            cases.append(("provenance." + name, resume))
+        resume = _inner_resume()
+        resume.payload["rng_states"]["torch_cuda"] = [1]
+        cases.append(("rng_states.torch_cuda", resume))
+        for field, resume in cases:
+            with self.subTest(field=field), self.assertRaises(
+                GraphEncoderError
+            ) as raised:
+                _validate_inner(resume)
+            self.assertEqual(
+                raised.exception.detail,
+                "inner checkpoint field {} differs".format(field),
+            )
+
+        source = inspect.getsource(run_postmortem)
+        validation = source.index("validated_models.append((model, arm, seed))")
+        inference_loop = source.index("for model, arm, seed in validated_models:")
+        inference = source.index("generate_autonomous_records(", inference_loop)
+        self.assertLess(validation, inference_loop)
+        self.assertLess(inference_loop, inference)
+        for forbidden in (".backward(", "optimizer.step(", "run_ge1_training("):
+            self.assertNotIn(forbidden, source)
+
     def test_separate_frozen_identity_and_access_contract(self):
         self.assertEqual(DIAGNOSTIC_VERSION, "GE1-STAGE6-TRAIN-GATE-POSTMORTEM-v1")
         self.assertEqual(
@@ -128,6 +275,9 @@ class Stage6TrainGatePostmortemContractTests(unittest.TestCase):
         self.assertEqual(PRODUCER_EXECUTION_EVIDENCE["exit_code"], "42:0")
         self.assertEqual(PRODUCER_EXECUTION_EVIDENCE["max_rss"], "855460K")
         self.assertFalse(PRODUCER_EXECUTION_EVIDENCE["development_accessed"])
+        self.assertIs(
+            PRODUCER_EXECUTION_EVIDENCE["inner_checkpoint_slurm_job_id"], None
+        )
         self.assertTrue(ACCESS_RECORD["authorized_narrow_train_accessed"])
         self.assertTrue(ACCESS_RECORD["train_only_autonomous_inference_performed"])
         for name in (
