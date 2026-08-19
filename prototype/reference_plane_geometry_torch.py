@@ -68,6 +68,7 @@ def canonicalize_reference_plane_tensors(
         dtype=torch.bool,
         device=node_type_ids.device,
     )
+    plane_region = geometry[..., :9]
     for name, category_id in zip(
         VALID_REFERENCE_PLANE_NAMES, VALID_REFERENCE_PLANE_IDS
     ):
@@ -76,11 +77,10 @@ def canonicalize_reference_plane_tensors(
             values = floating_reference.new_tensor(
                 canonical_reference_plane_values(name)
             )
-            plane_region = geometry[..., :9]
-            selected_region = plane_region[selected]
-            plane_region[selected] = values.unsqueeze(0).expand_as(
-                selected_region
-            ).contiguous()
+            plane_region = torch.where(
+                selected.unsqueeze(-1), values, plane_region
+            )
+    geometry[..., :9] = plane_region
     geometry_mask[..., :9] = applicable.unsqueeze(-1).expand(
         leading_shape + (9,)
     )

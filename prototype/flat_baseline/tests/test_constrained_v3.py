@@ -151,18 +151,63 @@ class CanonicalPlaneTensorTests(unittest.TestCase):
     def test_tensor_lookup_shape_dtype_device_mask_and_invalid(self):
         from prototype.model_data.vocab import NODE_TYPES, REFERENCE_PLANES
         from prototype.reference_plane_geometry_torch import canonicalize_reference_plane_tensors
-        nodes = torch.tensor([[NODE_TYPES.id("reference_plane"), NODE_TYPES.id("axis")]])
-        categories = torch.tensor([[REFERENCE_PLANES.id("XY"), REFERENCE_PLANES.id("<none>")]])
-        floating = torch.zeros(1, 2, 6, dtype=torch.float64)
-        result = canonicalize_reference_plane_tensors(nodes, categories, floating)
-        self.assertEqual(result.geometry.shape, (1, 2, 39))
-        self.assertEqual(result.geometry.dtype, torch.float64)
-        self.assertTrue(result.geometry.is_contiguous())
-        self.assertEqual(result.geometry[0, 0, :9].tolist(), [0, 0, 0, 1, 0, 0, 0, 1, 0])
-        self.assertFalse(result.geometry_mask[0, 1].any())
-        categories[0, 0] = REFERENCE_PLANES.id("<none>")
-        with self.assertRaises(ReferencePlaneGeometryError):
-            canonicalize_reference_plane_tensors(nodes, categories, floating)
+        reference_plane = NODE_TYPES.id("reference_plane")
+        axis = NODE_TYPES.id("axis")
+        none = REFERENCE_PLANES.id("<none>")
+        devices = [torch.device("cpu")]
+        if torch.cuda.is_available():
+            devices.append(torch.device("cuda"))
+        for device in devices:
+            with self.subTest(device=str(device)):
+                nodes = torch.tensor([
+                    [[reference_plane, axis], [reference_plane, reference_plane]],
+                    [[reference_plane, reference_plane], [axis, reference_plane]],
+                ], device=device)
+                categories = torch.tensor([
+                    [[REFERENCE_PLANES.id("XY"), none],
+                     [REFERENCE_PLANES.id("XZ"), REFERENCE_PLANES.id("YZ")]],
+                    [[REFERENCE_PLANES.id("XY"), REFERENCE_PLANES.id("YZ")],
+                     [none, REFERENCE_PLANES.id("XZ")]],
+                ], device=device)
+                node_mask = torch.tensor([
+                    [[True, True], [True, True]],
+                    [[False, True], [True, True]],
+                ], device=device)
+                floating = torch.zeros(
+                    2, 2, 2, 6, dtype=torch.float64, device=device
+                )
+                result = canonicalize_reference_plane_tensors(
+                    nodes, categories, floating, node_mask
+                )
+                expected_region = torch.tensor([
+                    [[[0, 0, 0, 1, 0, 0, 0, 1, 0], [0] * 9],
+                     [[0, 0, 0, 1, 0, 0, 0, 0, 1],
+                      [0, 0, 0, 0, 1, 0, 0, 0, 1]]],
+                    [[[0] * 9, [0, 0, 0, 0, 1, 0, 0, 0, 1]],
+                     [[0] * 9, [0, 0, 0, 1, 0, 0, 0, 0, 1]]],
+                ], dtype=torch.float64, device=device)
+                expected_applicable = node_mask & (nodes == reference_plane)
+                expected_geometry_mask = torch.zeros(
+                    2, 2, 2, 39, dtype=torch.bool, device=device
+                )
+                expected_geometry_mask[..., :9] = expected_applicable.unsqueeze(-1)
+                self.assertEqual(result.geometry.shape, (2, 2, 2, 39))
+                self.assertEqual(result.geometry.dtype, torch.float64)
+                self.assertEqual(result.geometry.device, device)
+                self.assertTrue(result.geometry.is_contiguous())
+                self.assertTrue(torch.equal(result.geometry[..., :9], expected_region))
+                self.assertTrue(torch.equal(result.geometry_mask, expected_geometry_mask))
+                self.assertTrue(torch.equal(result.applicable_mask, expected_applicable))
+                invalid = categories.clone()
+                invalid[0, 0, 0] = none
+                with self.assertRaises(ReferencePlaneGeometryError) as caught:
+                    canonicalize_reference_plane_tensors(
+                        nodes, invalid, floating, node_mask
+                    )
+                self.assertEqual(
+                    caught.exception.code,
+                    "invalid_predicted_reference_plane_category",
+                )
 
     def test_model_has_six_channel_head_and_no_plane_head(self):
         self.assertEqual(self.model.remaining_geometry_head.out_features, 6)

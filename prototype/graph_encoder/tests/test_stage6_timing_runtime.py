@@ -40,6 +40,10 @@ class Stage6TimingRuntimeTests(unittest.TestCase):
             2026, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
         )
         with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            repository_root = temporary_root / "repository"
+            repository_root.mkdir()
+            checkpoint_root = temporary_root / "checkpoints"
             for model in (flat, graph):
                 provenance = C6Provenance(
                     "GE1-C6-PROVENANCE-v1", None, True, "a" * 40, False, (),
@@ -49,8 +53,8 @@ class Stage6TimingRuntimeTests(unittest.TestCase):
                 )
                 result = run_ge1_training(
                     model, examples, training_config=GE1TrainingConfig(),
-                    checkpoint_directory=Path(temporary) / model.config.encoder,
-                    repository_root=temporary, expected_commit="a" * 40,
+                    checkpoint_directory=checkpoint_root / model.config.encoder,
+                    repository_root=repository_root, expected_commit="a" * 40,
                     final_epoch=5, checkpoint_epochs=(5,),
                     selected_checkpoint_epoch=None,
                     timing_protocol_final_epoch=5, execution_device="cpu",
