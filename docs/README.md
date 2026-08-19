@@ -87,6 +87,10 @@ the immediate next action changes.
   versioned read-only train-only diagnosis of producer job `3354961` using its
   six strictly validated epoch-200 wrappers without repeating training or
   opening development.
+- [GE1 Stage 6 zero-memory train
+  diagnostic](specifications/ge1_stage6_zero_memory_diagnostic.md) — separately
+  versioned read-only follow-up that authenticates the job-3355134 true-memory
+  baseline and replaces only encoder-memory values with exact zeros.
 - [ADR-0011: GE1 repaired-checkpoint representation
   probe](decisions/ADR-0011-ge1-repaired-representation-probe.md) — accepted
   governance record for a detached-feature, train-only diagnostic of scalar,
