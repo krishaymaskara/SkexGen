@@ -1433,6 +1433,20 @@ those real preparation or execution steps. Exact future hashes, safe Adroit
 roots, resources, transfer, data access, and execution still require reviewer
 decisions and authorization.
 
+Producer job `3354961` stopped with `stage6_train_reliability_failure` after
+all train-side work and before development access. The separately versioned
+`stage6_train_gate_postmortem.py` diagnostic is limited to resolving whether
+that stop came from optimization reliability, the per-seed train-ceiling
+comparison, the train structural-memory gate, or a combination. It strictly
+recovers only the six job-scoped epoch-200 wrappers, reuses the unchanged
+Stage 6 train autonomous/scoring/gate implementations, and emits an atomic
+checksummed diagnostic even when the recomputed scientific predicates fail.
+Its separate CPU runner has only repository, retained-work, narrow-train, and
+output-parent binds. It performs train-only inference with no training,
+backward pass, optimizer step, checkpoint change, development access, or
+protected access. See the
+[postmortem contract](../../docs/specifications/ge1_stage6_train_gate_postmortem.md).
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

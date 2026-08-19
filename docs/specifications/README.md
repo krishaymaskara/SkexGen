@@ -43,6 +43,10 @@ succeeded.
   CPU/CUDA selection, artifact contract, and non-submitting runners without
   authorizing real package creation, timing, scientific execution, or
   development access.
+- [GE1 Stage 6 train-gate postmortem
+  diagnostic](ge1_stage6_train_gate_postmortem.md) — read-only train-only
+  decomposition of producer job `3354961`'s reliability stop from six strict
+  epoch-200 wrappers, without repeated training or development access.
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -82,3 +86,8 @@ awaiting a decision. When its current-state language differs from the
   a separately versioned six-condition, 2,000-update generated-state diagnostic
   for distinguishing slow upper-cut progress from persistence, with complete
   clipping and AdamW-state records and no production or scientific mutation.
+- [GE1 Stage 6 train-gate postmortem](ge1_stage6_train_gate_postmortem.md):
+  a separately versioned diagnostic that recomputes the existing optimization,
+  train-ceiling, and train-memory predicates from job `3354961`'s retained
+  wrappers and the authorized narrow train package, with no training or
+  development access.
