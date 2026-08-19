@@ -22,7 +22,7 @@ scientific result passed.
 
 ## Inventory snapshot
 
-This inventory was updated through August 17, 2026 from branch
+This inventory was updated through August 19, 2026 from branch
 `graph-v1-experiment-record`. The documentation commit's literal hash is not
 embedded because it would be self-referential. The audit used:
 
@@ -80,6 +80,7 @@ frozen archive described below is now the primary evidence.
 | GE1 representation-probe preflight attempt | `4baf596812471ca76a15b09df89ce38d0a4bf30c` | `3346476` | Authoritative transcript; separate raw logs and hashes not supplied | Focused runtime-test implementation failure after 17/17 pure and 6/7 runtime tests; zero source artifact, checkpoint, manifest, payload, or scientific-probe access; no artifact | `reported-only` | [Record](ge1_representation_probe_preflight_attempt_3346476.md) |
 | GE1 closed-form readout v2 | `4dff7e0ed1fea7076b64e2513689088aff4d8078` | `3351524` | Local terminal transcript and finalized result JSON; other four artifact files not supplied | Verified preserved-feature artifact only; no corpus, checkpoint, training, repair, or protected access; artifact-bundle qualification retained | `verified-local` | [Record](ge1_closed_form_readout_3351524.md) |
 | GE1 grid-magnitude engineering validation | `bdb7148dc4ebe751bda1a66cd167fcf035495762` | `3351837` | Local stdout, stderr, sacct, SHA-256 manifest, and terminal transcript | Corpus-free engineering validation; technically valid with recorded prospective-authorization deviation; no manifest, payload, protected partition, or scientific execution | `verified-local` | [Record](ge1_grid_magnitude_validation_3351837.md) |
+| GE1 Stage 6 zero-memory train diagnostic | `2eaabf2e5a88fc62f559c914123694539a93e188` | `3355342` | Local five-file artifact, stdout, stderr, sacct, and terminal transcript | Authorized narrow train and six retained producer wrappers only; no training, checkpoint mutation, development, or protected access; full local verifier rerun qualified by absent separate job-3355134 artifact | `verified-local` | [Record](ge1_stage6_zero_memory_3355342.md) |
 
 ### Current-through-August-3 coverage
 

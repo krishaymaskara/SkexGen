@@ -4,7 +4,7 @@
 
 | Item | Decision |
 |---|---|
-| Status | Accepted protocol; C0-C6 complete; C7-v1 and C7-v2 failed scientifically; the positive-magnitude repair passed engineering validation; accepted ADR-0010 repaired sufficiency completed as immutable job `3345280` with exact structure/validity/memory but failed operation fidelity in both arms; accepted ADR-0011 probe job `3346513` timed out after preserving complete feature/label inputs; the separate 16-pipeline representation screen is implemented with corpus-free synthetic tests and an unsubmitted artifact-only runner, but screen execution is separately unauthorized; Stage 6 remains blocked and C8 is not begun |
+| Status | Accepted protocol; C0-C6 complete; C7-v1, C7-v2, and repaired sufficiency failed scientifically; ADR-0011 and the representation screen remain incomplete; ADR-0014 CPU producer job `3354961` stopped at its train-reliability gate before development, postmortem job `3355134` preserved the train-gate evidence, and exact-zero train diagnostic job `3355342` completed validly with qualifications; no finalized Stage 6 comparison exists, development remains closed, and C8 is not begun |
 | Active scope source | [ADR-0002](../decisions/ADR-0002-three-week-flat-versus-graph-scope.md), July 30, 2026 |
 | Historical motivation | Mentor-revised six-to-eight-week plan, July 16, 2026 |
 | Authorization | Satisfied by accepted [ADR-0004](../decisions/ADR-0004-ge1-single-manifest-encoder-comparison.md) |

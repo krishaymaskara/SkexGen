@@ -239,6 +239,34 @@ layout, timing evidence, final allocation, source and runner hashes at a future
 commit, transfer, data access, and submission remain unresolved reviewer
 inputs. Their placeholders are deliberately ineligible for execution.
 
+## Post-acceptance execution status
+
+Later reviewer acts separately authorized narrow-package preparation,
+timing-v2, and one CPU producer attempt. Producer job `3354961` trained all
+six arm/seed conditions through epoch 200 and retained six strict checkpoint
+wrappers, but stopped at `stage6_train_reliability_failure` before development
+access or finalization. It therefore produced no Stage 6 comparison result.
+Train-gate postmortem job `3355134` subsequently finalized a read-only,
+train-only diagnostic artifact over those wrappers.
+
+Read-only train-only zero-memory job `3355342`, at exact commit
+`2eaabf2e5a88fc62f559c914123694539a93e188`, completed validly with the
+evidence-bundle qualification recorded in its [execution
+record](../experiments/ge1_stage6_zero_memory_3355342.md). Exact-zero memory
+retained pooled structural scores of `0.8378378378378378` for flat and
+`0.5855855855855856` for typed graph, versus authenticated true-memory scores
+of `1.0` for both and authenticated mean-memory scores of
+`0.7903357903357904` and `0.8361998361998362`. This is descriptive evidence
+that unchanged decoder-side/scalar-path inputs remain informative and that
+encoder-memory values also contribute. It creates no threshold and neither
+passes nor repairs the frozen Stage 6 memory gate.
+
+These later acts do not amend this ADR's endpoint, gates, or interpretation.
+Development remains unopened; no producer artifact or finalized Stage 6
+comparison exists. Another producer, repair, development access, finalizer,
+RR, Stage 7, C8, or protected access requires a new explicit reviewer
+decision.
+
 ## Stage 7 boundary
 
 RR and Stage 7 remain closed. A one-time RR evaluation requires frozen Stage 6

@@ -74,8 +74,9 @@ the immediate next action changes.
   parameter failures, with CAD-kernel outcomes explicitly unavailable.
 - [ADR-0014: GE1 Stage 6 structure-only
   comparison](decisions/ADR-0014-ge1-stage6-structure-only-comparison.md) —
-  prospective conversion-independent structural comparison authorized only
-  for implementation, synthetic validation, and runner preparation.
+  prospective conversion-independent structural comparison; later producer
+  job `3354961` stopped at the train-reliability gate before development, so
+  no finalized Stage 6 comparison exists.
 - [GE1 Stage 6 structure-only comparison
   contract](specifications/ge1_stage6_structure_only_comparison.md) — frozen
   structural prefix, governed narrow-package/receipt preparation, CPU-versus-
@@ -90,7 +91,8 @@ the immediate next action changes.
 - [GE1 Stage 6 zero-memory train
   diagnostic](specifications/ge1_stage6_zero_memory_diagnostic.md) — separately
   versioned read-only follow-up that authenticates the job-3355134 true-memory
-  baseline and replaces only encoder-memory values with exact zeros.
+  baseline and replaces only encoder-memory values with exact zeros; job
+  `3355342` completed without creating a new gate or downstream authority.
 - [ADR-0011: GE1 repaired-checkpoint representation
   probe](decisions/ADR-0011-ge1-repaired-representation-probe.md) — accepted
   governance record for a detached-feature, train-only diagnostic of scalar,
@@ -281,6 +283,10 @@ the immediate next action changes.
   3351837](experiments/ge1_grid_magnitude_validation_3351837.md) — technically
   valid corpus-free validation with a recorded prospective-authorization
   deviation; it produced no scientific result.
+- [GE1 Stage 6 zero-memory diagnostic job
+  3355342](experiments/ge1_stage6_zero_memory_3355342.md) — completed train-only
+  read-only evidence with a valid five-file artifact, substantial exact-zero
+  structural output, and an explicit prior-artifact verification qualification.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

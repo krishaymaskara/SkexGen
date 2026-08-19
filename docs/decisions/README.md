@@ -99,10 +99,12 @@ it superseded by a later ADR.
   diagnostic without authorizing a production change or retry.
 - [ADR-0014: GE1 Stage 6 structure-only graph-versus-flat
   comparison](ADR-0014-ge1-stage6-structure-only-comparison.md) — accepted
-  prospectively by designated reviewer Krishay Maskara for implementation and
-  preparation only; freezes a conversion-independent autonomous structural
-  prefix, paired seed/family comparison, structure-only memory gate, governed
-  narrow-package preparation, and prospective CPU/CUDA timing-v2 selection
-  while leaving real preparation, scientific execution, development access,
-  transfer, submission, RR, Stage 7, and every protected partition
-  unauthorized.
+  prospectively by designated reviewer Krishay Maskara; freezes a conversion-
+  independent autonomous structural prefix, paired seed/family comparison,
+  structure-only memory gate, governed narrow-package preparation, and
+  CPU/CUDA timing-v2 selection. Later separately authorized CPU producer job
+  `3354961` stopped at the train-reliability gate before development, and
+  read-only train diagnostics `3355134` and `3355342` preserved postmortem and
+  exact-zero-memory evidence. No Stage 6 comparison result exists, and another
+  producer, repair, development access, finalization, RR, Stage 7, C8, or
+  protected access remains unauthorized.

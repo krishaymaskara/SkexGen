@@ -10,9 +10,11 @@
 | Producer commit | `5f4542f86756dae44435af27a6e072db6f27a8ef` |
 | Prior postmortem job | `3355134` |
 | Prior postmortem commit | `ddf9617fb124fbc18f38302943f0c982019bfee9` |
+| Implementation commit | `2eaabf2e5a88fc62f559c914123694539a93e188` |
+| Completed diagnostic job | `3355342` |
 | Cohort | authorized narrow train only |
 | Execution | read-only CPU inference; no training |
-| Current authority | implementation, commit, and runner preparation only |
+| Current authority | completed evidence only; no further execution or access authority |
 
 ## Question and frozen intervention
 
@@ -85,6 +87,30 @@ recomputed scores and summaries, manifest coverage, checksums, and absence of
 unexpected files. Successful verification returns
 `verification_status="pass"`. Scientific outcome never controls that status.
 
+## Execution record
+
+Reviewer-authorized job `3355342` completed at the exact implementation commit
+with exit `0:0` in `00:04:09`; batch MaxRSS was `786736K`. All 14 focused
+tests passed with zero skips. The complete five-file artifact and its local
+checksums validate, and the job records an exact verifier pass. The separate
+job-3355134 artifact required to rerun that verifier was not part of the
+downloaded audit evidence, so its embedded hashes and verification result are
+execution evidence rather than a second independent local authentication.
+
+Across 1,221 records per arm, `P_true` was `1.0`. Flat recorded
+`P_zero=0.8378378378378378` and authenticated
+`P_mean=0.7903357903357904`; typed graph recorded
+`P_zero=0.5855855855855856` and authenticated
+`P_mean=0.8361998361998362`. The exact-zero output therefore remains
+structurally informative, consistent with unchanged decoder-side/scalar-path
+inputs, while the true-to-zero drops also show memory-value contribution.
+The typed-graph zero-versus-mean contrast is consistent with useful
+information in its batch-mean vector. None of these descriptive differences
+has a diagnostic threshold, identifies a causal input or defect, establishes
+encoder superiority, or supplies a development conclusion. Full audit details
+are in the [job-3355342 execution
+record](../experiments/ge1_stage6_zero_memory_3355342.md).
+
 ## Access and runner boundary
 
 The separate CPU runner requests one CPU, one thread, 2 GB, and 30 minutes. It
@@ -99,6 +125,7 @@ Focused tests must run with zero skips. The runner invokes the diagnostic once,
 verifies the artifact and checksums, emits terminal success/failure/timeout
 telemetry, and contains no submission command.
 
-Implementation and commit do not authorize transfer, input access, inference,
-or submission. Those remain separate reviewer acts. Development, protected
-data, Stage 6 continuation, C8, repair, and threshold changes remain closed.
+Completion of job `3355342` consumes only its separately granted diagnostic
+authority. It does not authorize another transfer, input access, inference,
+or submission. Development, protected data, Stage 6 continuation, C8, repair,
+and threshold changes remain closed.
