@@ -264,8 +264,10 @@ class OperationMagnitudeRuntimeTests(unittest.TestCase):
         legacy_optimizer = torch.optim.AdamW(legacy.parameters(), lr=1e-3)
         partition = training_partition_identity(("a", "b", "c", "d"))
         provenance = SimpleNamespace(
+            device="cpu",
             source_tree_sha256="b" * 64,
             to_dict=lambda: {
+                "device": "cpu",
                 "git_commit": commit,
                 "source_tree_sha256": "b" * 64,
                 "operation_magnitude_parameterization": (
