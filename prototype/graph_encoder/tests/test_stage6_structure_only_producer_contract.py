@@ -6,6 +6,7 @@ import copy
 import hashlib
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from prototype.graph_encoder.errors import GraphEncoderError
@@ -38,7 +39,11 @@ from prototype.graph_encoder.stage6_structure_only_producer import (
     _grammar_valid,
 )
 from prototype.graph_encoder.tests.test_stage6_timing_contract import record as timing_record
-from prototype.graph_encoder.stage6_structure_only_producer_audit import audit
+from prototype.graph_encoder.stage6_structure_only_producer_audit import (
+    CPU_DISCOVERY_CUDA_SKIP_IDS,
+    audit,
+    validate_cpu_complete_discovery,
+)
 from prototype.graph_encoder.tests.test_stage6_structure_only_contract import synthetic_payload
 
 
@@ -313,6 +318,67 @@ class ProducerPureContractTests(unittest.TestCase):
         self.assertEqual(result["bind_count"], 4)
         self.assertEqual(result["producer_invocation_count"], 1)
         self.assertEqual(result["protected_bind_count"], 0)
+
+    def test_cpu_complete_discovery_allows_only_exact_cuda_skips(self):
+        from prototype.graph_encoder.tests.test_stage6_cuda_runtime import (
+            Stage6CudaRuntimeTests,
+        )
+        prefix = "{}.{}.".format(
+            Stage6CudaRuntimeTests.__module__, Stage6CudaRuntimeTests.__name__
+        )
+        discovered_cuda_ids = tuple(
+            prefix + name for name in sorted(dir(Stage6CudaRuntimeTests))
+            if name.startswith("test_")
+        )
+        self.assertEqual(CPU_DISCOVERY_CUDA_SKIP_IDS, discovered_cuda_ids)
+
+        def result_for(skip_ids, tests_run=620, failures=(), errors=()):
+            skipped = [
+                (SimpleNamespace(id=lambda value=value: value), "CUDA unavailable")
+                for value in skip_ids
+            ]
+            return SimpleNamespace(
+                testsRun=tests_run,
+                failures=list(failures),
+                errors=list(errors),
+                skipped=skipped,
+                wasSuccessful=lambda: not failures and not errors,
+            )
+
+        accepted = validate_cpu_complete_discovery(
+            620, result_for(CPU_DISCOVERY_CUDA_SKIP_IDS)
+        )
+        self.assertEqual(accepted["declared"], 620)
+        self.assertEqual(accepted["run"], 620)
+        self.assertEqual(accepted["skipped"], 6)
+        self.assertEqual(
+            accepted["skip_ids"], list(CPU_DISCOVERY_CUDA_SKIP_IDS)
+        )
+        arbitrary = "arbitrary.module.ArbitraryTests.test_unrelated_skip"
+        rejected = (
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1],
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (CPU_DISCOVERY_CUDA_SKIP_IDS[-1],),
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1] + (arbitrary,),
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (arbitrary,),
+        )
+        for skip_ids in rejected:
+            with self.subTest(skip_ids=skip_ids):
+                with self.assertRaises(AssertionError):
+                    validate_cpu_complete_discovery(620, result_for(skip_ids))
+        with self.assertRaises(AssertionError):
+            validate_cpu_complete_discovery(
+                620, result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, tests_run=619)
+            )
+        with self.assertRaises(AssertionError):
+            validate_cpu_complete_discovery(
+                620,
+                result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, failures=((object(), "failure"),)),
+            )
+        with self.assertRaises(AssertionError):
+            validate_cpu_complete_discovery(
+                620,
+                result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, errors=((object(), "error"),)),
+            )
 
 
 if __name__ == "__main__":

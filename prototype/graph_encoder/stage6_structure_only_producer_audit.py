@@ -8,6 +8,44 @@ import re
 
 
 AUDIT_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-PRODUCER-AUDIT-v1"
+CPU_DISCOVERY_CUDA_SKIP_IDS = (
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_autonomous_true_shuffle_mean_are_cuda_and_batch_local",
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_bounded_optimizer_step_is_finite_clipped_and_repeatable",
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_cuda_checkpoint_fresh_recovery_restores_model_optimizer_and_rng",
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_cuda_configuration_disables_tf32_and_has_no_fallback",
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_matched_models_and_every_training_tensor_are_cuda",
+    "prototype.graph_encoder.tests.test_stage6_cuda_runtime."
+    "Stage6CudaRuntimeTests.test_procedural_cuda_producer_record_is_finalizer_compatible",
+)
+
+
+def validate_cpu_complete_discovery(declared, result):
+    """Accept only the six CUDA-only skips in complete CPU discovery."""
+
+    skipped_ids = tuple(sorted(test.id() for test, unused_reason in result.skipped))
+    telemetry = {
+        "event": "stage6_structure_only_producer_complete_tests",
+        "declared": declared,
+        "run": result.testsRun,
+        "failures": len(result.failures),
+        "errors": len(result.errors),
+        "skipped": len(skipped_ids),
+        "skip_ids": list(skipped_ids),
+    }
+    if result.testsRun != declared:
+        raise AssertionError("complete discovery did not report every declared test")
+    if result.failures or result.errors or not result.wasSuccessful():
+        raise AssertionError("complete discovery has failures or errors")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        raise AssertionError("complete discovery reported duplicate skip IDs")
+    if skipped_ids != CPU_DISCOVERY_CUDA_SKIP_IDS:
+        raise AssertionError("complete discovery CUDA skip allowlist differs")
+    return telemetry
 
 
 def audit(repository_root, runner_path):
@@ -66,6 +104,8 @@ def audit(repository_root, runner_path):
             raise AssertionError("GPU producer device boundary differs")
     elif "--nv" in executable or "--require-selected-device cpu" not in executable:
         raise AssertionError("CPU producer device boundary differs")
+    elif "validate_cpu_complete_discovery" not in executable:
+        raise AssertionError("CPU complete-discovery skip policy is absent")
     invocation = re.findall(
         r"-m\s+prototype\.graph_encoder\.stage6_structure_only_producer(?=\s|$)",
         executable,

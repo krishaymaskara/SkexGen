@@ -204,12 +204,17 @@ memory ratios, validity, and interpretation.
 
 `ge1_stage6_narrow_builder_cpu.slurm` has exactly three preparation binds.
 `ge1_stage6_hardware_timing_gpu.slurm` has `--nv`, three binds, no development
-path, and measures both devices once. The unchanged CPU-default producer runner
-and separate `ge1_stage6_structure_only_producer_gpu.slurm` each have four
-binds and reject timing that selected the other device; the GPU runner has
-`--nv` and reports peak GPU memory. Allocation flags are not guessed. The
-`ge1_stage6_structure_only_cpu.slurm` finalizer remains CPU-only and consumes
-only the producer artifact.
+path, and measures both devices once. The CPU-default producer runner and
+separate `ge1_stage6_structure_only_producer_gpu.slurm` each have four binds
+and reject timing that selected the other device; the GPU runner has `--nv`
+and reports peak GPU memory. The CPU producer's focused suite remains
+zero-skip. Its complete graph-encoder discovery permits exactly the six
+`Stage6CudaRuntimeTests` methods to report CUDA-unavailable skips, records
+their sorted full IDs, and rejects every missing, duplicate, or additional
+skip. The separate 79/79 zero-skip GPU acceptance covers those CUDA methods;
+the CPU allowance does not waive or replace that acceptance. Allocation flags
+are not guessed. The `ge1_stage6_structure_only_cpu.slurm` finalizer remains
+CPU-only and consumes only the producer artifact.
 
 No runner submits itself. Implementation creates no real package or timing
 record and authorizes no transfer, data access, timing, or scientific run.
