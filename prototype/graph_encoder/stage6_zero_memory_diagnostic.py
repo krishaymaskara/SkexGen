@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from dataclasses import replace
 import hashlib
 import json
 import math
@@ -307,6 +308,48 @@ def run_zero_memory_evaluation(model, input_batches, *, execution_device="cpu"):
     }
 
 
+def zero_memory_family_record_from_prediction(
+    prediction, target, *, template, representation_identity, cohort, arm, seed
+):
+    """Build a P_zero record through the unchanged production record path."""
+
+    if prediction.condition != P_ZERO:
+        _fail("invalid_stage6_zero_memory_alignment", "condition differs")
+    if prediction.memory_source_family_id != "zero_memory":
+        _fail("invalid_stage6_zero_memory_alignment", "memory source differs")
+    compatible_prediction = replace(
+        prediction,
+        condition="P_true",
+        memory_source_family_id=prediction.family_id,
+    )
+    compatible_record = family_record_from_prediction(
+        compatible_prediction,
+        target,
+        template=template,
+        representation_identity=representation_identity,
+        cohort=cohort,
+        arm=arm,
+        seed=seed,
+    )
+    if not isinstance(compatible_record, dict) or (
+        compatible_record.get("family_id") != prediction.family_id
+        or compatible_record.get("arm") != arm
+        or compatible_record.get("seed") != int(seed)
+        or compatible_record.get("cohort") != cohort
+        or compatible_record.get("condition") != "P_true"
+        or compatible_record.get("memory_source_family_id")
+        != prediction.family_id
+    ):
+        _fail(
+            "invalid_stage6_zero_memory_alignment",
+            "compatibility record differs",
+        )
+    diagnostic_record = dict(compatible_record)
+    diagnostic_record["condition"] = P_ZERO
+    diagnostic_record["memory_source_family_id"] = "zero_memory"
+    return diagnostic_record
+
+
 def score_zero_family_record(record):
     """Apply the unchanged structural scorer to the new intervention record."""
 
@@ -515,7 +558,7 @@ def generate_zero_memory_records(model, examples, *, arm, seed):
         family_id = prediction.family_id
         if family_id not in targets:
             _fail("invalid_stage6_zero_memory_alignment", family_id)
-        family_record = family_record_from_prediction(
+        family_record = zero_memory_family_record_from_prediction(
             prediction,
             targets[family_id],
             template=templates[family_id],

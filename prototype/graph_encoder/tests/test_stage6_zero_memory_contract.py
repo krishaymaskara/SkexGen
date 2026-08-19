@@ -10,9 +10,15 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+from prototype.graph_encoder.autonomous import AutonomousPrediction
 from prototype.graph_encoder.errors import GraphEncoderError
 from prototype.graph_encoder.pilot import _atomic_write_json, _atomic_write_jsonl
-from prototype.graph_encoder.stage6_structure_only import ARMS, FULL_SEEDS, score_family_record
+from prototype.graph_encoder.stage6_structure_only import (
+    ARMS,
+    FULL_SEEDS,
+    TRAIN_FAMILY_COUNT,
+    score_family_record,
+)
 from prototype.graph_encoder.stage6_zero_memory_audit import audit
 from prototype.graph_encoder.stage6_zero_memory_diagnostic import (
     ACCESS_RECORD,
@@ -34,11 +40,16 @@ from prototype.graph_encoder.stage6_zero_memory_diagnostic import (
     analyze_zero_memory,
     complete_zero_memory_records,
     finalize_artifact,
+    generate_zero_memory_records,
     parse_checkpoint_paths,
     score_zero_family_record,
     validate_zero_memory_records,
     verify_artifact,
+    zero_memory_family_record_from_prediction,
     zero_memory_tensor,
+)
+from prototype.graph_encoder.stage6_structure_only_producer import (
+    family_record_from_prediction as production_family_record_from_prediction,
 )
 from prototype.graph_encoder.tests.test_stage6_structure_only_contract import (
     synthetic_payload,
@@ -155,6 +166,33 @@ def _checkpoint_evidence():
     return result
 
 
+def _autonomous_prediction(condition=P_ZERO, memory_source="zero_memory"):
+    return AutonomousPrediction(
+        "family-0000",
+        condition,
+        memory_source,
+        "batch-identity",
+        object(),
+        object(),
+        object(),
+    )
+
+
+def _compatibility_record(prediction, *, arm="flat", seed=2026, cohort="train"):
+    return {
+        "family_id": prediction.family_id,
+        "template": "E",
+        "cohort": cohort,
+        "arm": arm,
+        "seed": seed,
+        "condition": "P_true",
+        "representation_variant_id": "representation-identity",
+        "batch_identity": prediction.batch_identity,
+        "memory_source_family_id": prediction.family_id,
+        "nested_payload": {"preserved": [1, 2, 3]},
+    }
+
+
 class Stage6ZeroMemoryContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -224,6 +262,199 @@ class Stage6ZeroMemoryContractTests(unittest.TestCase):
         changed["condition"] = "P_mean"
         with self.assertRaises(GraphEncoderError):
             score_zero_family_record(changed)
+
+    def test_record_adapter_is_nonmutating_and_changes_only_two_fields(self):
+        prediction = _autonomous_prediction()
+        original_fields = tuple(vars(prediction).items())
+        compatible_record = _compatibility_record(prediction)
+        with mock.patch(
+            "prototype.graph_encoder.stage6_zero_memory_diagnostic."
+            "family_record_from_prediction",
+            return_value=compatible_record,
+        ) as production:
+            observed = zero_memory_family_record_from_prediction(
+                prediction,
+                object(),
+                template="E",
+                representation_identity="representation-identity",
+                cohort="train",
+                arm="flat",
+                seed=2026,
+            )
+        compatibility_prediction = production.call_args.args[0]
+        self.assertIsNot(compatibility_prediction, prediction)
+        self.assertEqual(compatibility_prediction.condition, "P_true")
+        self.assertEqual(
+            compatibility_prediction.memory_source_family_id,
+            prediction.family_id,
+        )
+        for name, value in original_fields:
+            if name not in ("condition", "memory_source_family_id"):
+                self.assertIs(getattr(compatibility_prediction, name), value)
+        self.assertEqual(tuple(vars(prediction).items()), original_fields)
+        expected = copy.deepcopy(compatible_record)
+        expected["condition"] = P_ZERO
+        expected["memory_source_family_id"] = "zero_memory"
+        self.assertEqual(observed, expected)
+        self.assertEqual(compatible_record["condition"], "P_true")
+        self.assertEqual(
+            compatible_record["memory_source_family_id"], prediction.family_id
+        )
+        differences = {
+            key for key in compatible_record if compatible_record[key] != observed[key]
+        }
+        self.assertEqual(differences, {"condition", "memory_source_family_id"})
+
+    def test_record_adapter_rejects_wrong_identity_and_production_stays_strict(self):
+        for prediction in (
+            _autonomous_prediction(condition="P_mean"),
+            _autonomous_prediction(memory_source="another-family"),
+        ):
+            with self.subTest(prediction=prediction), mock.patch(
+                "prototype.graph_encoder.stage6_zero_memory_diagnostic."
+                "family_record_from_prediction"
+            ) as production, self.assertRaises(GraphEncoderError):
+                zero_memory_family_record_from_prediction(
+                    prediction,
+                    object(),
+                    template="E",
+                    representation_identity="representation-identity",
+                    cohort="train",
+                    arm="flat",
+                    seed=2026,
+                )
+            production.assert_not_called()
+
+        prediction = _autonomous_prediction()
+        with self.assertRaises(GraphEncoderError) as raised:
+            production_family_record_from_prediction(
+                prediction,
+                object(),
+                template="E",
+                representation_identity="representation-identity",
+                cohort="train",
+                arm="flat",
+                seed=2026,
+            )
+        self.assertEqual(raised.exception.code, "invalid_stage6_alignment")
+
+        for field, value in (
+            ("family_id", "other-family"),
+            ("arm", "typed_graph"),
+            ("seed", 2027),
+            ("cohort", "development"),
+            ("condition", "P_mean"),
+            ("memory_source_family_id", "other-family"),
+        ):
+            record = _compatibility_record(prediction)
+            record[field] = value
+            with self.subTest(field=field), mock.patch(
+                "prototype.graph_encoder.stage6_zero_memory_diagnostic."
+                "family_record_from_prediction",
+                return_value=record,
+            ), self.assertRaises(GraphEncoderError) as mismatch:
+                zero_memory_family_record_from_prediction(
+                    prediction,
+                    object(),
+                    template="E",
+                    representation_identity="representation-identity",
+                    cohort="train",
+                    arm="flat",
+                    seed=2026,
+                )
+            self.assertEqual(
+                mismatch.exception.code, "invalid_stage6_zero_memory_alignment"
+            )
+
+    def test_complete_generation_uses_diagnostic_compatibility_adapter(self):
+        examples = tuple(
+            SimpleNamespace(
+                physical_family_id="family-{:04d}".format(index),
+                target=object(),
+                metadata=SimpleNamespace(
+                    operation_template="E",
+                    sample_ids=("sample-{:04d}".format(index),),
+                ),
+            )
+            for index in range(TRAIN_FAMILY_COUNT)
+        )
+        predictions = tuple(
+            AutonomousPrediction(
+                example.physical_family_id,
+                P_ZERO,
+                "zero_memory",
+                "batch-identity",
+                object(),
+                object(),
+                object(),
+            )
+            for example in examples
+        )
+        evidence = {
+            prediction.family_id: {"memory_nonzero_count": 0}
+            for prediction in predictions
+        }
+
+        def strict_production(prediction, unused_target, **values):
+            if (
+                prediction.condition != "P_true"
+                or prediction.memory_source_family_id != prediction.family_id
+            ):
+                raise GraphEncoderError(
+                    "invalid_stage6_alignment", "identity differs"
+                )
+            return {
+                "family_id": prediction.family_id,
+                "template": values["template"],
+                "cohort": values["cohort"],
+                "arm": values["arm"],
+                "seed": int(values["seed"]),
+                "condition": prediction.condition,
+                "representation_variant_id": values[
+                    "representation_identity"
+                ],
+                "batch_identity": prediction.batch_identity,
+                "memory_source_family_id": prediction.memory_source_family_id,
+            }
+
+        result = SimpleNamespace(
+            condition=P_ZERO,
+            available=True,
+            predictions=predictions,
+        )
+        patches = (
+            mock.patch(
+                "prototype.graph_encoder.batching.build_paired_batch",
+                side_effect=lambda rows: tuple(rows),
+            ),
+            mock.patch(
+                "prototype.graph_encoder.autonomous.autonomous_input_from_paired",
+                side_effect=lambda paired, unused_arm, execution_device: paired,
+            ),
+            mock.patch(
+                "prototype.graph_encoder.stage6_zero_memory_diagnostic."
+                "run_zero_memory_evaluation",
+                return_value={
+                    "condition": result,
+                    "intervention_evidence": evidence,
+                },
+            ),
+            mock.patch(
+                "prototype.graph_encoder.stage6_zero_memory_diagnostic."
+                "family_record_from_prediction",
+                side_effect=strict_production,
+            ),
+        )
+        with patches[0], patches[1], patches[2], patches[3]:
+            records = generate_zero_memory_records(
+                object(), examples, arm="flat", seed=2026
+            )
+        self.assertEqual(len(records), TRAIN_FAMILY_COUNT)
+        self.assertTrue(all(
+            row["family_record"]["condition"] == P_ZERO
+            and row["family_record"]["memory_source_family_id"] == "zero_memory"
+            for row in records
+        ))
 
     def test_record_coverage_aggregation_and_family_balancing_are_exact(self):
         self.assertEqual(len(self.records), EXPECTED_ZERO_RECORD_COUNT)
