@@ -48,8 +48,11 @@ the expected unittest progress stream ending in `OK`.
 ## Descriptive result
 
 `P_mean` is the authenticated job-3355134 value; it was not recomputed in this
-job. All other displayed values were recomputed from the 2,442 supplied
-records. This diagnostic creates no threshold or new gate.
+job. The corresponding authenticated `P_shuffle` evidence and complete
+three-condition tables are in the [job-3355134 postmortem
+record](ge1_stage6_train_gate_postmortem_3355134.md). All other displayed
+values were recomputed from the 2,442 supplied records. This diagnostic
+creates no threshold or new gate.
 
 | Arm | Seed | Support | P_true | P_zero | P_mean | P_zero / P_true | P_mean / P_true | P_zero - P_true |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|

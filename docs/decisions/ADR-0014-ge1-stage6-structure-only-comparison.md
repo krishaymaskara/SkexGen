@@ -245,9 +245,15 @@ Later reviewer acts separately authorized narrow-package preparation,
 timing-v2, and one CPU producer attempt. Producer job `3354961` trained all
 six arm/seed conditions through epoch 200 and retained six strict checkpoint
 wrappers, but stopped at `stage6_train_reliability_failure` before development
-access or finalization. It therefore produced no Stage 6 comparison result.
+access or finalization. It therefore produced no Stage 6 comparison result;
+the execution evidence is preserved in the [job-3354961
+record](../experiments/ge1_stage6_structure_only_producer_3354961.md).
 Train-gate postmortem job `3355134` subsequently finalized a read-only,
-train-only diagnostic artifact over those wrappers.
+train-only diagnostic artifact over those wrappers. Its [execution
+record](../experiments/ge1_stage6_train_gate_postmortem_3355134.md) shows that
+optimization and train-ceiling checks passed and that the sole pooled producer
+failure was typed-graph `P_mean/P_true=0.8361998361998362` against the inclusive
+`0.80` memory gate; both pooled shuffle ratios passed.
 
 Read-only train-only zero-memory job `3355342`, at exact commit
 `2eaabf2e5a88fc62f559c914123694539a93e188`, completed validly with the

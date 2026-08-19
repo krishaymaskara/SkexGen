@@ -153,19 +153,15 @@ PY
 container_python -B - <<'PY'
 import json
 import unittest
-
-result = unittest.TextTestRunner(verbosity=1).run(
-    unittest.TestLoader().discover("prototype/graph_encoder/tests", top_level_dir=".")
+from prototype.graph_encoder.grid_ordinal_horizon_audit import (
+    validate_cpu_horizon_complete_discovery,
 )
-print(json.dumps({
-    "event": "grid_ordinal_horizon_complete_graph_encoder_suite",
-    "tests_run": result.testsRun,
-    "failures": len(result.failures),
-    "errors": len(result.errors),
-    "skipped": len(result.skipped),
-}, sort_keys=True, separators=(",", ":")), flush=True)
-if result.testsRun != 540 or not result.wasSuccessful() or result.skipped:
-    raise SystemExit("all 540 graph-encoder tests must pass with zero skips")
+
+suite = unittest.TestLoader().discover("prototype/graph_encoder/tests", top_level_dir=".")
+declared = suite.countTestCases()
+result = unittest.TextTestRunner(verbosity=1).run(suite)
+telemetry = validate_cpu_horizon_complete_discovery(declared, result)
+print(json.dumps(telemetry, sort_keys=True, separators=(",", ":")), flush=True)
 PY
 
 container_python -B tools/check_documentation.py

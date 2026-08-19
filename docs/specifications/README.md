@@ -47,7 +47,8 @@ succeeded.
   diagnostic](ge1_stage6_train_gate_postmortem.md) — read-only train-only
   decomposition of producer job `3354961`'s reliability stop from six strict
   epoch-200 wrappers; job `3355134` is the authenticated prior for the later
-  zero-memory result, without repeated training or development access.
+  zero-memory result, without repeated training or development access; see
+  the [execution record](../experiments/ge1_stage6_train_gate_postmortem_3355134.md).
 - [GE1 Stage 6 zero-memory train
   diagnostic](ge1_stage6_zero_memory_diagnostic.md) — exact-zero-memory,
   read-only follow-up using the authenticated job-3355134 true-memory baseline;
@@ -96,8 +97,8 @@ awaiting a decision. When its current-state language differs from the
   a separately versioned diagnostic that recomputes the existing optimization,
   train-ceiling, and train-memory predicates from job `3354961`'s retained
   wrappers and the authorized narrow train package; completed job `3355134`
-  supplies the authenticated prior evidence, with no training or development
-  access.
+  supplies the authenticated prior evidence recorded [here](../experiments/ge1_stage6_train_gate_postmortem_3355134.md),
+  with no training or development access.
 - [GE1 Stage 6 zero-memory diagnostic](ge1_stage6_zero_memory_diagnostic.md):
   a separately versioned train-only diagnostic that replaces only encoder-
   memory values with `torch.zeros_like`; completed job `3355342` retains

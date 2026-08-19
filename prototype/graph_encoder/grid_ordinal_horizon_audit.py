@@ -9,10 +9,35 @@ import re
 import sys
 
 from .grid_magnitude_audit import _executable_shell_source
+from .stage6_structure_only_producer_audit import CPU_DISCOVERY_CUDA_SKIP_IDS
 
 
 AUDIT_VERSION = "GE1-GRID-ORDINAL-HORIZON-SOURCE-AUDIT-v1"
 DIAGNOSTIC_MODULE = "prototype.graph_encoder.grid_ordinal_horizon"
+
+
+def validate_cpu_horizon_complete_discovery(declared, result):
+    """Accept only the six CUDA-only skips in complete CPU discovery."""
+
+    skipped_ids = tuple(sorted(test.id() for test, unused_reason in result.skipped))
+    telemetry = {
+        "event": "grid_ordinal_horizon_complete_graph_encoder_suite",
+        "declared_tests": declared,
+        "tests_run": result.testsRun,
+        "failures": len(result.failures),
+        "errors": len(result.errors),
+        "skipped": len(skipped_ids),
+        "skip_ids": list(skipped_ids),
+    }
+    if result.testsRun != declared:
+        raise AssertionError("complete discovery did not report every declared test")
+    if result.failures or result.errors or not result.wasSuccessful():
+        raise AssertionError("complete discovery has failures or errors")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        raise AssertionError("complete discovery reported duplicate skip IDs")
+    if skipped_ids != CPU_DISCOVERY_CUDA_SKIP_IDS:
+        raise AssertionError("complete discovery CUDA skip allowlist differs")
+    return telemetry
 
 
 def audit_grid_ordinal_horizon(package_root, runner_path):
@@ -72,6 +97,27 @@ def audit_grid_ordinal_horizon(package_root, runner_path):
     shell = _executable_shell_source(runner_source)
     if re.search(r"(^|\s)sbatch(\s|$)", shell):
         raise AssertionError("runner submits a Slurm job")
+    for required_shell in (
+        "declared = suite.countTestCases()",
+        "validate_cpu_horizon_complete_discovery",
+        '("prototype.graph_encoder.tests.test_grid_ordinal_horizon_contract", 17)',
+        '("prototype.graph_encoder.tests.test_grid_ordinal_horizon_runtime", 7)',
+        '("prototype.graph_encoder.tests.test_grid_magnitude_contract", 28)',
+        '("prototype.graph_encoder.tests.test_grid_magnitude_runtime", 14)',
+        '("prototype.graph_encoder.tests.test_grid_magnitude_integration", 18)',
+        '("prototype.graph_encoder.tests.test_grid_magnitude_sufficiency_contract", 31)',
+    ):
+        if required_shell not in runner_source:
+            raise AssertionError("runner discovery contract differs: " + required_shell)
+    if (
+        "result.testsRun != 540" in runner_source
+        or "all 540 graph-encoder tests" in runner_source
+    ):
+        raise AssertionError("runner retains a fixed complete-discovery total")
+    if re.search(
+        r"result\.testsRun\s*(?:==|!=|<=|>=|<|>)\s*\d+", runner_source
+    ):
+        raise AssertionError("runner hardcodes a complete-discovery total")
     if shell.count("--bind") != 2:
         raise AssertionError("runner must declare exactly two binds")
     for value in (

@@ -6,8 +6,34 @@ import ast
 from pathlib import Path
 import re
 
+from .stage6_structure_only_producer_audit import CPU_DISCOVERY_CUDA_SKIP_IDS
+
 
 AUDIT_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-SOURCE-AUDIT-v1"
+
+
+def validate_cpu_finalizer_complete_discovery(declared, result):
+    """Accept only the six CUDA-only skips in complete CPU discovery."""
+
+    skipped_ids = tuple(sorted(test.id() for test, unused_reason in result.skipped))
+    telemetry = {
+        "event": "stage6_structure_only_complete_tests",
+        "declared": declared,
+        "run": result.testsRun,
+        "failures": len(result.failures),
+        "errors": len(result.errors),
+        "skipped": len(skipped_ids),
+        "skip_ids": list(skipped_ids),
+    }
+    if result.testsRun != declared:
+        raise AssertionError("complete discovery did not report every declared test")
+    if result.failures or result.errors or not result.wasSuccessful():
+        raise AssertionError("complete discovery has failures or errors")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        raise AssertionError("complete discovery reported duplicate skip IDs")
+    if skipped_ids != CPU_DISCOVERY_CUDA_SKIP_IDS:
+        raise AssertionError("complete discovery CUDA skip allowlist differs")
+    return telemetry
 
 
 def audit(repository_root, runner_path):
@@ -49,6 +75,19 @@ def audit(repository_root, runner_path):
     )
     if re.search(r"(^|\s)sbatch(\s|$)", executable):
         raise AssertionError("runner must not submit itself")
+    for required in (
+        "declared = suite.countTestCases()",
+        "validate_cpu_finalizer_complete_discovery",
+        "all focused Stage 6 tests must pass with zero skips",
+    ):
+        if required not in executable:
+            raise AssertionError("finalizer discovery policy differs: " + required)
+    if "complete graph-encoder discovery must pass with zero skips" in executable:
+        raise AssertionError("CPU finalizer broadly rejects the exact CUDA-only skips")
+    if re.search(
+        r"result\.testsRun\s*(?:==|!=|<=|>=|<|>)\s*\d+", executable
+    ):
+        raise AssertionError("CPU finalizer hardcodes a complete-discovery total")
     if executable.count("--bind") != 3:
         raise AssertionError("runner must have exactly three governed binds")
     for required in (

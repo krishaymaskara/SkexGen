@@ -126,11 +126,16 @@ if result.testsRun != declared or not result.wasSuccessful() or result.skipped:
 PY
 
 container_python -B - <<'PY'
+import json
 import unittest
+from prototype.graph_encoder.stage6_structure_only_audit import (
+    validate_cpu_finalizer_complete_discovery,
+)
 suite = unittest.TestLoader().discover("prototype/graph_encoder/tests", top_level_dir=".")
+declared = suite.countTestCases()
 result = unittest.TextTestRunner(verbosity=1).run(suite)
-if not result.wasSuccessful() or result.skipped:
-    raise SystemExit("complete graph-encoder discovery must pass with zero skips")
+telemetry = validate_cpu_finalizer_complete_discovery(declared, result)
+print(json.dumps(telemetry, sort_keys=True, separators=(",", ":")), flush=True)
 PY
 
 container_python -B tools/check_documentation.py

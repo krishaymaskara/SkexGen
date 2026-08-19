@@ -9,7 +9,8 @@
 | Failed producer job | `3354961` |
 | Cohort | authorized narrow train only |
 | Execution | read-only CPU inference; no training |
-| Current authority | implementation and runner preparation only |
+| Completed execution | job `3355134` at commit `ddf9617fb124fbc18f38302943f0c982019bfee9` |
+| Current authority | completed train-only diagnostic; no downstream authority |
 
 ## Question and frozen reuse
 
@@ -84,7 +85,14 @@ CPU thread. It invokes the diagnostic exactly once, verifies its checksums and
 artifact, and emits terminal success, failure, or timeout telemetry. The
 runner contains no submission command.
 
-Implementation and preparation do not authorize transfer, train-package or
-checkpoint access, execution, or submission. Those acts require separate
-review of the exact diagnostic commit, runner hash, six wrapper hashes, safe
-paths, resource request, and a single submission.
+Implementation and preparation alone did not authorize transfer,
+train-package or checkpoint access, execution, or submission. Those acts
+required separate review of the exact diagnostic commit, runner hash, six
+wrapper hashes, safe paths, resource request, and a single submission.
+
+The later authorized execution completed validly. Its authenticated
+`P_true`, `P_shuffle`, and `P_mean` values, exact producer failure, artifact
+checksums, and access record are in the [job-3355134 execution
+record](../experiments/ge1_stage6_train_gate_postmortem_3355134.md). Completion
+does not authorize another producer, development access, repair, finalization,
+Stage 7, C8, or protected access.

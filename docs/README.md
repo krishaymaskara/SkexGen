@@ -87,7 +87,8 @@ the immediate next action changes.
   diagnostic](specifications/ge1_stage6_train_gate_postmortem.md) — separately
   versioned read-only train-only diagnosis of producer job `3354961` using its
   six strictly validated epoch-200 wrappers without repeating training or
-  opening development.
+  opening development; authenticated job `3355134` results are in the
+  [execution record](experiments/ge1_stage6_train_gate_postmortem_3355134.md).
 - [GE1 Stage 6 zero-memory train
   diagnostic](specifications/ge1_stage6_zero_memory_diagnostic.md) — separately
   versioned read-only follow-up that authenticates the job-3355134 true-memory
@@ -287,6 +288,14 @@ the immediate next action changes.
   3355342](experiments/ge1_stage6_zero_memory_3355342.md) — completed train-only
   read-only evidence with a valid five-file artifact, substantial exact-zero
   structural output, and an explicit prior-artifact verification qualification.
+- [GE1 Stage 6 structure-only producer job
+  3354961](experiments/ge1_stage6_structure_only_producer_3354961.md) — all six
+  train runs reached epoch 200, then the producer stopped at its prospective
+  train gate before development or artifact finalization.
+- [GE1 Stage 6 train-gate postmortem job
+  3355134](experiments/ge1_stage6_train_gate_postmortem_3355134.md) — valid
+  read-only artifact that authenticates the train `P_true`, `P_shuffle`, and
+  `P_mean` evidence and isolates the aggregate typed-graph mean-memory failure.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

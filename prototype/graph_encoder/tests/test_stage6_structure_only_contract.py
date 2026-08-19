@@ -6,6 +6,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from prototype.graph_encoder.errors import GraphEncoderError
@@ -29,6 +30,11 @@ from prototype.graph_encoder.stage6_structure_only import (
     structure_memory_gate,
     summarize_execution,
     verify_artifact,
+)
+from prototype.graph_encoder.stage6_structure_only_audit import (
+    CPU_DISCOVERY_CUDA_SKIP_IDS,
+    audit as audit_finalizer,
+    validate_cpu_finalizer_complete_discovery,
 )
 
 
@@ -465,6 +471,65 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(config["epochs"], 200)
         self.assertEqual(config["checkpoint_epoch"], 200)
         self.assertFalse(config["primary_uses_geometry"])
+
+
+class CpuFinalizerDiscoveryTests(unittest.TestCase):
+    def test_exact_cuda_allowlist_is_the_only_complete_discovery_skip_set(self):
+        from prototype.graph_encoder.tests.test_stage6_cuda_runtime import (
+            Stage6CudaRuntimeTests,
+        )
+        prefix = "{}.{}.".format(
+            Stage6CudaRuntimeTests.__module__, Stage6CudaRuntimeTests.__name__
+        )
+        discovered = tuple(
+            prefix + name for name in sorted(dir(Stage6CudaRuntimeTests))
+            if name.startswith("test_")
+        )
+        self.assertEqual(CPU_DISCOVERY_CUDA_SKIP_IDS, discovered)
+
+        def result_for(skip_ids, tests_run=700, failures=(), errors=()):
+            skipped = [
+                (SimpleNamespace(id=lambda value=value: value), "CUDA unavailable")
+                for value in skip_ids
+            ]
+            return SimpleNamespace(
+                testsRun=tests_run,
+                failures=list(failures),
+                errors=list(errors),
+                skipped=skipped,
+                wasSuccessful=lambda: not failures and not errors,
+            )
+
+        telemetry = validate_cpu_finalizer_complete_discovery(
+            700, result_for(CPU_DISCOVERY_CUDA_SKIP_IDS)
+        )
+        self.assertEqual(telemetry["declared"], 700)
+        self.assertEqual(telemetry["run"], 700)
+        self.assertEqual(telemetry["failures"], 0)
+        self.assertEqual(telemetry["errors"], 0)
+        self.assertEqual(telemetry["skipped"], 6)
+        self.assertEqual(telemetry["skip_ids"], list(CPU_DISCOVERY_CUDA_SKIP_IDS))
+
+        arbitrary = "arbitrary.module.ArbitraryTests.test_unrelated_skip"
+        for skip_ids in (
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1],
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (CPU_DISCOVERY_CUDA_SKIP_IDS[-1],),
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1] + (arbitrary,),
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (arbitrary,),
+        ):
+            with self.subTest(skip_ids=skip_ids), self.assertRaises(AssertionError):
+                validate_cpu_finalizer_complete_discovery(700, result_for(skip_ids))
+        for result in (
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, tests_run=699),
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, failures=((object(), "failure"),)),
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, errors=((object(), "error"),)),
+        ):
+            with self.assertRaises(AssertionError):
+                validate_cpu_finalizer_complete_discovery(700, result)
+
+        repository = Path(__file__).resolve().parents[3]
+        runner = repository / "prototype/graph_encoder/adroit/ge1_stage6_structure_only_cpu.slurm"
+        self.assertEqual(audit_finalizer(repository, runner)["entry_point_count"], 1)
 
 
 if __name__ == "__main__":

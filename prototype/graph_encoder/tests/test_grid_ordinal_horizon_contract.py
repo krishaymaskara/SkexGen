@@ -6,6 +6,7 @@ import ast
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from prototype.graph_encoder import grid_ordinal_horizon as diagnostic
@@ -17,7 +18,9 @@ from prototype.graph_encoder.grid_magnitude import (
     SERIALIZED_CHANNELS,
 )
 from prototype.graph_encoder.grid_ordinal_horizon_audit import (
+    CPU_DISCOVERY_CUDA_SKIP_IDS,
     audit_grid_ordinal_horizon,
+    validate_cpu_horizon_complete_discovery,
 )
 
 
@@ -284,6 +287,49 @@ class SourceBoundaryTests(unittest.TestCase):
         result = audit_grid_ordinal_horizon(package, runner)
         self.assertEqual(result["bind_count"], 2)
         self.assertEqual(result["optimizer_state_audit"], "pass")
+        source = runner.read_text(encoding="utf-8")
+        self.assertNotIn("result.testsRun != 540", source)
+        self.assertNotIn("all 540 graph-encoder tests", source)
+
+        def result_for(skip_ids, tests_run=700, failures=(), errors=()):
+            skipped = [
+                (SimpleNamespace(id=lambda value=value: value), "CUDA unavailable")
+                for value in skip_ids
+            ]
+            return SimpleNamespace(
+                testsRun=tests_run,
+                failures=list(failures),
+                errors=list(errors),
+                skipped=skipped,
+                wasSuccessful=lambda: not failures and not errors,
+            )
+
+        telemetry = validate_cpu_horizon_complete_discovery(
+            700, result_for(CPU_DISCOVERY_CUDA_SKIP_IDS)
+        )
+        self.assertEqual(telemetry["declared_tests"], 700)
+        self.assertEqual(telemetry["tests_run"], 700)
+        self.assertEqual(telemetry["failures"], 0)
+        self.assertEqual(telemetry["errors"], 0)
+        self.assertEqual(telemetry["skipped"], 6)
+        self.assertEqual(telemetry["skip_ids"], list(CPU_DISCOVERY_CUDA_SKIP_IDS))
+
+        arbitrary = "arbitrary.module.ArbitraryTests.test_unrelated_skip"
+        for skip_ids in (
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1],
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (CPU_DISCOVERY_CUDA_SKIP_IDS[-1],),
+            CPU_DISCOVERY_CUDA_SKIP_IDS[:-1] + (arbitrary,),
+            CPU_DISCOVERY_CUDA_SKIP_IDS + (arbitrary,),
+        ):
+            with self.subTest(skip_ids=skip_ids), self.assertRaises(AssertionError):
+                validate_cpu_horizon_complete_discovery(700, result_for(skip_ids))
+        for discovery_result in (
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, tests_run=699),
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, failures=((object(), "failure"),)),
+            result_for(CPU_DISCOVERY_CUDA_SKIP_IDS, errors=((object(), "error"),)),
+        ):
+            with self.assertRaises(AssertionError):
+                validate_cpu_horizon_complete_discovery(700, discovery_result)
 
 
 if __name__ == "__main__":

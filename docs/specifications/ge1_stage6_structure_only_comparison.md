@@ -214,12 +214,24 @@ their sorted full IDs, and rejects every missing, duplicate, or additional
 skip. The separate 79/79 zero-skip GPU acceptance covers those CUDA methods;
 the CPU allowance does not waive or replace that acceptance. Allocation flags
 are not guessed. The `ge1_stage6_structure_only_cpu.slurm` finalizer remains
-CPU-only and consumes only the producer artifact.
+CPU-only and consumes only the producer artifact. Its focused finalizer suite
+requires zero skips; complete graph-encoder discovery dynamically counts all
+tests and permits exactly the same six CUDA-only skips, with exact sorted-ID
+telemetry and rejection of every missing, duplicate, replacement, or extra
+skip.
 
 No runner submits itself. Implementation creates no real package or timing
 record and authorizes no transfer, data access, timing, or scientific run.
 Operational order is package creation, hash review, timing, allocation review,
 producer, producer audit, then finalizer.
+
+The later producer execution and read-only train-gate diagnosis are preserved
+in the [job-3354961 producer
+record](../experiments/ge1_stage6_structure_only_producer_3354961.md) and
+[job-3355134 postmortem
+record](../experiments/ge1_stage6_train_gate_postmortem_3355134.md). The
+producer stopped before development or artifact finalization; those records
+do not authorize another producer or the finalizer.
 
 ## Remaining prerequisites
 
