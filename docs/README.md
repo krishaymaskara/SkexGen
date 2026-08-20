@@ -315,6 +315,12 @@ the immediate next action changes.
   3355134](experiments/ge1_stage6_train_gate_postmortem_3355134.md) — valid
   read-only artifact that authenticates the train `P_true`, `P_shuffle`, and
   `P_mean` evidence and isolates the aggregate typed-graph mean-memory failure.
+- [GE1 grid-softmax magnitude authoritative CPU validation job
+  3355745](experiments/ge1_grid_softmax_magnitude_validation_3355745.md) —
+  exact-commit, corpus-free engineering validation of the prospective
+  grid-softmax magnitude identity, observing the CUDA skip allowlist and
+  distinct checkpoint schemas on Python 3.8.13 and PyTorch 1.11.0; no
+  scientific execution or Stage 6 authorization.
 - [GE1 memory-to-count prerequisite probe job
   3355776](experiments/ge1_memory_count_probe_3355776.md) — valid exact-commit
   read-only train diagnostic; flat passed in both feature spaces, while typed-

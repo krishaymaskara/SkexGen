@@ -10,11 +10,11 @@ specifications or new decision records.
 | Item | Current value |
 |---|---|
 | Active branch | `graph-v1-experiment-record` |
-| Current reviewed revision | [Producer job `3354961`](experiments/ge1_stage6_structure_only_producer_3354961.md) completed six epoch-200 train runs but stopped at the train-reliability gate before development and produced no final comparison. [Postmortem job `3355134`](experiments/ge1_stage6_train_gate_postmortem_3355134.md) validly isolated the sole pooled failure as typed-graph `P_mean/P_true=0.8361998361998362 > 0.80`; flat passed both memory ratios and typed graph passed shuffle. Zero-memory job `3355342` then completed with the documented evidence qualification. No repair, retry, finalizer, development, RR, Stage 7, C8, ER, or protected access is authorized |
+| Current reviewed revision | [Producer job `3354961`](experiments/ge1_stage6_structure_only_producer_3354961.md) completed six epoch-200 train runs but stopped at the train-reliability gate before development and produced no final comparison. [Postmortem job `3355134`](experiments/ge1_stage6_train_gate_postmortem_3355134.md) and zero-memory job `3355342` isolated the memory-gate and target-count leakage. Accepted [ADR-0015](decisions/ADR-0015-ge1-grid-softmax-operation-magnitude-classification.md) and engineering-validation job `3355745` establish the opt-in grid-softmax magnitude implementation. Accepted [ADR-0016](decisions/ADR-0016-ge1-autonomous-stop-and-unconstrained-node-decoding.md) prospectively removes node-count and grammar-mask leakage. Its read-only [memory-to-count probe job `3355776`](experiments/ge1_memory_count_probe_3355776.md) produced a valid artifact but failed the all-checkpoint prerequisite because typed-graph seed 2028 reached only 0.751 memory and 0.726 prequant balanced accuracy against the 0.90 floor. Source implementation and engineering validation may proceed; no retrain, Stage 6, development, RR, ER, protected access, or scientific execution is authorized |
 | Frozen Flat V6 commit | `ac6ef718ae9bab7fa5a80d9f48d0976adf5cafad` |
 | Frozen initial Graph V1 commit | `089b9f3d0e5a61fb19ef3fa05e993fc4eceffdcb` |
 | Frozen final Graph V1 C1 commit | `0cd09ed34d4c4dd0d43e1456b7a06eb362ee7962` |
-| Status recorded | August 19, 2026 |
+| Status recorded | August 20, 2026 |
 | Controlled domain | Single-body sketch, extrude, and revolve histories with one or two operations |
 | Authoritative corpus | 680 physical families: 544 train, 68 IID validation, 68 held-out IID test |
 | Authorized GE1 manifest | Operation-template only: 407 train, 45 development, 114 RR systematic, 114 ER test |
