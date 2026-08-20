@@ -33,7 +33,11 @@ from prototype.graph_encoder.stage6_structure_only_producer import (
 )
 from prototype.graph_encoder.tests.fixtures import procedural_fixture
 from prototype.model_data.vocab import NODE_TYPES
-from prototype.node_grammar import legal_next_node_ids
+from prototype.node_grammar import (
+    NodeGrammarError,
+    legal_next_node_ids,
+    legal_next_transition_node_ids,
+)
 
 
 ROOT = Path(__file__).parents[3]
@@ -119,7 +123,7 @@ class AutonomousStopTargetTests(unittest.TestCase):
     def test_transition_only_grammar_does_not_change_legacy_exact_lengths(self):
         plane = NODE_TYPES.id("reference_plane")
         legacy = legal_next_node_ids((), 4)
-        transition_only = legal_next_node_ids((), None)
+        transition_only = legal_next_transition_node_ids(())
         self.assertEqual(legacy, (plane,))
         self.assertEqual(transition_only, (plane,))
         prefix = (
@@ -129,9 +133,11 @@ class AutonomousStopTargetTests(unittest.TestCase):
         )
         self.assertEqual(legal_next_node_ids(prefix, 4), (NODE_TYPES.id("extrude"),))
         self.assertEqual(
-            set(legal_next_node_ids(prefix, None)),
+            set(legal_next_transition_node_ids(prefix)),
             {NODE_TYPES.id("axis"), NODE_TYPES.id("extrude")},
         )
+        with self.assertRaises(NodeGrammarError):
+            legal_next_node_ids(prefix, None)
 
 
 class AutonomousStopGovernanceTests(unittest.TestCase):

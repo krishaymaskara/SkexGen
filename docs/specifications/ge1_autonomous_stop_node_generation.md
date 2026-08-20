@@ -65,9 +65,10 @@ exact-length V5 grammar mask, and returns the same prediction bytes for equal
 weights and input memory. `prototype/flat_baseline` remains unchanged.
 
 `legal_next_node_ids(prefix, requested_node_count)` retains exact-length
-semantics. Its additive transition-only mode accepts no requested length and
-is not used to mask the new identity; it exists for validation and diagnostics
-without changing historical callers.
+semantics, including rejecting `None`. The additive
+`legal_next_transition_node_ids(prefix)` helper is not used to mask the new
+identity; it exists for validation and diagnostics without changing historical
+callers.
 
 ## Stage 6 scoring and optimization
 
