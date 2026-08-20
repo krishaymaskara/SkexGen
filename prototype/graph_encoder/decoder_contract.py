@@ -61,6 +61,31 @@ GRID_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v2"
 GRID_SOFTMAX_SHARED_DECODER_VERSION = "GE1-SHARED-TYPED-EDGE-DECODER-V3"
 GRID_SOFTMAX_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v3"
 
+# ADR-0016 adds an independent node-generation identity.  Magnitude and node
+# generation are separate axes: the new scientific configuration combines the
+# existing grid-softmax head with learned stopping, while every prior
+# magnitude identity keeps the exact requested-count path by default.
+LEGACY_NODE_GENERATION_IDENTITY = (
+    "GE1-REQUESTED-COUNT-GRAMMAR-MASKED-v1"
+)
+AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY = (
+    "GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1"
+)
+NODE_GENERATION_IDENTITIES = (
+    LEGACY_NODE_GENERATION_IDENTITY,
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+)
+AUTONOMOUS_STOP_NODE_GENERATION_CONTRACT_VERSION = (
+    "GE1-AUTONOMOUS-STOP-NODE-GENERATION-CONTRACT-v1"
+)
+AUTONOMOUS_STOP_SHARED_DECODER_VERSION = (
+    "GE1-SHARED-TYPED-EDGE-DECODER-V4"
+)
+AUTONOMOUS_STOP_OUTPUT_POSITION_CONTRACT_VERSION = (
+    "GE1-DECODER-OUTPUT-POSITIONS-v3"
+)
+AUTONOMOUS_STOP_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v4"
+
 
 def uses_grid_magnitude(parameterization):
     """Return whether one parameterization decodes from a frozen grid.
@@ -81,9 +106,24 @@ def uses_grid_softmax_magnitude(parameterization):
     return parameterization == GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
 
 
-def shared_decoder_version_for(parameterization):
+def uses_autonomous_stop(node_generation_identity):
+    """Return whether node generation learns `<pad>` termination."""
+
+    if node_generation_identity not in NODE_GENERATION_IDENTITIES:
+        raise ValueError("unknown node-generation identity")
+    return (
+        node_generation_identity == AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+    )
+
+
+def shared_decoder_version_for(
+    parameterization,
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+):
     """Return the decoder identity implied by a magnitude parameterization."""
 
+    if uses_autonomous_stop(node_generation_identity):
+        return AUTONOMOUS_STOP_SHARED_DECODER_VERSION
     if uses_grid_softmax_magnitude(parameterization):
         return GRID_SOFTMAX_SHARED_DECODER_VERSION
     if uses_grid_magnitude(parameterization):
@@ -91,19 +131,27 @@ def shared_decoder_version_for(parameterization):
     return SHARED_DECODER_VERSION
 
 
-def output_position_contract_version_for(parameterization):
+def output_position_contract_version_for(
+    parameterization,
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+):
     """Return the output-position identity implied by a parameterization.
 
     Both grid identities share `...-POSITIONS-v2`: the magnitude readout
     changes, the decoder output positions do not.
     """
 
+    if uses_autonomous_stop(node_generation_identity):
+        return AUTONOMOUS_STOP_OUTPUT_POSITION_CONTRACT_VERSION
     if uses_grid_magnitude(parameterization):
         return GRID_OUTPUT_POSITION_CONTRACT_VERSION
     return OUTPUT_POSITION_CONTRACT_VERSION
 
 
-def checkpoint_schema_for(parameterization):
+def checkpoint_schema_for(
+    parameterization,
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+):
     """Return the checkpoint schema implied by a parameterization.
 
     The softmax identity is checkpoint incompatible with the ordinal one:
@@ -113,6 +161,8 @@ def checkpoint_schema_for(parameterization):
     structurally incompatible state dict, so each grid head owns a schema.
     """
 
+    if uses_autonomous_stop(node_generation_identity):
+        return AUTONOMOUS_STOP_CHECKPOINT_SCHEMA
     if uses_grid_softmax_magnitude(parameterization):
         return GRID_SOFTMAX_CHECKPOINT_SCHEMA
     if uses_grid_magnitude(parameterization):
@@ -212,15 +262,30 @@ EXCLUDED_POSITION_SIGNALS = (
 )
 
 
-def output_position_contract_metadata():
+def output_position_contract_metadata(
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+):
     """Return a deterministic JSON-compatible copy of the frozen inventory."""
 
-    return {
-        "version": OUTPUT_POSITION_CONTRACT_VERSION,
+    autonomous_stop = uses_autonomous_stop(node_generation_identity)
+    result = {
+        "version": (
+            AUTONOMOUS_STOP_OUTPUT_POSITION_CONTRACT_VERSION
+            if autonomous_stop else OUTPUT_POSITION_CONTRACT_VERSION
+        ),
         "semantic_signals": [asdict(item) for item in OUTPUT_POSITION_SIGNALS],
         "bookkeeping_only_values": [dict(item) for item in BOOKKEEPING_ONLY_VALUES],
         "excluded_signals": list(EXCLUDED_POSITION_SIGNALS),
     }
+    if autonomous_stop:
+        result["learned_terminator"] = {
+            "node_type_id": 0,
+            "token": "<pad>",
+            "supervised_positions_per_example": 1,
+            "occupies_decoder_output_position": True,
+            "enters_graph_pair_enumeration": False,
+        }
+    return result
 
 
 def operation_magnitude_contract_metadata(parameterization):

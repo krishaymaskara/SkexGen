@@ -1447,6 +1447,32 @@ backward pass, optimizer step, checkpoint change, development access, or
 protected access. See the
 [postmortem contract](../../docs/specifications/ge1_stage6_train_gate_postmortem.md).
 
+## Autonomous stop identity
+
+Accepted ADR-0016 adds the opt-in
+`GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1` identity. Its teacher-forced target
+activates one trailing `<pad>` position for the existing node-type
+cross-entropy; categorical, geometry, operation, and graph supervision remain
+limited to real nodes. Autonomous decoding receives memory only, takes plain
+argmax over all eight node classes, strips `<pad>` before graph construction,
+and records reaching `max_nodes = 16` as a failed outcome rather than raising.
+
+The implementation lives in the GE1-owned `autonomous_stop.py`, derived from
+the frozen Flat V6 generator. Legacy identities still call the unchanged
+frozen generator with supplied counts and exact-length grammar masks. The new
+identity combines with grid-softmax magnitude under decoder V4, output-position
+v3, and checkpoint v4. The future Stage 6 producer reports cross-arm train
+score differences diagnostically but no longer binds them into optimization
+reliability; all arm-internal and structural-memory gates remain.
+
+Read-only memory-to-count probe job `3355776` did not satisfy its prospective
+all-checkpoint recovery rule because typed-graph seed 2028 missed the `0.90`
+floor. Consequently no retrain or Stage 6 execution is authorized. Source
+implementation and corpus-free engineering validation remain within ADR-0016's
+separate bounded authority. See the
+[node-generation contract](../../docs/specifications/ge1_autonomous_stop_node_generation.md)
+and [probe record](../../docs/experiments/ge1_memory_count_probe_3355776.md).
+
 ## Manifest authority and access order
 
 Before calling any physical-example payload loader, C1 reads only:

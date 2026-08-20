@@ -135,6 +135,13 @@ the immediate next action changes.
   argmax decode, cross-entropy reduction, diagnostics, capacity, isolation, and
   `GE1-CHECKPOINT-v3` incompatibility contract for
   `GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`.
+- [ADR-0016: GE1 autonomous stop and unconstrained node
+  decoding](decisions/ADR-0016-ge1-autonomous-stop-and-unconstrained-node-decoding.md)
+  — accepted opt-in removal of target-count and grammar-mask leakage, with a
+  learned `<pad>` terminator and a prospective train-gate correction.
+- [GE1 autonomous stop node-generation
+  contract](specifications/ge1_autonomous_stop_node_generation.md) — exact
+  supervision, decoding, cap, edge-pair, versioning, and preservation rules.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.
@@ -308,6 +315,11 @@ the immediate next action changes.
   3355134](experiments/ge1_stage6_train_gate_postmortem_3355134.md) — valid
   read-only artifact that authenticates the train `P_true`, `P_shuffle`, and
   `P_mean` evidence and isolates the aggregate typed-graph mean-memory failure.
+- [GE1 memory-to-count prerequisite probe job
+  3355776](experiments/ge1_memory_count_probe_3355776.md) — valid exact-commit
+  read-only train diagnostic; flat passed in both feature spaces, while typed-
+  graph seed 2028 failed the prospective all-checkpoint recovery rule, so no
+  stop-symbol retrain is authorized.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.

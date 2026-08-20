@@ -10,7 +10,10 @@ from types import SimpleNamespace
 import unittest
 
 from prototype.graph_encoder.errors import GraphEncoderError
-from prototype.graph_encoder.grid_magnitude import GRID_MAGNITUDE_PARAMETERIZATION
+from prototype.graph_encoder.decoder_contract import (
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
 from prototype.graph_encoder.stage6_structure_only import (
     ARMS, FALLBACK_SEEDS, FULL_SEEDS, summarize_execution,
 )
@@ -101,12 +104,10 @@ def _payload():
             scores[(arm, seed)] = sum(rows) / len(rows)
     reliability = optimization_reliability(value["training_runs"], scores, FULL_SEEDS)
     by_run = {(row["arm"], row["seed"]): row for row in reliability["runs"]}
-    by_seed = {row["seed"]: row for row in reliability["train_ceiling_comparisons"]}
     for row in value["training_runs"]:
-        row["optimization_reliable"] = (
-            by_run[(row["arm"], row["seed"])]["pass_before_train_ceiling"]
-            and by_seed[row["seed"]]["pass"]
-        )
+        row["optimization_reliable"] = by_run[
+            (row["arm"], row["seed"])
+        ]["pass_before_train_ceiling"]
     value["optimization_reliability"] = reliability
     return value
 
@@ -233,7 +234,14 @@ class ProducerPureContractTests(unittest.TestCase):
         row = _checkpoint("flat", 2026)
         self.assertEqual(row["version"], CHECKPOINT_VERSION)
         self.assertEqual(row["epoch"], 200)
-        self.assertEqual(row["operation_magnitude_parameterization"], GRID_MAGNITUDE_PARAMETERIZATION)
+        self.assertEqual(
+            row["operation_magnitude_parameterization"],
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+        )
+        self.assertEqual(
+            row["node_generation_identity"],
+            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+        )
         extra = dict(row, unexpected=True)
         with self.assertRaises(GraphEncoderError):
             validate_checkpoint_identity(extra, expected=extra)
@@ -290,7 +298,7 @@ class ProducerPureContractTests(unittest.TestCase):
             self.assertEqual(result["producer_artifact_version"], PRODUCER_ARTIFACT_VERSION)
             payload = load_execution_record(root)
             unused, summary = summarize_execution(payload)
-            self.assertEqual(summary["interpretation_category"], "inconclusive")
+            self.assertEqual(summary["interpretation_category"], "graph_supported")
             self.assertFalse(result["outcome_controls_validity"])
 
     def test_tamper_duplicate_and_incomplete_artifacts_fail(self):

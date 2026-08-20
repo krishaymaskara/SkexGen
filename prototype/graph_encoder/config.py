@@ -10,11 +10,15 @@ from prototype.flat_baseline.config import FlatBaselineConfig
 from prototype.graph_baseline.config import GraphV1Config
 
 from .decoder_contract import (
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    LEGACY_NODE_GENERATION_IDENTITY,
     GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
     GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    NODE_GENERATION_IDENTITIES,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     checkpoint_schema_for,
+    uses_autonomous_stop,
     uses_grid_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
 )
@@ -107,6 +111,7 @@ def frozen_encoder_config(
     operation_magnitude_parameterization=(
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     ),
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
 ):
     """Return the validated frozen configuration for one GE1 arm.
 
@@ -121,8 +126,10 @@ def frozen_encoder_config(
         operation_magnitude_parameterization=(
             operation_magnitude_parameterization
         ),
+        node_generation_identity=node_generation_identity,
         checkpoint_schema=checkpoint_schema_for(
-            operation_magnitude_parameterization
+            operation_magnitude_parameterization,
+            node_generation_identity,
         ),
     )
     config.validate()
@@ -155,6 +162,19 @@ def grid_softmax_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
         operation_magnitude_parameterization=(
             GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
+    )
+
+
+def autonomous_stop_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+    """Return the ADR-0016 stop-symbol plus ADR-0015 softmax identity."""
+
+    return frozen_encoder_config(
+        encoder,
+        seed,
+        operation_magnitude_parameterization=(
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        node_generation_identity=AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
     )
 
 
@@ -208,6 +228,7 @@ class GE1Config:
     operation_magnitude_parameterization: str = (
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     )
+    node_generation_identity: str = LEGACY_NODE_GENERATION_IDENTITY
 
     @property
     def arm_identity(self):
@@ -246,6 +267,19 @@ class GE1Config:
                 "operation_magnitude_parameterization is not an accepted "
                 "legacy or repaired identity",
             )
+        if self.node_generation_identity not in NODE_GENERATION_IDENTITIES:
+            raise GraphEncoderError(
+                "unauthorized_configuration",
+                "node_generation_identity is not accepted",
+            )
+        if uses_autonomous_stop(self.node_generation_identity) and (
+            self.operation_magnitude_parameterization
+            != GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ):
+            raise GraphEncoderError(
+                "unauthorized_configuration",
+                "autonomous stop requires the grid-softmax magnitude identity",
+            )
         # The checkpoint schema is implied by the magnitude parameterization:
         # historical identities keep `GE1-CHECKPOINT-v1` byte-for-byte and the
         # grid identity requires `GE1-CHECKPOINT-v2`.
@@ -255,7 +289,8 @@ class GE1Config:
             (
                 "checkpoint_schema",
                 checkpoint_schema_for(
-                    self.operation_magnitude_parameterization
+                    self.operation_magnitude_parameterization,
+                    self.node_generation_identity,
                 ),
             ),
             ("protocol_identity", PROTOCOL_IDENTITY),
@@ -364,6 +399,9 @@ class GE1Config:
         self.validate()
         values = asdict(self)
         values["arm_identity"] = self.arm_identity
+        if self.node_generation_identity == LEGACY_NODE_GENERATION_IDENTITY:
+            # Preserve every historical serialized configuration byte-for-byte.
+            values.pop("node_generation_identity", None)
         if not uses_grid_magnitude(self.operation_magnitude_parameterization):
             # Historical tanh and positive-sigmoid configurations must
             # serialize byte-for-byte as they did before the grid identity

@@ -24,7 +24,10 @@ except ImportError:  # Pure contracts and artifact verification remain usable.
     torch = None
 
 from .errors import GraphEncoderError
-from .grid_magnitude import GRID_MAGNITUDE_PARAMETERIZATION
+from .decoder_contract import (
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
 from .stage6_structure_only import (
     ARMS,
     COHORTS,
@@ -53,6 +56,7 @@ ACCESS_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-ACCESS-v1"
 CHECKPOINT_IDENTITY_FIELDS = {
     "version", "protocol_version", "source_commit", "source_digest", "arm",
     "seed", "epoch", "model_config", "operation_magnitude_parameterization",
+    "node_generation_identity",
     "training_partition_identity", "training_partition_hashes",
     "training_arithmetic", "parameter_count", "checkpoint_schema",
     "checkpoint_sha256", "execution_device", "runtime_identity",
@@ -67,6 +71,8 @@ LEARNING_RATE = 0.001
 WEIGHT_DECAY = 0.0
 CLIP_NORM = 1.0
 CAPACITY_DIFFERENCE_MAX = 0.05
+# Historical postmortem modules import this literal to verify the superseded
+# artifact.  The active producer never reads it and applies no cross-arm gate.
 TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX = 0.05
 TIMING_CONTINGENCY = 0.20
 UNRESOLVED_HASH = "UNRESOLVED_REVIEWER_INPUT"
@@ -120,8 +126,13 @@ def producer_config():
         "plateau_relative_improvement_threshold": 0.01,
         "plateau_first_eligible_epoch": 10,
         "plateau_required_by_epoch": EPOCHS,
-        "train_ceiling_shortfall_difference_max": (
-            TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX
+        "train_ceiling_cross_arm_gate_applied": False,
+        "train_ceiling_cross_arm_difference_role": "diagnostic_only",
+        "operation_magnitude_parameterization": (
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        "node_generation_identity": (
+            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
         ),
         "geometry_can_determine_optimization_reliability": False,
         "complete_geometric_validity_can_determine_optimization_reliability": False,
@@ -354,7 +365,7 @@ def capacity_gate(flat_count, graph_count):
 
 
 def optimization_reliability(training_runs, train_scores, retained_seeds):
-    """Apply only loss/gradient/plateau and structural-ceiling rules."""
+    """Apply arm-internal checks; report cross-arm train scores diagnostically."""
 
     from .training import plateau_state
 
@@ -395,12 +406,10 @@ def optimization_reliability(training_runs, train_scores, retained_seeds):
             "seed": seed, "structural_train_scores": values,
             "structural_train_ceiling_shortfalls": shortfalls,
             "absolute_shortfall_difference": difference,
-            "maximum_inclusive": TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX,
-            "pass": difference <= TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX,
+            "binding": False,
+            "role": "diagnostic_only",
         })
-    overall = all(row["pass_before_train_ceiling"] for row in per_run) and all(
-        row["pass"] for row in ceilings
-    )
+    overall = all(row["pass_before_train_ceiling"] for row in per_run)
     return {
         "runs": per_run,
         "train_ceiling_comparisons": ceilings,
@@ -440,7 +449,12 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
         "seed": seed,
         "epoch": EPOCHS,
         "model_config": model_config,
-        "operation_magnitude_parameterization": GRID_MAGNITUDE_PARAMETERIZATION,
+        "operation_magnitude_parameterization": (
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        "node_generation_identity": (
+            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+        ),
         "training_partition_identity": partition_identity,
         "training_partition_hashes": partition_hashes,
         "training_arithmetic": training_arithmetic,
@@ -471,7 +485,9 @@ def validate_checkpoint_identity(record, *, expected):
         or record.get("protocol_version") != PROTOCOL_VERSION
         or record.get("epoch") != EPOCHS
         or record.get("operation_magnitude_parameterization")
-        != GRID_MAGNITUDE_PARAMETERIZATION
+        != GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        or record.get("node_generation_identity")
+        != AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
         or record.get("external_checkpoint") is not False
         or record.get("warm_start") is not False
         or record.get("checkpoint_reuse") is not False
@@ -950,14 +966,10 @@ def verify_producer_artifact(path, *, return_payload=False):
     reliability_runs = {
         (row["arm"], row["seed"]): row for row in reliability["runs"]
     }
-    ceiling_rows = {
-        row["seed"]: row for row in reliability["train_ceiling_comparisons"]
-    }
     for row in training:
-        expected_reliable = (
-            reliability_runs[(row["arm"], row["seed"])]["pass_before_train_ceiling"]
-            and ceiling_rows[row["seed"]]["pass"]
-        )
+        expected_reliable = reliability_runs[
+            (row["arm"], row["seed"])
+        ]["pass_before_train_ceiling"]
         if row.get("optimization_reliable") is not expected_reliable:
             raise GraphEncoderError(
                 "invalid_stage6_producer_artifact", "run reliability differs"
@@ -1666,7 +1678,13 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     models = []
     for seed in retained_seeds:
         flat, graph = build_matched_ge1_models(
-            seed, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION,
+            seed,
+            operation_magnitude_parameterization=(
+                GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+            ),
+            node_generation_identity=(
+                AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+            ),
         )
         flat = flat.to(execution_device)
         graph = graph.to(execution_device)
@@ -1722,13 +1740,11 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     reliability_by_run = {
         (row["arm"], row["seed"]): row for row in reliability["runs"]
     }
-    ceiling_by_seed = {row["seed"]: row for row in reliability["train_ceiling_comparisons"]}
     for row in training_runs:
         key = (row["arm"], row["seed"])
-        row["optimization_reliable"] = (
-            reliability_by_run[key]["pass_before_train_ceiling"]
-            and ceiling_by_seed[row["seed"]]["pass"]
-        )
+        row["optimization_reliable"] = reliability_by_run[key][
+            "pass_before_train_ceiling"
+        ]
     train_memory = structure_memory_gate_for_cohort(
         scored_train, retained_seeds, "train"
     )

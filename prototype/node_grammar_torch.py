@@ -16,6 +16,14 @@ from prototype.node_grammar import (
 )
 
 
+LEGACY_NODE_GENERATION_IDENTITY = (
+    "GE1-REQUESTED-COUNT-GRAMMAR-MASKED-v1"
+)
+AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY = (
+    "GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1"
+)
+
+
 @dataclass(frozen=True)
 class NodeGrammarSelection:
     raw_node_type_argmax_ids: torch.Tensor
@@ -33,8 +41,9 @@ def select_prefix_conditioned_node_types(
     current_positions,
     active_mask=None,
     contract=V5_NODE_GRAMMAR,
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
 ):
-    """Mask illegal classes and deterministically select one legal next node."""
+    """Select nodes under one explicit legacy or autonomous-stop identity."""
 
     validate_node_grammar_contract(contract)
     if not torch.is_tensor(raw_node_type_logits):
@@ -50,7 +59,23 @@ def select_prefix_conditioned_node_types(
             "invalid_v5_node_logits", "logits must be finite floating [B, C]"
         )
     batch_size = raw_node_type_logits.size(0)
-    if (
+    autonomous_stop = (
+        node_generation_identity == AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+    )
+    if node_generation_identity not in (
+        LEGACY_NODE_GENERATION_IDENTITY,
+        AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+    ):
+        raise NodeGrammarError(
+            "invalid_v5_node_selection", "node-generation identity differs"
+        )
+    if autonomous_stop:
+        if requested_node_counts is not None:
+            raise NodeGrammarError(
+                "invalid_v5_requested_node_count",
+                "autonomous-stop selection forbids requested counts",
+            )
+    elif (
         not torch.is_tensor(requested_node_counts)
         or requested_node_counts.dtype != torch.long
         or tuple(requested_node_counts.shape) != (batch_size,)
@@ -98,13 +123,25 @@ def select_prefix_conditioned_node_types(
         if not bool(active_mask[index].item()):
             evidence.append({"state": "inactive"})
             continue
-        count = int(requested_node_counts[index].item())
         prefix = tuple(generated_prefix_node_ids[index])
         if int(current_positions[index].item()) != len(prefix):
             raise NodeGrammarError(
                 "invalid_v5_generated_prefix",
                 "current position disagrees with constrained prefix length",
             )
+        if autonomous_stop:
+            selected[index] = raw[index]
+            legal_mask[index] = True
+            evidence.append({
+                "state": "unconstrained_argmax",
+                "requested_node_count": None,
+                "current_position": len(prefix),
+                "constrained_prefix": list(prefix),
+                "legal_node_type_ids": list(range(len(NODE_TYPES.tokens))),
+                "transition_mask_applied": False,
+            })
+            continue
+        count = int(requested_node_counts[index].item())
         legal = legal_next_node_ids(prefix, count, contract)
         legal_mask[index, list(legal)] = True
         constrained_logits = raw_node_type_logits[index].masked_fill(

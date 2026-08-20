@@ -14,9 +14,11 @@ from .config import (
     frozen_encoder_config,
 )
 from .decoder_contract import (
+    LEGACY_NODE_GENERATION_IDENTITY,
     checkpoint_schema_for,
     output_position_contract_version_for,
     shared_decoder_version_for,
+    uses_autonomous_stop,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     output_position_contract_metadata,
 )
@@ -49,6 +51,9 @@ CHECKPOINT_FIELDS = frozenset({
     "operation_template_manifest_sha256",
     "model_state",
 })
+AUTONOMOUS_STOP_CHECKPOINT_FIELDS = CHECKPOINT_FIELDS | {
+    "node_generation_identity"
+}
 
 
 class GE1CheckpointError(ValueError):
@@ -85,19 +90,28 @@ def ge1_checkpoint_payload(model, *, code_revision):
     # literals; the grid identity resolves to v2, so cross-identity loading
     # fails on the schema comparison rather than on a tensor shape.
     parameterization = config.operation_magnitude_parameterization
-    return {
-        "checkpoint_schema": checkpoint_schema_for(parameterization),
+    node_generation_identity = config.node_generation_identity
+    payload = {
+        "checkpoint_schema": checkpoint_schema_for(
+            parameterization, node_generation_identity
+        ),
         "model_family": MODEL_FAMILY,
         "arm_identity": config.arm_identity,
         "encoder_type": config.encoder,
         "encoder_version": config.arm_identity,
         "encoder_feedforward_width": config.encoder_feedforward_width,
         "relation_basis_count": config.relation_basis_count,
-        "shared_decoder_version": shared_decoder_version_for(parameterization),
-        "output_position_contract_version": (
-            output_position_contract_version_for(parameterization)
+        "shared_decoder_version": shared_decoder_version_for(
+            parameterization, node_generation_identity
         ),
-        "output_position_contract": output_position_contract_metadata(),
+        "output_position_contract_version": (
+            output_position_contract_version_for(
+                parameterization, node_generation_identity
+            )
+        ),
+        "output_position_contract": output_position_contract_metadata(
+            node_generation_identity
+        ),
         "operation_magnitude_parameterization": (
             config.operation_magnitude_parameterization
         ),
@@ -121,6 +135,9 @@ def ge1_checkpoint_payload(model, *, code_revision):
         ),
         "model_state": model.state_dict(),
     }
+    if uses_autonomous_stop(node_generation_identity):
+        payload["node_generation_identity"] = node_generation_identity
+    return payload
 
 
 def save_ge1_checkpoint(path, model, *, code_revision):
@@ -136,14 +153,20 @@ def load_ge1_checkpoint(
     expected_operation_magnitude_parameterization=(
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     ),
+    expected_node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
 ):
     """Validate exact identity and reconstruct one selected arm strictly."""
 
     payload = torch.load(str(path), map_location="cpu")
     if not isinstance(payload, Mapping):
         raise GE1CheckpointError("payload must be a mapping")
-    missing = CHECKPOINT_FIELDS - set(payload)
-    unexpected = set(payload) - CHECKPOINT_FIELDS
+    expected_fields = (
+        AUTONOMOUS_STOP_CHECKPOINT_FIELDS
+        if uses_autonomous_stop(expected_node_generation_identity)
+        else CHECKPOINT_FIELDS
+    )
+    missing = expected_fields - set(payload)
+    unexpected = set(payload) - expected_fields
     if missing or unexpected:
         raise GE1CheckpointError(
             "field mismatch missing={} unexpected={}".format(
@@ -155,7 +178,8 @@ def load_ge1_checkpoint(
     ):
         raise GE1CheckpointError("code revision differs")
     expected_schema = checkpoint_schema_for(
-        expected_operation_magnitude_parameterization
+        expected_operation_magnitude_parameterization,
+        expected_node_generation_identity,
     )
     if payload["checkpoint_schema"] != expected_schema:
         raise GE1CheckpointError("checkpoint schema differs")
@@ -166,6 +190,11 @@ def load_ge1_checkpoint(
         raise GE1CheckpointError(
             "operation-magnitude parameterization differs"
         )
+    if uses_autonomous_stop(expected_node_generation_identity) and (
+        payload["node_generation_identity"]
+        != expected_node_generation_identity
+    ):
+        raise GE1CheckpointError("node-generation identity differs")
     encoder = payload["encoder_type"]
     config_values = payload["config"]
     if not isinstance(config_values, Mapping):
@@ -178,13 +207,14 @@ def load_ge1_checkpoint(
             operation_magnitude_parameterization=(
                 expected_operation_magnitude_parameterization
             ),
+            node_generation_identity=expected_node_generation_identity,
         )
     except Exception as exc:
         raise GE1CheckpointError("configuration cannot be reconstructed") from exc
     expected = ge1_checkpoint_payload(
         build_ge1_model(config), code_revision=payload["code_revision"]
     )
-    metadata_fields = CHECKPOINT_FIELDS - {"model_state"}
+    metadata_fields = expected_fields - {"model_state"}
     for name in metadata_fields:
         if payload[name] != expected[name]:
             raise GE1CheckpointError("metadata field {} differs".format(name))

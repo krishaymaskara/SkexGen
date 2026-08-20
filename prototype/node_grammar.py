@@ -119,15 +119,22 @@ def enumerate_complete_node_sequences(contract=V5_NODE_GRAMMAR):
     return result
 
 
-def legal_next_node_ids(prefix, requested_node_count, contract=V5_NODE_GRAMMAR):
-    """Return candidates that retain an exact-length terminal completion."""
+def legal_next_node_ids(prefix, requested_node_count=None, contract=V5_NODE_GRAMMAR):
+    """Return structurally extendable candidates, optionally at exact length.
+
+    Passing an integer preserves the frozen V5 behaviour.  ``None`` is the
+    additive transition-only diagnostic path; ADR-0016 autonomous generation
+    deliberately does not use either result as a logit mask.
+    """
 
     validate_node_grammar_contract(contract)
     prefix = _validated_prefix(prefix)
-    requested_node_count = _validated_requested_count(
-        requested_node_count, contract
-    )
-    if len(prefix) >= requested_node_count:
+    exact_length = requested_node_count is not None
+    if exact_length:
+        requested_node_count = _validated_requested_count(
+            requested_node_count, contract
+        )
+    if exact_length and len(prefix) >= requested_node_count:
         prefix_tokens = tuple(NODE_TYPES.tokens[item] for item in prefix)
         raise NodeGrammarError(
             "no_valid_node_grammar_continuation",
@@ -145,9 +152,16 @@ def legal_next_node_ids(prefix, requested_node_count, contract=V5_NODE_GRAMMAR):
         for sequence in all_sequences
         if sequence[:len(prefix)] == prefix_tokens
     )
-    matching = tuple(
-        sequence for sequence in structurally_matching
-        if len(sequence) == requested_node_count
+    matching = (
+        tuple(
+            sequence for sequence in structurally_matching
+            if len(sequence) == requested_node_count
+        )
+        if exact_length else
+        tuple(
+            sequence for sequence in structurally_matching
+            if len(sequence) > len(prefix)
+        )
     )
     if not matching:
         candidates = _transition_candidates(prefix_tokens, contract)
@@ -157,7 +171,11 @@ def legal_next_node_ids(prefix, requested_node_count, contract=V5_NODE_GRAMMAR):
         )
         raise NodeGrammarError(
             code,
-            "prefix is not extendable under the requested length",
+            (
+                "prefix is not extendable under the requested length"
+                if exact_length else
+                "prefix is not structurally extendable"
+            ),
             _context(prefix, requested_node_count, candidates),
         )
     candidates = tuple(sorted({NODE_TYPES.id(item[len(prefix)]) for item in matching}))
@@ -198,7 +216,10 @@ def grammar_state_evidence(prefix, requested_node_count, legal_candidates):
         "state": "{}:operations={}".format(last, operation_count),
         "requested_node_count": requested_node_count,
         "current_position": len(prefix),
-        "remaining_positions": requested_node_count - len(prefix),
+        "remaining_positions": (
+            None if requested_node_count is None
+            else requested_node_count - len(prefix)
+        ),
         "constrained_prefix": list(prefix),
         "legal_node_type_ids": list(legal_candidates),
     }

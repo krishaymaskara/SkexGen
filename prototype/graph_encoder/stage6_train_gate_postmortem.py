@@ -53,7 +53,7 @@ from .stage6_structure_only_producer import (
     WEIGHT_DECAY,
     generate_autonomous_records,
     load_stage6_checkpoint,
-    optimization_reliability,
+    optimization_reliability as _current_optimization_reliability,
     validate_checkpoint_identity,
 )
 
@@ -507,6 +507,35 @@ def _predicate(name, observed, operator, threshold, passed):
     }
 
 
+def _historical_optimization_reliability(training_runs, train_scores, seeds):
+    """Reconstruct the job-3354961 gate after its prospective removal.
+
+    ADR-0016 changes only the future producer.  This v1 postmortem remains an
+    exact verifier of the historical artifact and therefore reattaches the old
+    threshold to the now-diagnostic comparison rows locally.
+    """
+
+    current = _current_optimization_reliability(
+        training_runs, train_scores, seeds
+    )
+    comparisons = []
+    for source in current["train_ceiling_comparisons"]:
+        row = dict(source)
+        row["maximum_inclusive"] = TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX
+        row["pass"] = (
+            row["absolute_shortfall_difference"]
+            <= TRAIN_CEILING_SHORTFALL_DIFFERENCE_MAX
+        )
+        comparisons.append(row)
+    result = dict(current)
+    result["train_ceiling_comparisons"] = comparisons
+    result["pass"] = (
+        all(row["pass_before_train_ceiling"] for row in current["runs"])
+        and all(row["pass"] for row in comparisons)
+    )
+    return result
+
+
 def analyze_postmortem(training_runs, family_records):
     """Recompute the exact failed train-side gates without changing them."""
 
@@ -526,7 +555,7 @@ def analyze_postmortem(training_runs, family_records):
         if len(values) != TRAIN_FAMILY_COUNT:
             _fail("invalid_stage6_postmortem_records", "P_true matrix differs")
         train_scores[(arm, seed)] = sum(values) / float(len(values))
-    reliability = optimization_reliability(
+    reliability = _historical_optimization_reliability(
         list(training_runs), train_scores, FULL_SEEDS
     )
     reliability_runs = {

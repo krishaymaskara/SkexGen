@@ -14,6 +14,7 @@ from .config import (
     validate_authorized_seed,
 )
 from .decoder_contract import POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
+from .decoder_contract import LEGACY_NODE_GENERATION_IDENTITY
 from .encoders import FlatProgramEncoder, TypedGraphProgramEncoder
 from .shared_decoder import SharedGE1Decoder, copied_shared_decoder
 
@@ -58,6 +59,10 @@ class GE1Model(nn.Module):
                 "decoder operation-magnitude parameterization disagrees "
                 "with configuration"
             )
+        if decoder.node_generation_identity != config.node_generation_identity:
+            raise ValueError(
+                "decoder node-generation identity disagrees with configuration"
+            )
         self.config = config
         self.encoder = encoder
         self.decoder = decoder
@@ -70,7 +75,7 @@ class GE1Model(nn.Module):
         return self.encoder(**encoder_input)
 
     def forward(
-        self, encoder_input, *, node_counts, node_count_source
+        self, encoder_input, *, node_counts=None, node_count_source=None
     ):
         encoded = self.encode(encoder_input)
         return self.decoder(
@@ -110,6 +115,7 @@ def canonical_shared_decoder(
     operation_magnitude_parameterization=(
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     ),
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
 ):
     """Construct the arm-independent canonical decoder exactly once."""
 
@@ -119,7 +125,8 @@ def canonical_shared_decoder(
         lambda: SharedGE1Decoder(
             operation_magnitude_parameterization=(
                 operation_magnitude_parameterization
-            )
+            ),
+            node_generation_identity=node_generation_identity,
         ),
     )
 
@@ -134,7 +141,9 @@ def build_ge1_model(config, canonical_decoder=None):
         copied_shared_decoder(canonical_decoder)
         if canonical_decoder is not None
         else canonical_shared_decoder(
-            config.seed, config.operation_magnitude_parameterization
+            config.seed,
+            config.operation_magnitude_parameterization,
+            config.node_generation_identity,
         )
     )
     if (
@@ -144,6 +153,8 @@ def build_ge1_model(config, canonical_decoder=None):
         raise ValueError(
             "canonical decoder operation-magnitude parameterization differs"
         )
+    if decoder.node_generation_identity != config.node_generation_identity:
+        raise ValueError("canonical decoder node-generation identity differs")
     encoder_type = (
         FlatProgramEncoder
         if config.encoder == "flat"
@@ -162,6 +173,7 @@ def build_matched_ge1_models(
     operation_magnitude_parameterization=(
         POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
     ),
+    node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
 ):
     """Build both arms from one canonical decoder, independent of arm order."""
 
@@ -169,13 +181,16 @@ def build_matched_ge1_models(
     if set(order) != {"flat", "typed_graph"} or len(order) != 2:
         raise ValueError("encoder_order must contain flat and typed_graph once")
     parameterization = operation_magnitude_parameterization
-    canonical = canonical_shared_decoder(seed, parameterization)
+    canonical = canonical_shared_decoder(
+        seed, parameterization, node_generation_identity
+    )
     models = {}
     for arm in order:
         config = frozen_encoder_config(
             arm,
             seed,
             operation_magnitude_parameterization=parameterization,
+            node_generation_identity=node_generation_identity,
         )
         models[arm] = build_ge1_model(config, canonical)
     return models["flat"], models["typed_graph"]

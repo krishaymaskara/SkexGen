@@ -23,6 +23,10 @@ from prototype.flat_baseline.constrained_v6_autonomous import (
     V6EncodedMemory,
     greedy_decode_v6_from_memory,
 )
+from prototype.graph_encoder.autonomous_stop import (
+    V6EncodedMemory as AutonomousStopEncodedMemory,
+    greedy_decode_from_memory as greedy_decode_autonomous_stop_from_memory,
+)
 from prototype.model_data.vocab import EDGE_TYPES, NODE_TYPES
 from prototype.profile_geometry_torch import (
     canonicalize_profile_tensors,
@@ -33,18 +37,28 @@ from prototype.reference_plane_geometry_torch import (
 )
 from prototype.graph_baseline.config import GraphV1Config
 from prototype.graph_baseline.conversion import (
+    GraphV1Prediction,
     graph_prediction_from_evidence,
     validate_and_convert_graph_prediction,
 )
-from prototype.graph_baseline.graph_contract import GraphContractError
+from prototype.graph_baseline.graph_contract import (
+    GRAPH_CONTRACT_VERSION,
+    GRAPH_REPRESENTATION_NAME,
+    GRAPH_TENSOR_VERSION,
+    CanonicalGraphRecord,
+    DirectedTypedEdge,
+    GraphContractError,
+)
 from prototype.graph_baseline.graph_tensors import mask_graph_edge_logits
 from prototype.graph_baseline.model import (
     GraphEdgeLogitComponents,
+    GraphNodeSelection,
     GraphV1Model,
     GraphV1Output,
     select_complete_graph_node_sequence,
 )
 from prototype.node_grammar import NodeGrammarError
+from prototype.node_grammar_torch import select_prefix_conditioned_node_types
 
 from .grid_magnitude import (
     build_grid_magnitude_head,
@@ -52,12 +66,15 @@ from .grid_magnitude import (
 )
 from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
+    LEGACY_NODE_GENERATION_IDENTITY,
+    NODE_GENERATION_IDENTITIES,
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
     OPERATION_MAGNITUDE_COMPACT_CHANNELS,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     OUTPUT_POSITION_CONTRACT_VERSION,
     output_position_contract_version_for,
     shared_decoder_version_for,
+    uses_autonomous_stop,
     uses_grid_magnitude,
     uses_grid_softmax_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
@@ -248,6 +265,7 @@ class SharedGE1Decoder(GraphV1Model):
         operation_magnitude_parameterization=(
             POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
+        node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
     ):
         resolved = config or GraphV1Config()
         if not isinstance(resolved, GraphV1Config):
@@ -258,6 +276,8 @@ class SharedGE1Decoder(GraphV1Model):
             not in OPERATION_MAGNITUDE_PARAMETERIZATIONS
         ):
             raise ValueError("unknown operation-magnitude parameterization")
+        if node_generation_identity not in NODE_GENERATION_IDENTITIES:
+            raise ValueError("unknown node-generation identity")
         super().__init__(resolved)
         self.operation_magnitude_parameterization = (
             operation_magnitude_parameterization
@@ -268,14 +288,19 @@ class SharedGE1Decoder(GraphV1Model):
         self.uses_grid_softmax_magnitude = uses_grid_softmax_magnitude(
             operation_magnitude_parameterization
         )
+        self.node_generation_identity = node_generation_identity
+        self.uses_autonomous_stop = uses_autonomous_stop(
+            node_generation_identity
+        )
         # Per-identity contract versions, so a historical checkpoint can never
         # be reloaded into a grid model or the reverse.
         self.shared_decoder_version = shared_decoder_version_for(
-            operation_magnitude_parameterization
+            operation_magnitude_parameterization, node_generation_identity
         )
         self.output_position_contract_version = (
             output_position_contract_version_for(
-                operation_magnitude_parameterization
+                operation_magnitude_parameterization,
+                node_generation_identity,
             )
         )
         for name in _ENCODER_ONLY_MODULES + _EXCLUDED_C1_POSITION_BIAS_MODULES:
@@ -406,13 +431,22 @@ class SharedGE1Decoder(GraphV1Model):
             ),
         )
 
-    def forward(self, memory, *, node_counts, node_count_source):
+    def forward(
+        self, memory, *, node_counts=None, node_count_source=None
+    ):
         """Autonomously decode continuous memory; no target is accepted."""
 
         self._validate_memory(memory)
-        counts = self._validate_node_counts(node_counts, memory.size(0))
-        if not isinstance(node_count_source, str) or not node_count_source:
-            raise ValueError("node_count_source must be a nonempty string")
+        if self.uses_autonomous_stop:
+            if node_counts is not None or node_count_source is not None:
+                raise ValueError(
+                    "autonomous-stop decoding forbids node-count inputs"
+                )
+            counts = (None,) * memory.size(0)
+        else:
+            counts = self._validate_node_counts(node_counts, memory.size(0))
+            if not isinstance(node_count_source, str) or not node_count_source:
+                raise ValueError("node_count_source must be a nonempty string")
         was_training = self.training
         self.eval()
         try:
@@ -434,7 +468,11 @@ class SharedGE1Decoder(GraphV1Model):
             # See V6_ENTRY_POINT_COMPATIBILITY_SOURCE: these two fields are
             # inert values supplied to pass the inherited entry-point validator,
             # and are overwritten immediately below.
-            compatibility_memory = V6EncodedMemory(
+            memory_type = (
+                AutonomousStopEncodedMemory
+                if self.uses_autonomous_stop else V6EncodedMemory
+            )
+            compatibility_memory = memory_type(
                 row_memory,
                 _inert_compatibility_code_indices(
                     self.config.latent_tokens, memory.device
@@ -442,15 +480,21 @@ class SharedGE1Decoder(GraphV1Model):
                 V6_ENTRY_POINT_COMPATIBILITY_SOURCE,
                 self.config.model_name,
             )
-            node_prediction = greedy_decode_v6_from_memory(
-                self,
-                compatibility_memory,
-                node_counts=torch.tensor(
-                    (count,), dtype=torch.long, device=memory.device
-                ),
-                node_count_source=node_count_source,
-            )[0]
+            if self.uses_autonomous_stop:
+                node_prediction = greedy_decode_autonomous_stop_from_memory(
+                    self, compatibility_memory
+                )[0]
+            else:
+                node_prediction = greedy_decode_v6_from_memory(
+                    self,
+                    compatibility_memory,
+                    node_counts=torch.tensor(
+                        (count,), dtype=torch.long, device=memory.device
+                    ),
+                    node_count_source=node_count_source,
+                )[0]
             node_prediction = _corrected_memory_provenance(node_prediction)
+            generated_count = node_prediction.node_count
             categories, geometry, geometry_mask = self._prefix_tensors(
                 node_prediction, row_memory
             )
@@ -466,10 +510,10 @@ class SharedGE1Decoder(GraphV1Model):
                 device=memory.device,
             )
             active = torch.ones(
-                (1, count), dtype=torch.bool, device=memory.device
+                (1, generated_count), dtype=torch.bool, device=memory.device
             )
             components = self.decode_graph_edge_components(
-                prefix_output.decoded_states,
+                prefix_output.decoded_states[:, :generated_count],
                 node_ids,
                 row_memory,
                 active,
@@ -478,19 +522,47 @@ class SharedGE1Decoder(GraphV1Model):
             masked = mask_graph_edge_logits(
                 components.edge_logits, node_ids, active
             )
-            graph_prediction = graph_prediction_from_evidence(
-                node_prediction,
-                masked.raw_class_ids[0].detach().cpu().tolist(),
-                masked.masked_class_ids[0].detach().cpu().tolist(),
-                masked.correction_mask[0].detach().cpu().tolist(),
-                main_pair_logits=(
-                    components.main_pair_logits[0].detach().cpu().tolist()
-                ),
-                position_bias_logits=(
-                    components.position_bias_logits[0].detach().cpu().tolist()
-                ),
+            raw_classes = masked.raw_class_ids[0].detach().cpu().tolist()
+            masked_classes = masked.masked_class_ids[0].detach().cpu().tolist()
+            correction_mask = masked.correction_mask[0].detach().cpu().tolist()
+            main_pair_logits = (
+                components.main_pair_logits[0].detach().cpu().tolist()
             )
+            position_bias_logits = (
+                components.position_bias_logits[0].detach().cpu().tolist()
+            )
+            try:
+                graph_prediction = graph_prediction_from_evidence(
+                    node_prediction,
+                    raw_classes,
+                    masked_classes,
+                    correction_mask,
+                    main_pair_logits=main_pair_logits,
+                    position_bias_logits=position_bias_logits,
+                )
+            except GraphContractError:
+                if not self.uses_autonomous_stop:
+                    raise
+                graph_prediction = _unvalidated_graph_prediction(
+                    node_prediction,
+                    raw_classes,
+                    masked_classes,
+                    correction_mask,
+                    main_pair_logits,
+                    position_bias_logits,
+                )
             constrained.append(graph_prediction)
+            if (
+                self.uses_autonomous_stop
+                and node_prediction.generation_cap_reached
+            ):
+                converted.append(ExplicitConversionOutcome(
+                    failure_type="AutonomousGenerationCapError",
+                    failure_detail=(
+                        "maximum node cap reached before learned <pad> stop"
+                    ),
+                ))
+                continue
             try:
                 conversion = validate_and_convert_graph_prediction(
                     graph_prediction,
@@ -544,9 +616,12 @@ class SharedGE1Decoder(GraphV1Model):
         raw_remaining = self.raw_remaining_geometry(states)
         remaining = self.parameterize_remaining_geometry(raw_remaining, states)
         scattered = scatter_remaining_geometry(remaining)
+        real_node_mask = target["node_mask"] & (
+            target["node_type_ids"] != NODE_TYPES.pad_id
+        )
         selected_mask = (
             select_remaining_geometry(target["geometry_mask"])
-            & target["node_mask"].unsqueeze(-1)
+            & real_node_mask.unsqueeze(-1)
         )
         if self.uses_grid_magnitude:
             # Under the grid identity the scalar magnitude outputs are unused
@@ -562,7 +637,7 @@ class SharedGE1Decoder(GraphV1Model):
             target["node_type_ids"],
             target["categorical_attributes"][..., 3],
             remaining,
-            target["node_mask"],
+            real_node_mask,
         )
         training_geometry = (
             canonical_plane.geometry + canonical_profile.geometry + scattered
@@ -572,14 +647,29 @@ class SharedGE1Decoder(GraphV1Model):
             | canonical_profile.geometry_mask
             | scattered_mask
         )
-        graph_nodes = select_complete_graph_node_sequence(
-            node_logits, target["node_mask"]
+        graph_nodes = (
+            self._select_unconstrained_node_sequence(
+                node_logits, target["node_mask"]
+            )
+            if self.uses_autonomous_stop
+            else select_complete_graph_node_sequence(
+                node_logits, target["node_mask"]
+            )
         )
-        graph_components = self.decode_graph_edge_components(
-            states,
-            graph_nodes.authoritative_node_type_ids,
-            memory,
-            target["node_mask"],
+        graph_components = (
+            self._decode_real_node_graph_edge_components(
+                states,
+                graph_nodes.authoritative_node_type_ids,
+                memory,
+                real_node_mask,
+            )
+            if self.uses_autonomous_stop
+            else self.decode_graph_edge_components(
+                states,
+                graph_nodes.authoritative_node_type_ids,
+                memory,
+                real_node_mask,
+            )
         )
         batch_size, node_count = target["node_mask"].shape
         neutral_presence = states.new_zeros(batch_size, node_count, node_count)
@@ -687,6 +777,42 @@ class SharedGE1Decoder(GraphV1Model):
         excluded_bias = torch.zeros_like(main).contiguous()
         return GraphEdgeLogitComponents(main, excluded_bias, main)
 
+    def _decode_real_node_graph_edge_components(
+        self, states, node_type_ids, memory, real_node_mask
+    ):
+        """Run the pair MLP only over real nodes, then pad output tensors."""
+
+        from torch.nn import functional as F
+
+        width = states.size(1)
+        rows = []
+        for row in range(states.size(0)):
+            count = int(real_node_mask[row].long().sum().item())
+            if count <= 0:
+                raise ValueError(
+                    "teacher-forced stop targets require at least one real node"
+                )
+            active = torch.ones(
+                (1, count), dtype=torch.bool, device=states.device
+            )
+            current = self.decode_graph_edge_components(
+                states[row:row + 1, :count],
+                node_type_ids[row:row + 1, :count],
+                memory[row:row + 1],
+                active,
+            )
+            padding = (0, 0, 0, width - count, 0, width - count)
+            rows.append(GraphEdgeLogitComponents(
+                F.pad(current.main_pair_logits, padding),
+                F.pad(current.position_bias_logits, padding),
+                F.pad(current.edge_logits, padding),
+            ))
+        return GraphEdgeLogitComponents(
+            torch.cat(tuple(item.main_pair_logits for item in rows), dim=0),
+            torch.cat(tuple(item.position_bias_logits for item in rows), dim=0),
+            torch.cat(tuple(item.edge_logits for item in rows), dim=0),
+        )
+
     def _teacher_forced_states_from_memory(self, memory, target):
         target_categories = torch.cat((
             target["node_type_ids"].unsqueeze(-1),
@@ -736,8 +862,71 @@ class SharedGE1Decoder(GraphV1Model):
             raise ValueError("node_counts are outside the decoder contract")
         return tuple(int(value) for value in node_counts.detach().cpu().tolist())
 
+    def _select_unconstrained_node_sequence(self, logits, node_mask):
+        """Select plain per-position argmax with no grammar or count mask."""
+
+        batch_size, count = node_mask.shape
+        selected_ids = torch.full(
+            (batch_size, count), NODE_TYPES.id(None), dtype=torch.long,
+            device=logits.device,
+        )
+        raw_ids = torch.full_like(selected_ids, NODE_TYPES.id(None))
+        corrections = torch.zeros_like(selected_ids, dtype=torch.bool)
+        legal_masks = torch.zeros(
+            batch_size, count, len(NODE_TYPES.tokens), dtype=torch.bool,
+            device=logits.device,
+        )
+        evidence = []
+        with torch.no_grad():
+            for position in range(count):
+                prefixes = tuple(
+                    tuple(
+                        int(value)
+                        for value in selected_ids[
+                            row, :position
+                        ].detach().cpu().tolist()
+                    )
+                    if bool(node_mask[row, position].item()) else ()
+                    for row in range(batch_size)
+                )
+                selection = select_prefix_conditioned_node_types(
+                    logits[:, position],
+                    prefixes,
+                    None,
+                    current_positions=torch.full(
+                        (batch_size,), position, dtype=torch.long,
+                        device=logits.device,
+                    ),
+                    active_mask=node_mask[:, position],
+                    node_generation_identity=self.node_generation_identity,
+                )
+                raw_ids[:, position] = selection.raw_node_type_argmax_ids
+                selected_ids[:, position] = (
+                    selection.grammar_constrained_node_type_ids
+                )
+                corrections[:, position] = selection.node_type_correction_mask
+                legal_masks[:, position] = selection.legal_node_type_mask
+                evidence.append(selection.grammar_state_evidence)
+        return GraphNodeSelection(
+            raw_ids.contiguous(),
+            selected_ids.contiguous(),
+            corrections.contiguous(),
+            legal_masks.contiguous(),
+            tuple(evidence),
+        )
+
     @staticmethod
     def _prefix_tensors(prediction, memory):
+        if not prediction.raw_nodes:
+            return (
+                torch.empty(
+                    (1, 0, 10), dtype=torch.long, device=memory.device
+                ),
+                memory.new_empty((1, 0, 39)),
+                torch.empty(
+                    (1, 0, 39), dtype=torch.bool, device=memory.device
+                ),
+            )
         categories = torch.tensor(
             [[(node.node_type_id, *node.categorical_ids)
               for node in prediction.raw_nodes]],
@@ -753,6 +942,64 @@ class SharedGE1Decoder(GraphV1Model):
             device=memory.device,
         )
         return categories, geometry, geometry_mask
+
+
+def _unvalidated_graph_prediction(
+    node_prediction,
+    raw_classes,
+    masked_classes,
+    correction_mask,
+    main_pair_logits,
+    position_bias_logits,
+):
+    """Preserve malformed autonomous evidence for scorer-side rejection."""
+
+    count = node_prediction.node_count
+    node_ids = tuple(node.node_type_id for node in node_prediction.raw_nodes)
+    edges = tuple(sorted(
+        (
+            DirectedTypedEdge(source, destination, int(masked_classes[source][destination]))
+            for source in range(count)
+            for destination in range(count)
+            if int(masked_classes[source][destination]) != 0
+        ),
+        key=lambda item: (item.source, item.edge_type_id, item.destination),
+    ))
+    graph = CanonicalGraphRecord(
+        GRAPH_REPRESENTATION_NAME,
+        GRAPH_CONTRACT_VERSION,
+        GRAPH_TENSOR_VERSION,
+        node_ids,
+        edges,
+        (True,) * count,
+        tuple(
+            tuple(source != destination for destination in range(count))
+            for source in range(count)
+        ),
+        count,
+    )
+    return GraphV1Prediction(
+        node_prediction,
+        graph,
+        tuple(tuple(int(value) for value in row) for row in raw_classes),
+        tuple(tuple(int(value) for value in row) for row in masked_classes),
+        tuple(tuple(bool(value) for value in row) for row in correction_mask),
+        GRAPH_CONTRACT_VERSION,
+        sum(int(raw_classes[index][index] != 0) for index in range(count)),
+        0,
+        sum(
+            int(correction_mask[source][destination])
+            for source in range(count) for destination in range(count)
+        ),
+        tuple(
+            tuple(tuple(float(value) for value in classes) for classes in row)
+            for row in main_pair_logits
+        ),
+        tuple(
+            tuple(tuple(float(value) for value in classes) for classes in row)
+            for row in position_bias_logits
+        ),
+    )
 
 
 def copied_shared_decoder(decoder):

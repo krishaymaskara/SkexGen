@@ -284,7 +284,11 @@ class SoftmaxConfigurationTests(unittest.TestCase):
                         grid_softmax_frozen_encoder_config):
             payload = json.loads(builder("flat").to_json())
             with self.subTest(builder=builder.__name__):
-                self.assertEqual(set(payload), declared | {"arm_identity"})
+                self.assertEqual(
+                    set(payload),
+                    (declared - {"node_generation_identity"})
+                    | {"arm_identity"},
+                )
                 self.assertTrue(grid_only <= set(payload))
         for builder in (frozen_encoder_config, legacy_frozen_encoder_config):
             payload = json.loads(builder("flat").to_json())

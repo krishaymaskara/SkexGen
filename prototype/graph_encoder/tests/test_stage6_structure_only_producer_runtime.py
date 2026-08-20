@@ -15,7 +15,10 @@ try:
 except ImportError:  # pragma: no cover - authoritative runtime supplies torch
     torch = None
 
-from prototype.graph_encoder.grid_magnitude import GRID_MAGNITUDE_PARAMETERIZATION
+from prototype.graph_encoder.decoder_contract import (
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
 from prototype.graph_encoder.stage6_structure_only_producer import capacity_gate
 
 if torch is not None:
@@ -25,6 +28,16 @@ if torch is not None:
 REASON = "Stage 6 producer runtime contracts require PyTorch"
 
 
+def _models(seed):
+    return build_matched_ge1_models(
+        seed,
+        operation_magnitude_parameterization=(
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        node_generation_identity=AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+    )
+
+
 @unittest.skipIf(torch is None, REASON)
 class Stage6ProducerRuntimeTests(unittest.TestCase):
     @classmethod
@@ -32,10 +45,7 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
         torch.set_num_threads(1)
 
     def test_matched_initialization_and_capacity_gate(self):
-        flat, graph = build_matched_ge1_models(
-            2026,
-            operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION,
-        )
+        flat, graph = _models(2026)
         for left, right in zip(flat.decoder.parameters(), graph.decoder.parameters()):
             self.assertIsNot(left, right)
             torch.testing.assert_close(left, right, rtol=0.0, atol=0.0)
@@ -45,12 +55,8 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
                          abs(counts[1] - counts[0]) / float(counts[0]) <= 0.05)
 
     def test_fresh_seed_is_deterministic_but_independent(self):
-        first, unused = build_matched_ge1_models(
-            2027, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
-        )
-        second, unused = build_matched_ge1_models(
-            2027, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
-        )
+        first, unused = _models(2027)
+        second, unused = _models(2027)
         for left, right in zip(first.parameters(), second.parameters()):
             self.assertIsNot(left, right)
             torch.testing.assert_close(left, right, rtol=0.0, atol=0.0)
@@ -85,9 +91,7 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
             autonomous_input_from_paired(build_paired_batch(examples[start:start + 8]), "flat")
             for start in (0, 8)
         )
-        model, unused = build_matched_ge1_models(
-            2026, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
-        )
+        model, unused = _models(2026)
         first = run_autonomous_evaluation(model, batches, seed=2026, shuffle_scope="batch")
         second = run_autonomous_evaluation(model, batches, seed=2026, shuffle_scope="batch")
         by_name = {row.condition: row for row in first.conditions}
@@ -129,9 +133,7 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
             EpochTrainingRecord, plateau_state, save_training_checkpoint,
         )
 
-        model, unused = build_matched_ge1_models(
-            2026, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
-        )
+        model, unused = _models(2026)
         config = GE1TrainingConfig()
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.0)
         family_ids = (

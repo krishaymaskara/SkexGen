@@ -321,12 +321,17 @@ def _decode_condition(
     assignments = []
     membership = {}
     for row, source, memory in supplied:
+        decoder_kwargs = {}
+        if not getattr(model.decoder, "uses_autonomous_stop", False):
+            decoder_kwargs = dict(
+                node_counts=torch.tensor(
+                    (row.node_count,), dtype=torch.long, device=memory.device
+                ),
+                node_count_source="target_free_input_node_count",
+            )
         output = model.decoder(
             memory,
-            node_counts=torch.tensor(
-                (row.node_count,), dtype=torch.long, device=memory.device
-            ),
-            node_count_source="target_free_input_node_count",
+            **decoder_kwargs,
         )
         predictions.append(AutonomousPrediction(
             row.family_id,

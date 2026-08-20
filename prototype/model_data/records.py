@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
+
+from .geometry import GEOMETRY_WIDTH
+from .vocab import CATEGORICAL_ATTRIBUTE_FIELDS
 
 
 @dataclass(frozen=True)
@@ -220,6 +223,85 @@ class ReconstructionBatch:
             edge_type_ids=(self.edge_type_ids, "long"),
             edge_offsets=(self.edge_offsets, "long"),
         )
+
+
+def with_autonomous_stop_supervision(batch: ReconstructionBatch) -> ReconstructionBatch:
+    """Append one active ``<pad>`` target after every real node sequence.
+
+    The terminator is supervised only by the existing node-type cross entropy.
+    Every other per-node field is neutral, and graph/operation structures retain
+    their original real-node offsets and indices.
+    """
+
+    if not isinstance(batch, ReconstructionBatch):
+        raise TypeError("batch must be ReconstructionBatch")
+    row_count = len(batch.node_type_ids)
+    fields = (
+        batch.categorical_attributes,
+        batch.boolean_mode_targets,
+        batch.geometry,
+        batch.geometry_mask,
+        batch.node_mask,
+    )
+    if any(len(value) != row_count for value in fields) or row_count == 0:
+        raise ValueError("reconstruction batch rows are misaligned")
+    old_width = len(batch.node_type_ids[0])
+    if old_width <= 0 or any(
+        len(row) != old_width
+        for values in (batch.node_type_ids, *fields)
+        for row in values
+    ):
+        raise ValueError("reconstruction batch node fields are not rectangular")
+
+    node_types = []
+    attributes = []
+    booleans = []
+    geometry = []
+    geometry_mask = []
+    node_mask = []
+    for index in range(row_count):
+        mask = batch.node_mask[index]
+        count = sum(mask)
+        if mask != (True,) * count + (False,) * (old_width - count):
+            raise ValueError("real-node mask must be a contiguous prefix")
+        node_types.append(
+            batch.node_type_ids[index][:count]
+            + (0,)
+            + (0,) * (old_width - count)
+        )
+        attributes.append(
+            batch.categorical_attributes[index][:count]
+            + ((0,) * len(CATEGORICAL_ATTRIBUTE_FIELDS),)
+            + ((0,) * len(CATEGORICAL_ATTRIBUTE_FIELDS),)
+            * (old_width - count)
+        )
+        booleans.append(
+            batch.boolean_mode_targets[index][:count]
+            + (0,)
+            + (0,) * (old_width - count)
+        )
+        geometry.append(
+            batch.geometry[index][:count]
+            + ((0.0,) * GEOMETRY_WIDTH,)
+            + ((0.0,) * GEOMETRY_WIDTH,) * (old_width - count)
+        )
+        geometry_mask.append(
+            batch.geometry_mask[index][:count]
+            + ((False,) * GEOMETRY_WIDTH,)
+            + ((False,) * GEOMETRY_WIDTH,) * (old_width - count)
+        )
+        node_mask.append(
+            (True,) * (count + 1) + (False,) * (old_width - count)
+        )
+    return replace(
+        batch,
+        node_type_ids=tuple(node_types),
+        categorical_attributes=tuple(attributes),
+        boolean_mode_targets=tuple(booleans),
+        geometry=tuple(geometry),
+        geometry_mask=tuple(geometry_mask),
+        node_mask=tuple(node_mask),
+    )
 
 
 def _example_to_torch(torch_module, **fields):

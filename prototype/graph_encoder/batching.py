@@ -11,6 +11,7 @@ from prototype.model_data.records import (
     PhysicalExample,
     ReconstructionBatch,
     TypedGraphExample,
+    with_autonomous_stop_supervision,
 )
 from prototype.model_data.serialization import canonical_record_json
 
@@ -155,7 +156,7 @@ class PairedBatch:
     target: ReconstructionBatch
 
 
-def build_paired_batch(examples):
+def build_paired_batch(examples, *, supervise_terminator=False):
     """Build deterministic flat/graph views over the same physical families."""
 
     ordered = _ordered_physical_examples(examples)
@@ -230,12 +231,15 @@ def build_paired_batch(examples):
         expected_node_counts=tuple(node_counts),
         expected_edge_counts=tuple(edge_counts),
     )
+    target = flat_batch.target
+    if supervise_terminator:
+        target = with_autonomous_stop_supervision(target)
     return PairedBatch(
         family_ids,
         flat_input,
         graph_input,
         graph_bookkeeping,
-        flat_batch.target,
+        target,
     )
 
 

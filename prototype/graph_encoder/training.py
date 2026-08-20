@@ -23,6 +23,7 @@ except ImportError:  # Static C6 contracts remain importable without PyTorch.
     torch = None
 
 from .batching import build_paired_batch
+from .decoder_contract import uses_autonomous_stop
 from .config import (
     CHECKPOINT_EPOCH,
     GE1TrainingConfig,
@@ -419,7 +420,12 @@ def run_ge1_training(
             batch_ids = epoch_order[start:start + training_config.batch_size]
             boundaries.append(batch_ids)
             data_start = time.perf_counter()
-            paired = build_paired_batch(tuple(by_id[item] for item in batch_ids))
+            paired = build_paired_batch(
+                tuple(by_id[item] for item in batch_ids),
+                supervise_terminator=uses_autonomous_stop(
+                    model.config.node_generation_identity
+                ),
+            )
             tensors = _training_tensors(
                 paired, model.config.encoder, execution_device=execution_device
             )

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from prototype.flat_baseline.losses import _per_example_selected_cross_entropy
 from prototype.graph_baseline.config import GraphV1Config
 from prototype.graph_baseline.losses import GraphV1Loss, graph_v1_loss
+from prototype.model_data.vocab import NODE_TYPES
 
 from .errors import GraphEncoderError
 from .grid_magnitude import (
@@ -30,6 +32,7 @@ from .grid_magnitude import (
 from .config import GE1Config
 from .decoder_contract import (
     COMMON_LOSS_VERSION,
+    uses_autonomous_stop,
     uses_grid_magnitude,
     uses_grid_softmax_magnitude,
 )
@@ -248,11 +251,80 @@ def common_ge1_loss(
     scalar_target = (
         _grid_scalar_loss_target(target) if grid_identity else target
     )
-    base = graph_v1_loss(output, scalar_target, profile_targets, inherited)
+    if uses_autonomous_stop(config.node_generation_identity):
+        _validate_autonomous_stop_target(scalar_target)
+        real_target = dict(scalar_target)
+        real_target["node_mask"] = (
+            scalar_target["node_mask"]
+            & (scalar_target["node_type_ids"] != NODE_TYPES.pad_id)
+        ).contiguous()
+        base = graph_v1_loss(
+            output, real_target, profile_targets, inherited
+        )
+        base = _with_autonomous_stop_node_supervision(
+            base, output, scalar_target, config
+        )
+    else:
+        base = graph_v1_loss(
+            output, scalar_target, profile_targets, inherited
+        )
     if not grid_identity:
         return base
     return _with_grid_magnitude(
         base, grid_magnitude_logits, target, config
+    )
+
+
+def _validate_autonomous_stop_target(target):
+    """Require one active trailing `<pad>` label in every target row."""
+
+    import torch
+
+    node_ids = target["node_type_ids"]
+    node_mask = target["node_mask"]
+    if node_ids.shape != node_mask.shape or node_mask.dtype != torch.bool:
+        raise GraphEncoderError(
+            "invalid_autonomous_stop_target",
+            "node target IDs and mask must align",
+        )
+    for row in range(node_mask.size(0)):
+        active_count = int(node_mask[row].long().sum().item())
+        expected = node_mask[row].new_zeros(node_mask.size(1))
+        expected[:active_count] = True
+        active_pad = node_mask[row] & (node_ids[row] == NODE_TYPES.pad_id)
+        if (
+            not node_mask[row].equal(expected)
+            or active_count < 1
+            or int(active_pad.long().sum().item()) != 1
+            or int(node_ids[row, active_count - 1].item())
+            != NODE_TYPES.pad_id
+        ):
+            raise GraphEncoderError(
+                "invalid_autonomous_stop_target",
+                "each row requires exactly one active trailing <pad>",
+            )
+
+
+def _with_autonomous_stop_node_supervision(base, output, target, config):
+    """Extend the existing node CE through the single terminator position."""
+
+    per_node = _per_example_selected_cross_entropy(
+        output.node_type_logits,
+        target["node_type_ids"],
+        target["node_mask"],
+    )
+    per_example = dict(base.per_example)
+    per_example["total"] = (
+        base.per_example["total"]
+        - config.node_type_loss_weight * base.per_example["node_type"]
+        + config.node_type_loss_weight * per_node
+    )
+    per_example["node_type"] = per_node
+    return replace(
+        base,
+        total=per_example["total"].mean(),
+        node_type=per_node.mean(),
+        per_example=per_example,
     )
 
 

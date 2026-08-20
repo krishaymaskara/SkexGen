@@ -234,7 +234,10 @@ class IdentityTests(unittest.TestCase):
     def test_historical_configs_serialize_exactly_as_before(self):
         grid_only = set(GE1Config.GRID_ONLY_SERIALIZED_FIELDS)
         declared = {item.name for item in fields(GE1Config)}
-        expected_historical = (declared - grid_only) | {"arm_identity"}
+        legacy_only = {"node_generation_identity"}
+        expected_historical = (
+            declared - grid_only - legacy_only
+        ) | {"arm_identity"}
         for builder in (frozen_encoder_config, legacy_frozen_encoder_config):
             payload = json.loads(builder("flat").to_json())
             with self.subTest(builder=builder.__name__):
@@ -243,7 +246,10 @@ class IdentityTests(unittest.TestCase):
                 self.assertEqual(payload["checkpoint_schema"],
                                  LEGACY_CHECKPOINT_SCHEMA)
         grid_payload = json.loads(grid_frozen_encoder_config("flat").to_json())
-        self.assertEqual(set(grid_payload), declared | {"arm_identity"})
+        self.assertEqual(
+            set(grid_payload),
+            (declared - legacy_only) | {"arm_identity"},
+        )
 
     def test_cross_identity_configs_are_distinct(self):
         historical = frozen_encoder_config("flat").to_json()
