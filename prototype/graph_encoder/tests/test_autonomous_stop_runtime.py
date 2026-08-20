@@ -87,7 +87,7 @@ class AutonomousStopRuntimeTests(unittest.TestCase):
             decoder.node_type_head.bias.fill_(-10.0)
             decoder.node_type_head.bias[NODE_TYPES.pad_id] = 10.0
         output = decoder(self._memory(decoder))
-        raw = output.raw_prediction[0]
+        raw = output.constrained_prediction[0].node_prediction
         self.assertEqual(raw.node_count, 0)
         self.assertEqual(raw.terminator_position, 0)
         self.assertFalse(raw.generation_cap_reached)
@@ -102,7 +102,7 @@ class AutonomousStopRuntimeTests(unittest.TestCase):
             decoder.node_type_head.bias.fill_(-10.0)
             decoder.node_type_head.bias[NODE_TYPES.id("extrude")] = 10.0
         output = decoder(self._memory(decoder))
-        raw = output.raw_prediction[0]
+        raw = output.constrained_prediction[0].node_prediction
         self.assertEqual(raw.node_count, decoder.config.max_nodes)
         self.assertTrue(raw.generation_cap_reached)
         self.assertTrue(output.converted_prediction[0].raised_failure)
@@ -171,7 +171,11 @@ class AutonomousStopRuntimeTests(unittest.TestCase):
         decoder = self._decoder()
         output = decoder.teacher_forced(self._memory(decoder).expand(2, -1, -1).contiguous(), target, profiles)
         grid_logits = decoder.grid_magnitude_logits(output.decoded_states)
-        target["node_mask"][0, -1] = True
+        short_row = next(
+            row for row in range(target["node_mask"].size(0))
+            if not bool(target["node_mask"][row, -1].item())
+        )
+        target["node_mask"][short_row, -1] = True
         with self.assertRaises(GraphEncoderError):
             common_ge1_loss(
                 output,
