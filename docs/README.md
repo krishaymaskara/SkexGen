@@ -320,6 +320,11 @@ the immediate next action changes.
   read-only train diagnostic; flat passed in both feature spaces, while typed-
   graph seed 2028 failed the prospective all-checkpoint recovery rule, so no
   stop-symbol retrain is authorized.
+- [GE1 autonomous-stop authoritative CPU validation job
+  3355790](experiments/ge1_autonomous_stop_validation_3355790.md) — exact-commit,
+  corpus-free validation of learned `<pad>` stopping, unconstrained node
+  decoding, legacy compatibility, and the V4/v3/v4 contracts; implementation
+  passed, while the prerequisite still blocks retraining and Stage 6.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
