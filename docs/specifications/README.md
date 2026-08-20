@@ -40,9 +40,10 @@ succeeded.
   contract](ge1_stage6_structure_only_comparison.md) — prospectively freezes
   the conversion-independent structural prefix, paired seed aggregation,
   structural memory gate, governed narrow-package preparation, timing-v2
-  CPU/CUDA selection, artifact contract, and non-submitting runners without
-  authorizing real package creation, timing, scientific execution, or
-  development access.
+  CPU/CUDA selection, and artifact contract. ADR-0017 additively authorizes a
+  schema-marked exploratory autonomous-stop execution only after exact-commit
+  timing and a two-epoch full-lifecycle smoke; its result remains forced
+  inconclusive and is not confirmatory Stage 6 evidence.
 - [GE1 Stage 6 train-gate postmortem
   diagnostic](ge1_stage6_train_gate_postmortem.md) — read-only train-only
   decomposition of producer job `3354961`'s reliability stop from six strict

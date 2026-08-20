@@ -142,6 +142,11 @@ the immediate next action changes.
 - [GE1 autonomous stop node-generation
   contract](specifications/ge1_autonomous_stop_node_generation.md) — exact
   supervision, decoding, cap, edge-pair, versioning, and preservation rules.
+- [ADR-0017: GE1 exploratory Stage 6 at the autonomous-stop
+  identity](decisions/ADR-0017-ge1-exploratory-stage6-autonomous-stop-execution.md)
+  — schema-marked exploratory continuation, fresh timing, a mandatory
+  two-epoch full-lifecycle smoke, and one inconclusive epoch-200 development
+  run under the ordinal-magnitude/autonomous-stop combination.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

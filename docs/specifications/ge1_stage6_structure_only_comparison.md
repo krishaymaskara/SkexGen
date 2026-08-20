@@ -19,7 +19,7 @@
 | Hardware timing | `GE1-STAGE6-STRUCTURE-ONLY-TIMING-v2` |
 | Timing selection | `GE1-STAGE6-FASTEST-FEASIBLE-DEVICE-v1` |
 | Execution devices | exactly `cpu`, `cuda:0` |
-| Current authority | implementation/preparation only |
+| Current authority | ADR-0017 exploratory timing, smoke, and one epoch-200 run |
 
 ## Question and isolation
 
@@ -245,3 +245,25 @@ Before execution, the reviewer must separately approve:
    submission.
 
 RR, Stage 7, ER, and all other protected access require later authorization.
+
+## ADR-0017 exploratory amendment
+
+[ADR-0017](../decisions/ADR-0017-ge1-exploratory-stage6-autonomous-stop-execution.md)
+additively authorizes an explicitly marked run at
+`GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1` while retaining
+`GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1`. The producer remains gate-blocking
+by default. Only `exploratory_development_access=true` may record failed
+train-side gates and continue to the 45-family development package.
+
+Fresh timing-v2 at the exact final commit determines device and retained seeds.
+A two-epoch `smoke_protocol=true` lifecycle must then finalize cleanly as a
+non-result before the one authorized epoch-200 producer can run. Producer and
+final artifacts carry both markers in resolved configuration and manifests;
+either marker forces `stage6_result_eligible=false` and
+`interpretation_category=inconclusive`. The exploratory comparison number is
+reportable, but no confirmatory Stage 6 interpretation is permitted.
+
+Job `3355776` remains a valid failed diagnostic with typed-graph seed-2028
+memory/prequant balanced accuracy `0.751/0.726` against `0.90`. ADR-0017
+reclassifies it from a blocking resource prerequisite to informative evidence;
+it does not alter the result or any validity threshold.

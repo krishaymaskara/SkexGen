@@ -127,3 +127,11 @@ it superseded by a later ADR.
   It authorizes only implementation, bounded validation, and the read-only
   train memory-to-count prerequisite probe—not a retrain, Stage 6, development,
   RR, ER, or other protected access.
+- [ADR-0017: GE1 exploratory Stage 6 at the autonomous-stop
+  identity](ADR-0017-ge1-exploratory-stage6-autonomous-stop-execution.md) —
+  accepted prospectively by designated reviewer Krishay Maskara; reclassifies
+  the failed memory-to-count probe as informative, adds schema-marked
+  exploratory continuation without changing default gates, requires fresh
+  exact-commit timing and a two-epoch full-lifecycle smoke, and authorizes one
+  epoch-200 exploratory development run whose interpretation is forced
+  inconclusive. RR, ER, IID, Stage 7, C8, and confirmatory claims remain closed.
