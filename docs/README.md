@@ -335,7 +335,21 @@ the immediate next action changes.
   3355790](experiments/ge1_autonomous_stop_validation_3355790.md) — exact-commit,
   corpus-free validation of learned `<pad>` stopping, unconstrained node
   decoding, legacy compatibility, and the V4/v3/v4 contracts; implementation
-  passed, while the prerequisite still blocks retraining and Stage 6.
+  passed; ADR-0017 later reclassified the failed proxy prerequisite as
+  informative for the separately marked exploratory sequence.
+- [GE1 exploratory Stage 6 authoritative CPU validation job
+  3355816](experiments/ge1_exploratory_stage6_validation_3355816.md) — 51/51
+  focused, 743/743 complete discovery, all sibling suites, and all source and
+  repository gates passed at the exact exploratory implementation commit.
+- [GE1 exploratory Stage 6 hardware re-timing job
+  3355819](experiments/ge1_exploratory_stage6_timing_3355819.md) — exact-commit
+  ordinal/autonomous-stop timing retained CPU and seeds 2026–2028 with no
+  fallback.
+- [GE1 exploratory Stage 6 two-epoch lifecycle smoke jobs 3355822 and
+  3355823](experiments/ge1_exploratory_stage6_smoke_3355822_3355823.md) — the
+  six-run producer, autonomous scoring, checkpoint bundle, producer artifact,
+  and smoke-only final artifact all verified; the epoch-200 command remains
+  prepared but unsubmitted under the reviewer hold.
 - [Historical 60-family OpenCascade
   validation](experiments/kernel_validation_60.md) — real-kernel results that
   motivated analytical Boolean-feasibility filtering.
