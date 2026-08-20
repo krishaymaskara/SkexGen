@@ -25,15 +25,22 @@ POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION = (
 GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION = (
     "GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1"
 )
-# Historical identities keep their exact order and membership; the grid
+GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION = (
+    "GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1"
+)
+# Historical identities keep their exact order and membership; each grid
 # identity is appended so no existing tuple index or prefix changes.
 SCALAR_OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
 )
+GRID_OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+)
 OPERATION_MAGNITUDE_PARAMETERIZATIONS = (
     SCALAR_OPERATION_MAGNITUDE_PARAMETERIZATIONS
-    + (GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,)
+    + GRID_OPERATION_MAGNITUDE_PARAMETERIZATIONS
 )
 OPERATION_MAGNITUDE_EPSILON_POLICY = "torch.finfo(dtype).tiny"
 OPERATION_MAGNITUDE_SERIALIZED_CHANNELS = (37, 38)
@@ -47,24 +54,49 @@ GRID_SHARED_DECODER_VERSION = "GE1-SHARED-TYPED-EDGE-DECODER-V2"
 GRID_OUTPUT_POSITION_CONTRACT_VERSION = "GE1-DECODER-OUTPUT-POSITIONS-v2"
 LEGACY_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v1"
 GRID_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v2"
+# ADR-0015.  The softmax head's state-dict keys and shapes differ from the
+# ordinal head's, so it takes its own decoder version and checkpoint schema
+# rather than inheriting the grid-ordinal ones.  Output positions genuinely do
+# not change between the two grid identities, so v2 is reused there.
+GRID_SOFTMAX_SHARED_DECODER_VERSION = "GE1-SHARED-TYPED-EDGE-DECODER-V3"
+GRID_SOFTMAX_CHECKPOINT_SCHEMA = "GE1-CHECKPOINT-v3"
 
 
 def uses_grid_magnitude(parameterization):
-    """Return whether one parameterization is the grid-ordinal identity."""
+    """Return whether one parameterization decodes from a frozen grid.
 
-    return parameterization == GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+    Membership, not equality: both the ordinal and the softmax identity route
+    through the grid loss, the grid-only configuration fields, and the
+    exclusion of the compact magnitude channels from the scalar mask.  The
+    checkpoint and decoder identities deliberately do *not* use this predicate,
+    because those must separate the two grid heads.
+    """
+
+    return parameterization in GRID_OPERATION_MAGNITUDE_PARAMETERIZATIONS
+
+
+def uses_grid_softmax_magnitude(parameterization):
+    """Return whether one parameterization is the grid-softmax identity."""
+
+    return parameterization == GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
 
 
 def shared_decoder_version_for(parameterization):
     """Return the decoder identity implied by a magnitude parameterization."""
 
+    if uses_grid_softmax_magnitude(parameterization):
+        return GRID_SOFTMAX_SHARED_DECODER_VERSION
     if uses_grid_magnitude(parameterization):
         return GRID_SHARED_DECODER_VERSION
     return SHARED_DECODER_VERSION
 
 
 def output_position_contract_version_for(parameterization):
-    """Return the output-position identity implied by a parameterization."""
+    """Return the output-position identity implied by a parameterization.
+
+    Both grid identities share `...-POSITIONS-v2`: the magnitude readout
+    changes, the decoder output positions do not.
+    """
 
     if uses_grid_magnitude(parameterization):
         return GRID_OUTPUT_POSITION_CONTRACT_VERSION
@@ -72,8 +104,17 @@ def output_position_contract_version_for(parameterization):
 
 
 def checkpoint_schema_for(parameterization):
-    """Return the checkpoint schema implied by a parameterization."""
+    """Return the checkpoint schema implied by a parameterization.
 
+    The softmax identity is checkpoint incompatible with the ordinal one:
+    `projections.*.weight` is `[5, model_dim]` rather than `[1, model_dim]`,
+    `projections.*.bias` is new, and `first_bias` and `bias_gaps` do not
+    exist.  A shared schema would let a governed schema check pass on a
+    structurally incompatible state dict, so each grid head owns a schema.
+    """
+
+    if uses_grid_softmax_magnitude(parameterization):
+        return GRID_SOFTMAX_CHECKPOINT_SCHEMA
     if uses_grid_magnitude(parameterization):
         return GRID_CHECKPOINT_SCHEMA
     return LEGACY_CHECKPOINT_SCHEMA

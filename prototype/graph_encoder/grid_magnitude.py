@@ -1,14 +1,30 @@
-"""Grid-anchored ordinal operation-magnitude contract and head.
+"""Grid-anchored operation-magnitude contracts and heads.
 
 The controlled corpus emits operation magnitudes on two frozen five-value
 grids.  The historical scalar parameterizations regress a continuous value and,
 under a squared-error-shaped objective, settle on the conditional mean between
-grid points.  This module replaces that readout with a rank-consistent ordinal
-classifier whose decoded value is exactly a frozen grid member.
+grid points.  This module replaces that readout with a classifier whose decoded
+value is exactly a frozen grid member.
 
-Everything above ``GridMagnitudeHead`` is deliberately free of PyTorch so the
-grid, label, validation, and decode contracts can be tested without a runtime.
-``GridMagnitudeHead`` is imported lazily by callers that already require torch.
+Two such classifier identities live here side by side.
+
+``GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1`` (ADR-0013) is a rank-consistent
+CORAL head: one shared scalar projection per grid compared against four
+strictly decreasing thresholds.  Corpus-free trajectory job ``3353008`` found
+that its classes 2-4 never decoded above class 1, because a single shared
+scalar cannot move class evidence independently and the upper cuts are jointly
+unreachable when the projection's dynamic range is small relative to the bias
+gaps.  That identity is retained here unchanged: it is immutable historical
+evidence and remains runnable.
+
+``GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`` (ADR-0015) is the repair: one
+``Linear(model_dim, 5)`` per grid, independent per-class logits, argmax decode,
+and cross-entropy.  Every class owns a distinct weight row and bias, so class
+evidence moves independently by construction.
+
+Everything above the head builders is deliberately free of PyTorch so the grid,
+label, validation, and decode contracts can be tested without a runtime.  Both
+heads are imported lazily by callers that already require torch.
 """
 
 from __future__ import annotations
@@ -24,6 +40,21 @@ from .errors import GraphEncoderError
 GRID_MAGNITUDE_PARAMETERIZATION = "GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1"
 GRID_MAGNITUDE_CONTRACT_VERSION = "GE1-GRID-MAGNITUDE-CONTRACT-v1"
 GRID_MAGNITUDE_LOSS_VERSION = "GE1-GRID-MAGNITUDE-LOSS-v1"
+# ADR-0015 replaces the shared-scalar CORAL readout with independent per-class
+# logits.  It is a separate identity: the ordinal literals above and every
+# ordinal code path below stay exactly as ADR-0013 froze them.
+GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION = (
+    "GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1"
+)
+GRID_SOFTMAX_MAGNITUDE_CONTRACT_VERSION = (
+    "GE1-GRID-SOFTMAX-MAGNITUDE-CONTRACT-v1"
+)
+GRID_SOFTMAX_MAGNITUDE_LOSS_VERSION = "GE1-GRID-SOFTMAX-MAGNITUDE-LOSS-v1"
+# Appended, never reordered, so no existing index or prefix moves.
+GRID_MAGNITUDE_PARAMETERIZATIONS = (
+    GRID_MAGNITUDE_PARAMETERIZATION,
+    GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION,
+)
 GRID_MAGNITUDE_DIAGNOSTICS_VERSION = "GE1-GRID-MAGNITUDE-DIAGNOSTICS-v1"
 GRID_MAGNITUDE_APPLICABILITY_VERSION = "GE1-GRID-MAGNITUDE-APPLICABILITY-v1"
 GRID_MAGNITUDE_GRADIENT_VERSION = "GE1-GRID-MAGNITUDE-GRADIENTS-v1"
@@ -114,12 +145,33 @@ def _assert_grid_agreement():
 _assert_grid_agreement()
 
 
-def grid_contract_metadata():
-    """Return the deterministic JSON-compatible frozen grid contract."""
+def grid_contract_metadata(parameterization=None):
+    """Return the deterministic JSON-compatible frozen grid contract.
 
-    return {
-        "version": GRID_MAGNITUDE_CONTRACT_VERSION,
-        "parameterization": GRID_MAGNITUDE_PARAMETERIZATION,
+    Called with no argument or with the ordinal identity this returns the
+    ADR-0013 record byte-for-byte, including ``ordinal_cut_count``.  The
+    softmax identity replaces the decode and rank-consistency strings and drops
+    the cut count, which has no meaning for independent class logits.
+    """
+
+    identity = (
+        GRID_MAGNITUDE_PARAMETERIZATION
+        if parameterization is None
+        else parameterization
+    )
+    if identity not in GRID_MAGNITUDE_PARAMETERIZATIONS:
+        raise GraphEncoderError(
+            "invalid_grid_parameterization",
+            "unknown grid operation-magnitude parameterization",
+        )
+    softmax = identity == GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION
+    record = {
+        "version": (
+            GRID_SOFTMAX_MAGNITUDE_CONTRACT_VERSION
+            if softmax
+            else GRID_MAGNITUDE_CONTRACT_VERSION
+        ),
+        "parameterization": identity,
         "class_count": GRID_CLASS_COUNT,
         "ordinal_cut_count": ORDINAL_CUT_COUNT,
         "label_tolerance": GRID_LABEL_TOLERANCE,
@@ -143,6 +195,11 @@ def grid_contract_metadata():
         "decode_rule": "count_of_cumulative_logits_greater_than_zero",
         "target_labels_used_only_inside_loss": True,
     }
+    if softmax:
+        del record["ordinal_cut_count"]
+        record["rank_consistency"] = "none_independent_class_logits"
+        record["decode_rule"] = "argmax_over_class_logits"
+    return record
 
 
 def _validate_operation_type(operation_type):
@@ -296,6 +353,14 @@ class GridMagnitudeReduction:
 
 
 GRID_MAGNITUDE_REDUCTION = GridMagnitudeReduction()
+# ADR-0015 changes only step 1 of the reduction.  Steps 2-4, the equal
+# per-operation contribution proof, the axis exclusion, and the absence of
+# class balancing are identical to ADR-0013 by construction: the softmax record
+# overrides exactly two fields.
+GRID_SOFTMAX_MAGNITUDE_REDUCTION = GridMagnitudeReduction(
+    version=GRID_SOFTMAX_MAGNITUDE_LOSS_VERSION,
+    per_operation="cross_entropy_over_five_independent_class_logits",
+)
 
 
 def _require_torch():
@@ -393,3 +458,80 @@ def build_grid_magnitude_head(model_dim):
             return torch.stack(gathered, dim=-1)
 
     return GridMagnitudeHead(model_dim)
+
+
+def build_grid_softmax_magnitude_head(model_dim):
+    """Construct the independent five-way class head (requires PyTorch).
+
+    This is the ADR-0015 repair for the failure trajectory job ``3353008``
+    measured on the ordinal head above.  There is no shared scalar, no
+    cumulative cut, no bias ordering, and no structural rank consistency: each
+    of the five classes owns a distinct weight row and bias, so class evidence
+    moves independently and no class is reachable only by first crossing
+    another class's threshold.
+    """
+
+    torch, nn = _require_torch()
+
+    class GridSoftmaxMagnitudeHead(nn.Module):
+        """Two independent five-way classifiers, one per frozen grid."""
+
+        contract_version = GRID_SOFTMAX_MAGNITUDE_CONTRACT_VERSION
+        parameterization = GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION
+
+        def __init__(self, width):
+            super().__init__()
+            if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+                raise ValueError("model_dim must be a positive integer")
+            self.model_dim = int(width)
+            self.operation_types = OPERATION_TYPES
+            # One classifier per grid; deliberately not shared between grids so
+            # extrusion and revolve keep disjoint parameter groups, matching the
+            # ordinal head's isolation.
+            self.projections = nn.ModuleList(
+                nn.Linear(self.model_dim, GRID_CLASS_COUNT)
+                for _ in OPERATION_TYPES
+            )
+            # Keep ``nn.Linear``'s seeded nonzero initialization.  A zero
+            # projection would give the classification loss zero derivative with
+            # respect to decoded states on the first real training step and
+            # would therefore violate the required head-to-trunk connection.
+
+        def forward(self, decoded_states):
+            """Return independent class logits ``[..., types, classes]``."""
+
+            if decoded_states.size(-1) != self.model_dim:
+                raise ValueError("decoded state width differs from model_dim")
+            return torch.stack(
+                [projection(decoded_states) for projection in self.projections],
+                dim=-2,
+            )
+
+        def class_probabilities(self, class_logits):
+            return torch.softmax(class_logits, dim=-1)
+
+        def class_indices(self, class_logits):
+            """Decode class indices as the argmax over independent logits."""
+
+            return class_logits.argmax(dim=-1)
+
+        def normalized_values(self, class_logits):
+            """Return exact frozen normalized grid values ``[..., types]``.
+
+            The decode is discrete, so no gradient flows through the geometry
+            path; the head learns only through the classification loss.
+            """
+
+            indices = self.class_indices(class_logits)
+            table = torch.tensor(
+                [NORMALIZED_GRIDS[name] for name in OPERATION_TYPES],
+                dtype=class_logits.dtype,
+                device=class_logits.device,
+            )
+            gathered = []
+            for position in range(len(OPERATION_TYPES)):
+                row = table[position]
+                gathered.append(row[indices[..., position]])
+            return torch.stack(gathered, dim=-1)
+
+    return GridSoftmaxMagnitudeHead(model_dim)

@@ -12,6 +12,7 @@ from prototype.graph_baseline.config import GraphV1Config
 from .decoder_contract import (
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
     GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     checkpoint_schema_for,
     uses_grid_magnitude,
@@ -136,6 +137,23 @@ def grid_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
         seed,
         operation_magnitude_parameterization=(
             GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+    )
+
+
+def grid_softmax_frozen_encoder_config(encoder, seed=AUTHORIZED_SEEDS[0]):
+    """Return the prospective ADR-0015 grid-softmax magnitude configuration.
+
+    Opt-in only.  No default anywhere changes; the softmax identity is
+    reachable solely through this constructor or an explicit parameterization
+    argument.
+    """
+
+    return frozen_encoder_config(
+        encoder,
+        seed,
+        operation_magnitude_parameterization=(
+            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
     )
 

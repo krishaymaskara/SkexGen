@@ -10,10 +10,14 @@ from prototype.graph_baseline.losses import GraphV1Loss, graph_v1_loss
 from .errors import GraphEncoderError
 from .grid_magnitude import (
     GRID_MAGNITUDE_LOSS_VERSION,
+    GRID_MAGNITUDE_PARAMETERIZATION,
     GRID_MAGNITUDE_REDUCTION,
     GRID_MAGNITUDE_DIAGNOSTICS_VERSION,
     GRID_MAGNITUDE_APPLICABILITY_VERSION,
     GRID_CLASS_COUNT,
+    GRID_SOFTMAX_MAGNITUDE_LOSS_VERSION,
+    GRID_SOFTMAX_MAGNITUDE_REDUCTION,
+    GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION,
     NORMALIZED_GRIDS,
     PHYSICAL_GRIDS,
     OPERATION_NODE_TYPE_IDS,
@@ -24,7 +28,11 @@ from .grid_magnitude import (
 )
 
 from .config import GE1Config
-from .decoder_contract import COMMON_LOSS_VERSION, uses_grid_magnitude
+from .decoder_contract import (
+    COMMON_LOSS_VERSION,
+    uses_grid_magnitude,
+    uses_grid_softmax_magnitude,
+)
 
 
 GE1Loss = GraphV1Loss
@@ -52,6 +60,11 @@ class GridMagnitudeLossTerms:
     decoded_physical_values: dict
     decision_margins: dict
     applicability: dict
+    parameterization: str = GRID_MAGNITUDE_PARAMETERIZATION
+
+    @property
+    def uses_softmax_identity(self):
+        return self.parameterization == GRID_SOFTMAX_MAGNITUDE_PARAMETERIZATION
 
     def diagnostic_record(self):
         """Return a detached, JSON-compatible engineering diagnostic."""
@@ -138,7 +151,7 @@ class GridMagnitudeLossTerms:
                 ],
                 "operation_records": records,
             }
-        return {
+        record = {
             "schema_version": GRID_MAGNITUDE_DIAGNOSTICS_VERSION,
             "loss_version": self.version,
             "batch_size": self.batch_size,
@@ -155,6 +168,13 @@ class GridMagnitudeLossTerms:
                 "reason": "gradients_not_yet_computed",
             },
         }
+        if self.uses_softmax_identity:
+            # Added only for the new identity, so the ADR-0013 record stays
+            # byte-identical.  The probability and margin fields above carry
+            # identity-dependent content, so a softmax record says so.
+            record["parameterization"] = self.parameterization
+            record["decode_rule"] = "argmax_over_class_logits"
+        return record
 
 
 @dataclass(frozen=True)
@@ -218,12 +238,12 @@ def common_ge1_loss(
     if grid_identity and grid_magnitude_logits is None:
         raise GraphEncoderError(
             "missing_grid_magnitude_logits",
-            "grid-ordinal loss requires teacher-forced ordinal logits",
+            "grid loss requires teacher-forced grid magnitude logits",
         )
     if not grid_identity and grid_magnitude_logits is not None:
         raise GraphEncoderError(
             "unexpected_grid_magnitude_logits",
-            "historical magnitude identities must not receive ordinal logits",
+            "historical magnitude identities must not receive grid logits",
         )
     scalar_target = (
         _grid_scalar_loss_target(target) if grid_identity else target
@@ -237,11 +257,18 @@ def common_ge1_loss(
 
 
 def grid_magnitude_terms(grid_magnitude_logits, target, config):
-    """Return raw and weighted extrusion/revolve ordinal magnitude losses.
+    """Return raw and weighted extrusion/revolve grid magnitude losses.
 
     Reduction, frozen prospectively:
 
-    1. mean binary cross-entropy over the four ordinal cuts of one operation;
+    1. one per-operation classification loss, which is the only step that
+       differs between the two grid identities:
+
+       - `...-GRID-ORDINAL-v1`: mean binary cross-entropy over four ordinal
+         cuts (ADR-0013);
+       - `...-GRID-SOFTMAX-v1`: cross-entropy over five independent class
+         logits (ADR-0015);
+
     2. **sum** those per-operation losses within each example, per type;
     3. mean the per-example sums across the batch.
 
@@ -253,23 +280,27 @@ def grid_magnitude_terms(grid_magnitude_logits, target, config):
     to remove.
 
     Axis and every other geometry channel are excluded by construction: this
-    term reads only the ordinal head and the operation node types.
+    term reads only the grid head and the operation node types.
     """
 
     import torch
 
+    softmax_identity = uses_grid_softmax_magnitude(
+        config.operation_magnitude_parameterization
+    )
     node_type_ids = target["node_type_ids"]
     node_mask = target["node_mask"]
     geometry = target["geometry"]
     geometry_mask = target["geometry_mask"]
     batch_size, node_count = node_type_ids.shape
+    logit_width = GRID_CLASS_COUNT if softmax_identity else ORDINAL_CUT_COUNT
     expected_shape = (
-        batch_size, node_count, len(OPERATION_TYPES), ORDINAL_CUT_COUNT
+        batch_size, node_count, len(OPERATION_TYPES), logit_width
     )
     if tuple(grid_magnitude_logits.shape) != expected_shape:
         raise GraphEncoderError(
             "invalid_grid_magnitude_logits",
-            "ordinal logits must have shape {}".format(expected_shape),
+            "grid magnitude logits must have shape {}".format(expected_shape),
         )
     raw = {}
     counts = {}
@@ -289,21 +320,41 @@ def grid_magnitude_terms(grid_magnitude_logits, target, config):
             _assert_active_targets_are_on_grid(
                 geometry, geometry_mask, active, channel, operation_type
             )
-        labels, indices = _cumulative_label_tensor(
-            geometry, active, channel, operation_type, grid_magnitude_logits
-        )
         logits = grid_magnitude_logits[..., position, :]
-        per_cut = torch.nn.functional.binary_cross_entropy_with_logits(
-            logits, labels, reduction="none"
-        )
-        per_operation = per_cut.mean(dim=-1) * active.to(per_cut.dtype)
+        if softmax_identity:
+            labels, indices = _class_index_label_tensor(
+                geometry, active, channel, operation_type, grid_magnitude_logits
+            )
+            # ``cross_entropy`` accepts only ``(rows, classes)``; the reshape
+            # is pure bookkeeping and the result is restored to the node grid
+            # before any reduction, so steps 2 and 3 are unchanged.
+            flat = torch.nn.functional.cross_entropy(
+                logits.reshape(-1, GRID_CLASS_COUNT),
+                labels.reshape(-1),
+                reduction="none",
+            )
+            unmasked = flat.reshape(labels.shape)
+        else:
+            labels, indices = _cumulative_label_tensor(
+                geometry, active, channel, operation_type, grid_magnitude_logits
+            )
+            unmasked = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, labels, reduction="none"
+            ).mean(dim=-1)
+        per_operation = unmasked * active.to(unmasked.dtype)
         per_example_sum = per_operation.sum(dim=-1)
         raw[operation_type] = per_example_sum.mean()
         raw_per_example[operation_type] = per_example_sum
         counts[operation_type] = int(active.sum().item())
         active_masks[operation_type] = active
-        cut_probabilities[operation_type] = torch.sigmoid(logits)
-        predicted = (logits > 0).sum(dim=-1)
+        if softmax_identity:
+            # Same field, identity-appropriate content: five softmax class
+            # probabilities rather than four sigmoid cut probabilities.
+            cut_probabilities[operation_type] = torch.softmax(logits, dim=-1)
+            predicted = logits.argmax(dim=-1)
+        else:
+            cut_probabilities[operation_type] = torch.sigmoid(logits)
+            predicted = (logits > 0).sum(dim=-1)
         predicted_classes[operation_type] = predicted
         target_classes[operation_type] = indices
         normalized_table = torch.tensor(
@@ -318,7 +369,13 @@ def grid_magnitude_terms(grid_magnitude_logits, target, config):
         )
         decoded_normalized_values[operation_type] = normalized_table[predicted]
         decoded_physical_values[operation_type] = physical_table[predicted]
-        decision_margins[operation_type] = logits.abs().min(dim=-1).values
+        if softmax_identity:
+            # Confidence of the decoded class over its nearest rival, which is
+            # the softmax analogue of the ordinal head's smallest cut margin.
+            top_two = torch.topk(logits, 2, dim=-1).values
+            decision_margins[operation_type] = top_two[..., 0] - top_two[..., 1]
+        else:
+            decision_margins[operation_type] = logits.abs().min(dim=-1).values
     weights = {
         "extrude": float(config.grid_magnitude_extrude_loss_weight),
         "revolve": float(config.grid_magnitude_revolve_loss_weight),
@@ -331,8 +388,16 @@ def grid_magnitude_terms(grid_magnitude_logits, target, config):
         for name in OPERATION_TYPES
     }
     return GridMagnitudeLossTerms(
-        GRID_MAGNITUDE_LOSS_VERSION,
-        GRID_MAGNITUDE_REDUCTION.to_dict(),
+        (
+            GRID_SOFTMAX_MAGNITUDE_LOSS_VERSION
+            if softmax_identity
+            else GRID_MAGNITUDE_LOSS_VERSION
+        ),
+        (
+            GRID_SOFTMAX_MAGNITUDE_REDUCTION
+            if softmax_identity
+            else GRID_MAGNITUDE_REDUCTION
+        ).to_dict(),
         raw,
         weighted,
         weights,
@@ -348,6 +413,7 @@ def grid_magnitude_terms(grid_magnitude_logits, target, config):
         decoded_physical_values,
         decision_margins,
         _grid_applicability_record(target),
+        config.operation_magnitude_parameterization,
     )
 
 
@@ -395,6 +461,34 @@ def _cumulative_label_tensor(
     ).reshape(*([1] * indices.dim()), ORDINAL_CUT_COUNT)
     labels = (indices.unsqueeze(-1) > cuts).to(reference.dtype)
     labels = (labels * active.unsqueeze(-1).to(reference.dtype)).detach()
+    inactive = torch.full_like(indices, -1)
+    indices = torch.where(active, indices, inactive).detach()
+    return labels, indices
+
+
+def _class_index_label_tensor(
+    geometry, active, channel, operation_type, reference
+):
+    """Build detached integer class targets; no gradient reaches labels.
+
+    Two tensors are returned for the same reason the ordinal builder returns
+    two.  ``labels`` is a gather-safe `long` tensor whose inactive positions
+    are set to class 0; those positions are zeroed by the active mask after the
+    loss, so their value is never observed.  ``indices`` keeps ``-1`` at
+    inactive positions and is the diagnostic view.
+    """
+
+    import torch
+
+    grid = torch.tensor(
+        NORMALIZED_GRIDS[operation_type],
+        dtype=reference.dtype,
+        device=reference.device,
+    )
+    values = geometry[..., channel].detach().to(reference.dtype)
+    distance = (values.unsqueeze(-1) - grid).abs()
+    indices = distance.argmin(dim=-1).to(torch.long)
+    labels = torch.where(active, indices, torch.zeros_like(indices)).detach()
     inactive = torch.full_like(indices, -1)
     indices = torch.where(active, indices, inactive).detach()
     return labels, indices

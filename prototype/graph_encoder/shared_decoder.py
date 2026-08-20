@@ -46,7 +46,10 @@ from prototype.graph_baseline.model import (
 )
 from prototype.node_grammar import NodeGrammarError
 
-from .grid_magnitude import build_grid_magnitude_head
+from .grid_magnitude import (
+    build_grid_magnitude_head,
+    build_grid_softmax_magnitude_head,
+)
 from .decoder_contract import (
     AUTONOMOUS_OUTPUT_VERSION,
     LEGACY_OPERATION_MAGNITUDE_PARAMETERIZATION,
@@ -56,6 +59,7 @@ from .decoder_contract import (
     output_position_contract_version_for,
     shared_decoder_version_for,
     uses_grid_magnitude,
+    uses_grid_softmax_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
     SHARED_DECODER_VERSION,
 )
@@ -261,6 +265,9 @@ class SharedGE1Decoder(GraphV1Model):
         self.uses_grid_magnitude = uses_grid_magnitude(
             operation_magnitude_parameterization
         )
+        self.uses_grid_softmax_magnitude = uses_grid_softmax_magnitude(
+            operation_magnitude_parameterization
+        )
         # Per-identity contract versions, so a historical checkpoint can never
         # be reloaded into a grid model or the reverse.
         self.shared_decoder_version = shared_decoder_version_for(
@@ -275,10 +282,17 @@ class SharedGE1Decoder(GraphV1Model):
             delattr(self, name)
         if self.uses_grid_magnitude:
             # Additive module: the historical scalar head is retained and its
-            # axis channels keep their existing supervision.
-            self.grid_magnitude_head = build_grid_magnitude_head(
-                self.config.model_dim
+            # axis channels keep their existing supervision.  The attribute
+            # name is shared by both grid identities so every downstream
+            # gradient group, diagnostic, and state-dict prefix is unchanged;
+            # the two heads differ in shape, which is exactly why they carry
+            # separate checkpoint schemas.
+            builder = (
+                build_grid_softmax_magnitude_head
+                if self.uses_grid_softmax_magnitude
+                else build_grid_magnitude_head
             )
+            self.grid_magnitude_head = builder(self.config.model_dim)
         self.register_buffer(
             "relative_position_denominator",
             torch.tensor(float(max(self.config.max_nodes - 1, 1))),
@@ -310,20 +324,26 @@ class SharedGE1Decoder(GraphV1Model):
         return self.remaining_geometry_head(decoded_states)
 
     def grid_magnitude_logits(self, decoded_states):
-        """Return ordinal cut logits ``[..., 2, 4]`` for the grid identity."""
+        """Return the grid magnitude logits for a grid identity.
+
+        Shape is ``[..., 2, 4]`` ordinal cut logits under
+        `GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1` and ``[..., 2, 5]``
+        independent class logits under
+        `GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`.
+        """
 
         if not self.uses_grid_magnitude:
             raise ValueError(
-                "grid magnitude logits require the grid-ordinal identity"
+                "grid magnitude logits require a grid magnitude identity"
             )
         return self.grid_magnitude_head(decoded_states)
 
     def parameterize_remaining_geometry(self, raw, decoded_states=None):
         """Apply the versioned neural geometry output mapping.
 
-        `decoded_states` is required only by the grid-ordinal identity, whose
-        magnitude channels are decoded from the ordinal head rather than from
-        a scalar activation.  The historical identities ignore it entirely and
+        `decoded_states` is required only by the grid identities, whose
+        magnitude channels are decoded from the grid head rather than from a
+        scalar activation.  The historical identities ignore it entirely and
         keep their exact previous behaviour.
         """
 
@@ -336,13 +356,15 @@ class SharedGE1Decoder(GraphV1Model):
         if self.uses_grid_magnitude:
             if decoded_states is None:
                 raise ValueError(
-                    "grid-ordinal magnitude decoding requires decoded states"
+                    "grid magnitude decoding requires decoded states"
                 )
             # Both grids are decoded for every node.  The existing geometry
             # applicability mask exposes only the channel matching the
             # autonomously generated node type, so no target operation type
-            # is consulted here.  The decode is discrete, so magnitude
-            # gradient reaches the trunk solely through the ordinal loss.
+            # is consulted here.  The decode is discrete under both grid
+            # identities -- a count of positive cumulative logits, or an
+            # argmax over independent class logits -- so magnitude gradient
+            # reaches the trunk solely through the grid loss.
             grid_values = self.grid_magnitude_head.normalized_values(
                 self.grid_magnitude_head(decoded_states)
             ).to(dtype=raw.dtype)

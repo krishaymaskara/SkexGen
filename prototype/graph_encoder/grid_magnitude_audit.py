@@ -9,6 +9,8 @@ import re
 import shlex
 import sys
 
+from .stage6_structure_only_producer_audit import CPU_DISCOVERY_CUDA_SKIP_IDS
+
 
 GRID_MAGNITUDE_SOURCE_AUDIT_VERSION = "GE1-GRID-MAGNITUDE-SOURCE-AUDIT-v1"
 
@@ -61,6 +63,30 @@ SCIENTIFIC_MODULES = re.compile(
     r"representation_probe|operation_parameter_diagnostic|"
     r"optimization_diagnostic)(?:\.py)?\b"
 )
+
+
+def validate_cpu_softmax_complete_discovery(declared, result):
+    """Accept only the six CUDA-only skips in complete CPU discovery."""
+
+    skipped_ids = tuple(sorted(test.id() for test, unused_reason in result.skipped))
+    telemetry = {
+        "event": "grid_softmax_magnitude_complete_graph_encoder_suite",
+        "declared_tests": declared,
+        "tests_run": result.testsRun,
+        "failures": len(result.failures),
+        "errors": len(result.errors),
+        "skipped": len(skipped_ids),
+        "skip_ids": list(skipped_ids),
+    }
+    if result.testsRun != declared:
+        raise AssertionError("complete discovery did not report every declared test")
+    if result.failures or result.errors or not result.wasSuccessful():
+        raise AssertionError("complete discovery has failures or errors")
+    if len(skipped_ids) != len(set(skipped_ids)):
+        raise AssertionError("complete discovery reported duplicate skip IDs")
+    if skipped_ids != CPU_DISCOVERY_CUDA_SKIP_IDS:
+        raise AssertionError("complete discovery CUDA skip allowlist differs")
+    return telemetry
 
 
 def audit_grid_magnitude_sources(package_root, runner_path):

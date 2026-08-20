@@ -123,6 +123,18 @@ the immediate next action changes.
   contract](specifications/ge1_grid_ordinal_horizon_diagnostic.md) — extends
   only classes 2–4 to 2,000 updates on fresh generated-state heads, recording
   clipping and AdamW state without changing or opening scientific resources.
+- [ADR-0015: GE1 grid softmax operation-magnitude
+  classification](decisions/ADR-0015-ge1-grid-softmax-operation-magnitude-classification.md)
+  — accepted opt-in replacement of the shared-scalar ordinal magnitude readout
+  with independent five-way class logits and cross-entropy, after diagnostic
+  job `3353008` showed classes 2–4 were never decoded; ADR-0013 stays
+  immutable and no scientific run, Stage 6, C8, or protected access is
+  authorized.
+- [GE1 grid softmax magnitude
+  contract](specifications/ge1_grid_softmax_magnitude.md) — frozen head,
+  argmax decode, cross-entropy reduction, diagnostics, capacity, isolation, and
+  `GE1-CHECKPOINT-v3` incompatibility contract for
+  `GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

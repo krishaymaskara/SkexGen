@@ -104,3 +104,8 @@ awaiting a decision. When its current-state language differs from the
   memory values with `torch.zeros_like`; completed job `3355342` retains
   substantial exact-zero structural output but creates no scientific gate or
   authorization.
+- [GE1 grid softmax magnitude contract](ge1_grid_softmax_magnitude.md):
+  the frozen head, decode, cross-entropy loss, diagnostics, capacity, isolation,
+  and checkpoint-incompatibility contract for
+  `GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`; implementation and corpus-free
+  validation only, with the ADR-0013 ordinal path preserved unchanged.

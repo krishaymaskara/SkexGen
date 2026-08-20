@@ -108,3 +108,13 @@ it superseded by a later ADR.
   exact-zero-memory evidence. No Stage 6 comparison result exists, and another
   producer, repair, development access, finalization, RR, Stage 7, C8, or
   protected access remains unauthorized.
+- [ADR-0015: GE1 grid softmax operation-magnitude
+  classification](ADR-0015-ge1-grid-softmax-operation-magnitude-classification.md)
+  — accepted by designated reviewer Krishay Maskara; replaces the shared-scalar
+  CORAL ordinal magnitude readout with independent five-way class logits and
+  cross-entropy after corpus-free diagnostic job `3353008` showed classes 2–4
+  were never decoded above class 1. The new identity is opt-in and additively
+  versioned; ADR-0013's ordinal identity, loss, decode, checkpoint schema, and
+  every recorded result remain immutable and runnable. Authorizes
+  implementation, synthetic validation, and documentation only — no scientific
+  run, Stage 6, C8, repair, or protected access.
