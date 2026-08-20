@@ -13,7 +13,7 @@ set -Eeuo pipefail
 terminal_failure() {
   status=$?
   trap - ERR
-  printf '{"event":"ge1_exploratory_validation_terminal_failure","commit":"%s","job_id":"%s","exit_status":%s,"operation_template_manifest_accessed":false,"operation_template_train_payload_accessed":false,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"other_corpus_accessed":false,"scientific_training_performed":false,"engineering_training_performed":false,"checkpoint_written":false,"cad_kernel_used":false,"stage6_performed":false,"c8_or_later_performed":false,"slurm_submitted_by_implementation_agent":false}\n' \
+  printf '{"event":"ge1_exploratory_validation_terminal_failure","commit":"%s","job_id":"%s","exit_status":%s,"operation_template_manifest_accessed":false,"operation_template_train_payload_accessed":false,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"other_corpus_accessed":false,"scientific_training_performed":false,"engineering_training_performed":false,"checkpoint_written":false,"cad_kernel_used":false,"stage6_performed":false,"c8_or_later_performed":false,"submission_authorized_by_designated_reviewer":true,"runner_self_submitted":false}\n' \
     "${EXPECTED_COMMIT:-unresolved}" "${SLURM_JOB_ID:-unresolved}" "$status" >&2
   exit "$status"
 }
@@ -212,46 +212,46 @@ container_python -B - <<'PY'
 import json
 
 from prototype.graph_encoder.decoder_contract import (
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
     GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
-    checkpoint_schema_for,
-)
-from prototype.graph_encoder.node_generation_contract import (
     LEGACY_NODE_GENERATION_IDENTITY,
-    PAD_TERMINATED_UNCONSTRAINED_NODE_GENERATION_IDENTITY,
+    checkpoint_schema_for,
 )
 from prototype.graph_encoder.stage6_structure_only_producer import producer_config
 
 ordinal = GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
 legacy = producer_config()
 exploratory = producer_config(
-    node_generation_identity=PAD_TERMINATED_UNCONSTRAINED_NODE_GENERATION_IDENTITY,
+    node_generation_identity=AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
     exploratory_development_access=True,
-    smoke=True,
+    smoke_protocol=True,
 )
 
 assert legacy["operation_magnitude_parameterization"] == ordinal
 assert legacy["node_generation_identity"] == LEGACY_NODE_GENERATION_IDENTITY
 assert legacy["exploratory_development_access"] is False
 assert legacy["smoke_protocol"] is False
-assert legacy["result_eligible"] is True
+assert legacy["stage6_result_eligible"] is True
 assert exploratory["operation_magnitude_parameterization"] == ordinal
 assert exploratory["node_generation_identity"] == (
-    PAD_TERMINATED_UNCONSTRAINED_NODE_GENERATION_IDENTITY
+    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
 )
 assert exploratory["exploratory_development_access"] is True
 assert exploratory["smoke_protocol"] is True
 assert exploratory["protocol_final_epoch"] == 2
-assert exploratory["result_eligible"] is False
+assert exploratory["stage6_result_eligible"] is False
 print(json.dumps({
     "event": "ge1_exploratory_validation_identity_audit",
     "operation_magnitude_parameterization": ordinal,
-    "checkpoint_schema": checkpoint_schema_for(ordinal),
+    "checkpoint_schema": checkpoint_schema_for(
+        ordinal, AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+    ),
     "default_node_generation_identity": legacy["node_generation_identity"],
     "exploratory_node_generation_identity": exploratory["node_generation_identity"],
     "exploratory_development_access": exploratory["exploratory_development_access"],
     "smoke_protocol": exploratory["smoke_protocol"],
     "protocol_final_epoch": exploratory["protocol_final_epoch"],
-    "result_eligible": exploratory["result_eligible"],
+    "stage6_result_eligible": exploratory["stage6_result_eligible"],
 }, sort_keys=True, separators=(",", ":")), flush=True)
 PY
 
@@ -283,5 +283,5 @@ git diff --check
 test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
-printf '{"event":"ge1_exploratory_validation_terminal_success","commit":"%s","job_id":"%s","host":"%s","python":"3.8.13","pytorch":"1.11.0","execution_device":"cpu","operation_magnitude_parameterization":"GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1","node_generation_identity":"GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1","focused_tests":51,"focused_skips":0,"complete_graph_encoder_cuda_skips":6,"flat_baseline_expected_skips":4,"operation_template_manifest_accessed":false,"operation_template_train_payload_accessed":false,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"other_corpus_accessed":false,"scientific_training_performed":false,"engineering_training_performed":false,"checkpoint_written":false,"cad_kernel_used":false,"stage6_performed":false,"c8_or_later_performed":false,"slurm_submitted_by_implementation_agent":false}\n' \
+printf '{"event":"ge1_exploratory_validation_terminal_success","commit":"%s","job_id":"%s","host":"%s","python":"3.8.13","pytorch":"1.11.0","execution_device":"cpu","operation_magnitude_parameterization":"GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1","node_generation_identity":"GE1-PAD-TERMINATED-UNCONSTRAINED-NODES-v1","focused_tests":51,"focused_skips":0,"complete_graph_encoder_cuda_skips":6,"flat_baseline_expected_skips":4,"operation_template_manifest_accessed":false,"operation_template_train_payload_accessed":false,"development_accessed":false,"systematic_rr_accessed":false,"test_er_accessed":false,"iid_accessed":false,"history_depth_accessed":false,"geometry_extrapolation_accessed":false,"other_corpus_accessed":false,"scientific_training_performed":false,"engineering_training_performed":false,"checkpoint_written":false,"cad_kernel_used":false,"stage6_performed":false,"c8_or_later_performed":false,"submission_authorized_by_designated_reviewer":true,"runner_self_submitted":false}\n' \
   "$EXPECTED_COMMIT" "$SLURM_JOB_ID" "$(hostname)"
