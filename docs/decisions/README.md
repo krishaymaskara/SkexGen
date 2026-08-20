@@ -118,3 +118,12 @@ it superseded by a later ADR.
   every recorded result remain immutable and runnable. Authorizes
   implementation, synthetic validation, and documentation only — no scientific
   run, Stage 6, C8, repair, or protected access.
+- [ADR-0016: GE1 autonomous stop and unconstrained node
+  decoding](ADR-0016-ge1-autonomous-stop-and-unconstrained-node-decoding.md) —
+  accepted prospectively by designated reviewer Krishay Maskara; removes the
+  target node count and exact-length grammar mask under an opt-in identity,
+  learns one `<pad>` terminator, versions checkpoints and output positions, and
+  removes the non-identifying cross-arm train-ceiling gate without replacement.
+  It authorizes only implementation, bounded validation, and the read-only
+  train memory-to-count prerequisite probe—not a retrain, Stage 6, development,
+  RR, ER, or other protected access.

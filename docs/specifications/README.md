@@ -54,6 +54,11 @@ succeeded.
   read-only follow-up using the authenticated job-3355134 true-memory baseline;
   job `3355342` completed with a valid five-file artifact and no new threshold
   or downstream authority.
+- [GE1 autonomous stop node-generation
+  contract](ge1_autonomous_stop_node_generation.md) — opt-in `<pad>`
+  termination, unmasked eight-class node selection, one-terminator
+  supervision, real-node-only edge pairing, additive versioning, and the
+  prospective removal of the cross-arm train-ceiling predicate.
 
 Each specification labels requirements as implemented, proposed, frozen, or
 awaiting a decision. When its current-state language differs from the
@@ -109,3 +114,6 @@ awaiting a decision. When its current-state language differs from the
   and checkpoint-incompatibility contract for
   `GE1-OPERATION-MAGNITUDE-GRID-SOFTMAX-v1`; implementation and corpus-free
   validation only, with the ADR-0013 ordinal path preserved unchanged.
+- [GE1 autonomous stop node generation](ge1_autonomous_stop_node_generation.md):
+  the frozen identity, supervision, cap, scoring, legacy-preservation, and
+  validation contract from ADR-0016; no retrain or Stage 6 authority.
