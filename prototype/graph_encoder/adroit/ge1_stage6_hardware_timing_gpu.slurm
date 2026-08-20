@@ -31,6 +31,7 @@ trap terminal_timeout TERM
 : "${AVAILABLE_WALL_SECONDS_CPU:?reviewed CPU candidate wall time required}"
 : "${AVAILABLE_WALL_SECONDS_CUDA:?reviewed CUDA candidate wall time required}"
 : "${CUDA_VISIBLE_DEVICES:?Slurm must expose exactly one GPU}"
+: "${NODE_GENERATION_IDENTITY:?explicit node-generation identity required}"
 
 REPOSITORY="${REPOSITORY:-/scratch/network/km6349/SkexGen-stage6-structure-only}"
 CONTAINER="${CONTAINER:-/scratch/network/km6349/skexgen.sif}"
@@ -101,7 +102,8 @@ container_python -B -m prototype.graph_encoder.stage6_timing \
   --expected-commit "$EXPECTED_COMMIT" \
   --job-id "$SLURM_JOB_ID" \
   --available-wall-seconds-cpu "$AVAILABLE_WALL_SECONDS_CPU" \
-  --available-wall-seconds-cuda "$AVAILABLE_WALL_SECONDS_CUDA"
+  --available-wall-seconds-cuda "$AVAILABLE_WALL_SECONDS_CUDA" \
+  --node-generation-identity "$NODE_GENERATION_IDENTITY"
 
 (
   cd "$OUTPUT_DIR"

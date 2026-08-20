@@ -25,7 +25,6 @@ from prototype.graph_encoder.decoder_contract import (
     output_position_contract_version_for,
     shared_decoder_version_for,
 )
-from prototype.graph_encoder.errors import GraphEncoderError
 from prototype.graph_encoder.stage6_structure_only_producer import (
     _grammar_valid,
     optimization_reliability,
@@ -76,14 +75,15 @@ class AutonomousStopIdentityTests(unittest.TestCase):
             json.loads(frozen_encoder_config("flat").to_json()),
         )
 
-    def test_stop_identity_cannot_be_combined_with_an_old_magnitude_head(self):
+    def test_stop_identity_combines_with_ordinal_under_adr0017(self):
         values = autonomous_stop_frozen_encoder_config("flat").to_dict()
         values.pop("arm_identity")
         values["operation_magnitude_parameterization"] = (
-            "GE1-OPERATION-MAGNITUDE-POSITIVE-v1"
+            "GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1"
         )
-        with self.assertRaises(GraphEncoderError):
-            type(autonomous_stop_frozen_encoder_config("flat"))(**values).validate()
+        values["checkpoint_schema"] = "GE1-CHECKPOINT-v4"
+        config = type(autonomous_stop_frozen_encoder_config("flat"))(**values)
+        self.assertIsNone(config.validate())
 
     def test_output_metadata_adds_one_non_graph_terminator_position(self):
         metadata = output_position_contract_metadata(STOP)

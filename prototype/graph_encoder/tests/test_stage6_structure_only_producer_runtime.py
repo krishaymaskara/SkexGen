@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - authoritative runtime supplies torch
 
 from prototype.graph_encoder.decoder_contract import (
     AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
-    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
 )
 from prototype.graph_encoder.stage6_structure_only_producer import capacity_gate
 
@@ -32,7 +32,7 @@ def _models(seed):
     return build_matched_ge1_models(
         seed,
         operation_magnitude_parameterization=(
-            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
         node_generation_identity=AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
     )
@@ -171,6 +171,9 @@ class Stage6ProducerRuntimeTests(unittest.TestCase):
                 parameter_count=sum(value.numel() for value in model.parameters()),
                 training_arithmetic={"epochs": 200},
                 checkpoint_sha256=hashlib.sha256(generic.read_bytes()).hexdigest(),
+                node_generation_identity=(
+                    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+                ),
             )
             wrapper = Path(temporary) / "stage6.pt"
             save_stage6_checkpoint(generic, wrapper, identity)

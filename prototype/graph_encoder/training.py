@@ -294,6 +294,7 @@ def run_ge1_training(
     selected_checkpoint_epoch=CHECKPOINT_EPOCH,
     execution_device="cpu",
     timing_protocol_final_epoch=None,
+    smoke_protocol_final_epoch=None,
 ):
     """Run one common training loop for either arm.
 
@@ -302,6 +303,9 @@ def run_ge1_training(
     equal ``extended_final_epoch`` and an explicit sparse checkpoint schedule.
     A prospectively governed protocol may pass an equal
     ``fixed_protocol_final_epoch`` without changing any existing default.
+    ADR-0017's full-lifecycle smoke may pass the exact two-epoch
+    ``smoke_protocol_final_epoch`` budget; it is distinct from the generic C6
+    engineering-smoke path.
     Defaults preserve the C6/formal-C7 every-epoch behavior and fixed epoch-50
     selection. The diagnostic explicitly supplies no selected checkpoint.
     """
@@ -327,6 +331,7 @@ def run_ge1_training(
         extended_final_epoch=extended_final_epoch,
         fixed_protocol_final_epoch=fixed_protocol_final_epoch,
         timing_protocol_final_epoch=timing_protocol_final_epoch,
+        smoke_protocol_final_epoch=smoke_protocol_final_epoch,
     )
     checkpoint_schedule = _validate_checkpoint_schedule(
         final_epoch, checkpoint_epochs, checkpoint_coordinate
@@ -871,19 +876,31 @@ def _validate_execution_epoch(
     extended_final_epoch=None,
     fixed_protocol_final_epoch=None,
     timing_protocol_final_epoch=None,
+    smoke_protocol_final_epoch=None,
 ):
     if isinstance(final_epoch, bool) or not isinstance(final_epoch, int):
         raise GraphEncoderError("invalid_training_budget", "final epoch must be integer")
     if (
         sum(value is not None for value in (
             extended_final_epoch, fixed_protocol_final_epoch,
-            timing_protocol_final_epoch,
+            timing_protocol_final_epoch, smoke_protocol_final_epoch,
         )) > 1
     ):
         raise GraphEncoderError(
             "invalid_training_budget",
             "diagnostic and fixed-protocol budgets are mutually exclusive",
         )
+    if smoke_protocol_final_epoch is not None:
+        if (
+            smoke_protocol_final_epoch != 2
+            or final_epoch != smoke_protocol_final_epoch
+            or engineering_smoke
+        ):
+            raise GraphEncoderError(
+                "invalid_training_budget",
+                "Stage 6 lifecycle smoke must use exactly two epochs",
+            )
+        return
     if timing_protocol_final_epoch is not None:
         if (
             timing_protocol_final_epoch != 5

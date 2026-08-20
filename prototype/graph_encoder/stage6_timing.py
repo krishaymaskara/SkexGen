@@ -17,6 +17,11 @@ except ImportError:  # Pure timing contracts remain locally testable.
     torch = None
 
 from .errors import GraphEncoderError
+from .decoder_contract import (
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    LEGACY_NODE_GENERATION_IDENTITY,
+    NODE_GENERATION_IDENTITIES,
+)
 from .stage6_device import (
     CUBLAS_WORKSPACE_CONFIG,
     DEVICE_POLICY_VERSION,
@@ -221,13 +226,18 @@ def _measurement_record(raw):
 def build_timing_record(*, source_commit, source_tree_sha256,
                         train_index_identity_sha256,
                         train_payload_digests_sha256, runtime_identities,
-                        raw_measurements, available_wall_seconds_by_device):
+                        raw_measurements, available_wall_seconds_by_device,
+                        node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY):
     """Build one outcome-free timing-v2 record and select device/seeds."""
 
     _hex(source_commit, 40, "source commit")
     _hex(source_tree_sha256, 64, "source digest")
     _hex(train_index_identity_sha256, 64, "train index digest")
     _hex(train_payload_digests_sha256, 64, "train payload digest")
+    if node_generation_identity not in NODE_GENERATION_IDENTITIES:
+        raise GraphEncoderError(
+            "invalid_stage6_timing", "node-generation identity differs"
+        )
     if (
         set(runtime_identities) != set(SUPPORTED_EXECUTION_DEVICES)
         or set(raw_measurements) != set(SUPPORTED_EXECUTION_DEVICES)
@@ -300,6 +310,10 @@ def build_timing_record(*, source_commit, source_tree_sha256,
         "version": TIMING_VERSION,
         "measurement_version": TIMING_MEASUREMENT_VERSION,
         "protocol_version": PROTOCOL_VERSION,
+        "operation_magnitude_parameterization": (
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        "node_generation_identity": node_generation_identity,
         "selection_algorithm": SELECTION_ALGORITHM,
         "source_identity": {
             "source_commit": source_commit,
@@ -336,6 +350,7 @@ def validate_timing_evidence(record, *, required_device=None):
 
     required = {
         "version", "measurement_version", "protocol_version",
+        "operation_magnitude_parameterization", "node_generation_identity",
         "selection_algorithm", "source_identity", "train_input_identity",
         "measured_before_scientific_outcomes", "observed_results_used",
         "development_accessed", "train_payload_accessed", "candidate_devices",
@@ -351,6 +366,9 @@ def validate_timing_evidence(record, *, required_device=None):
         record["version"] != TIMING_VERSION
         or record["measurement_version"] != TIMING_MEASUREMENT_VERSION
         or record["protocol_version"] != PROTOCOL_VERSION
+        or record["operation_magnitude_parameterization"]
+        != GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        or record["node_generation_identity"] not in NODE_GENERATION_IDENTITIES
         or record["selection_algorithm"] != SELECTION_ALGORITHM
         or record["measured_before_scientific_outcomes"] is not True
         or record["observed_results_used"] is not False
@@ -452,6 +470,7 @@ def validate_timing_evidence(record, *, required_device=None):
         train_payload_digests_sha256=train["payload_digests_sha256"],
         runtime_identities=runtimes, raw_measurements=raw,
         available_wall_seconds_by_device=walls,
+        node_generation_identity=record["node_generation_identity"],
     )
     if rebuilt != record:
         raise GraphEncoderError("invalid_stage6_timing", "recomputed timing differs")
@@ -466,6 +485,10 @@ def validate_timing_evidence(record, *, required_device=None):
         "timing_hardware_identity": record["selected_timing_hardware_identity"],
         "fallback_invoked": record["fallback_invoked"],
         "fallback_reason": record["fallback_reason"],
+        "operation_magnitude_parameterization": record[
+            "operation_magnitude_parameterization"
+        ],
+        "node_generation_identity": record["node_generation_identity"],
         "verification_status": "pass",
     }
 
@@ -532,7 +555,8 @@ def verify_timing_artifact(path, *, required_device=None):
 
 
 def _bounded_measurement(train_examples, *, arm, device, repository_root,
-                         expected_commit, work_root, measurement_name):
+                         expected_commit, work_root, measurement_name,
+                         node_generation_identity):
     from .config import GE1TrainingConfig
     from .grid_magnitude import GRID_MAGNITUDE_PARAMETERIZATION
     from .model import build_matched_ge1_models
@@ -540,7 +564,9 @@ def _bounded_measurement(train_examples, *, arm, device, repository_root,
 
     configure_stage6_runtime(torch, device, seed=2026)
     flat, graph = build_matched_ge1_models(
-        2026, operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION
+        2026,
+        operation_magnitude_parameterization=GRID_MAGNITUDE_PARAMETERIZATION,
+        node_generation_identity=node_generation_identity,
     )
     model = (flat if arm == "flat" else graph).to(device)
     directory = Path(work_root) / measurement_name
@@ -566,13 +592,18 @@ def _bounded_measurement(train_examples, *, arm, device, repository_root,
 def run_hardware_timing(*, train_index, train_root, output_dir,
                         repository_root, expected_commit, job_id,
                         available_wall_seconds_cpu,
-                        available_wall_seconds_cuda):
+                        available_wall_seconds_cuda,
+                        node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY):
     if torch is None:
         raise RuntimeError("Stage 6 hardware timing requires PyTorch")
     import sys
     if sys.version_info[:3] != (3, 8, 13):
         raise GraphEncoderError("environment_mismatch", "Python 3.8.13 required")
     job_id = _job_id(job_id)
+    if node_generation_identity not in NODE_GENERATION_IDENTITIES:
+        raise GraphEncoderError(
+            "invalid_stage6_timing", "node-generation identity differs"
+        )
     from .pilot import _source_identity
     from .stage6_narrow_loader import load_stage6_train
 
@@ -596,6 +627,7 @@ def run_hardware_timing(*, train_index, train_root, output_dir,
                 work_root=work, measurement_name="{}-{}-warmup".format(
                     device.replace(":", "-"), arm
                 ),
+                node_generation_identity=node_generation_identity,
             )
             durations = []
             for repetition in range(1, TIMED_REPETITIONS + 1):
@@ -606,6 +638,7 @@ def run_hardware_timing(*, train_index, train_root, output_dir,
                     measurement_name="{}-{}-timed-{}".format(
                         device.replace(":", "-"), arm, repetition
                     ),
+                    node_generation_identity=node_generation_identity,
                 ))
             raw[device][arm] = {"warmup": warmup, "timed": durations}
     record = build_timing_record(
@@ -620,6 +653,7 @@ def run_hardware_timing(*, train_index, train_root, output_dir,
             "cpu": available_wall_seconds_cpu,
             "cuda:0": available_wall_seconds_cuda,
         },
+        node_generation_identity=node_generation_identity,
     )
     result = create_timing_artifact(record, output_dir, job_id=job_id)
     shutil.rmtree(str(work))
@@ -636,6 +670,11 @@ def main(argv=None):
     parser.add_argument("--job-id", default=os.environ.get("SLURM_JOB_ID"))
     parser.add_argument("--available-wall-seconds-cpu", type=float, required=True)
     parser.add_argument("--available-wall-seconds-cuda", type=float, required=True)
+    parser.add_argument(
+        "--node-generation-identity",
+        choices=NODE_GENERATION_IDENTITIES,
+        default=LEGACY_NODE_GENERATION_IDENTITY,
+    )
     args = parser.parse_args(argv)
     result = run_hardware_timing(
         train_index=args.train_index, train_root=args.train_root,
@@ -643,6 +682,7 @@ def main(argv=None):
         expected_commit=args.expected_commit, job_id=args.job_id,
         available_wall_seconds_cpu=args.available_wall_seconds_cpu,
         available_wall_seconds_cuda=args.available_wall_seconds_cuda,
+        node_generation_identity=args.node_generation_identity,
     )
     print(_canonical({"event": "stage6_hardware_timing_completed", **result}),
           flush=True)

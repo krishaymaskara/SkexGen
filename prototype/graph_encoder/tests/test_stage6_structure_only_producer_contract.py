@@ -11,8 +11,8 @@ import unittest
 
 from prototype.graph_encoder.errors import GraphEncoderError
 from prototype.graph_encoder.decoder_contract import (
-    AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
-    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    LEGACY_NODE_GENERATION_IDENTITY,
 )
 from prototype.graph_encoder.stage6_structure_only import (
     ARMS, FALLBACK_SEEDS, FULL_SEEDS, summarize_execution,
@@ -90,6 +90,14 @@ def _payload():
     value.update({
         "producer_protocol": PRODUCER_VERSION,
         "execution_record_version": EXECUTION_RECORD_VERSION,
+        "operation_magnitude_parameterization": (
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        "node_generation_identity": LEGACY_NODE_GENERATION_IDENTITY,
+        "exploratory_development_access": False,
+        "smoke_protocol": False,
+        "protocol_final_epoch": 200,
+        "stage6_result_eligible": True,
         "source": {"commit": "a" * 40},
         "input_declaration": {"reviewed": True},
     })
@@ -109,6 +117,21 @@ def _payload():
             (row["arm"], row["seed"])
         ]["pass_before_train_ceiling"]
     value["optimization_reliability"] = reliability
+    from prototype.graph_encoder.stage6_structure_only import (
+        structure_memory_gate_for_cohort,
+    )
+    train_memory = structure_memory_gate_for_cohort(scored, FULL_SEEDS, "train")
+    value["train_side_gate_evidence"] = {
+        "optimization_pass": reliability["pass"],
+        "structural_memory_pass": all(
+            row["pass"] for row in train_memory.values()
+        ),
+        "overall_pass": (
+            reliability["pass"]
+            and all(row["pass"] for row in train_memory.values())
+        ),
+        "exploratory_continue_applied": False,
+    }
     return value
 
 
@@ -236,11 +259,11 @@ class ProducerPureContractTests(unittest.TestCase):
         self.assertEqual(row["epoch"], 200)
         self.assertEqual(
             row["operation_magnitude_parameterization"],
-            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
         )
         self.assertEqual(
             row["node_generation_identity"],
-            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
+            LEGACY_NODE_GENERATION_IDENTITY,
         )
         extra = dict(row, unexpected=True)
         with self.assertRaises(GraphEncoderError):

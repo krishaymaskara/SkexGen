@@ -30,6 +30,16 @@ trap terminal_timeout TERM
 : "${DEVELOPMENT_INPUT_ROOT:?narrow authorized development input root required}"
 : "${RUN_PARENT:?governed output parent required}"
 : "${TIMING_EVIDENCE:?prospective timing evidence in RUN_PARENT required}"
+: "${NODE_GENERATION_IDENTITY:?explicit node-generation identity required}"
+: "${EXPLORATORY_DEVELOPMENT_ACCESS:?explicit exploratory marker required}"
+
+if [[ "$EXPLORATORY_DEVELOPMENT_ACCESS" != "true" && \
+      "$EXPLORATORY_DEVELOPMENT_ACCESS" != "false" ]]; then
+  infrastructure_failure 64
+fi
+if [[ -n "${SMOKE_EPOCHS:-}" && "$SMOKE_EPOCHS" != "2" ]]; then
+  infrastructure_failure 64
+fi
 
 REPOSITORY="${REPOSITORY:-/scratch/network/km6349/SkexGen-stage6-structure-only}"
 CONTAINER="${CONTAINER:-/scratch/network/km6349/skexgen.sif}"
@@ -78,13 +88,17 @@ test -z "$(git rev-parse --show-superproject-working-tree)"
 git cat-file -e "$EXPECTED_COMMIT^{commit}"
 
 # This pure validation is deliberately before either scientific root is read.
-container_python -B - "$TIMING_EVIDENCE" <<'PY'
+container_python -B - "$TIMING_EVIDENCE" "$NODE_GENERATION_IDENTITY" <<'PY'
 import json
 import sys
 from pathlib import Path
 from prototype.graph_encoder.stage6_structure_only_producer import validate_timing_evidence
 timing = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 validate_timing_evidence(timing, allow_fallback=True, required_device="cpu")
+assert timing["node_generation_identity"] == sys.argv[2]
+assert timing["operation_magnitude_parameterization"] == (
+    "GE1-OPERATION-MAGNITUDE-GRID-ORDINAL-v1"
+)
 print('{"event":"stage6_structure_only_prospective_gates_passed"}', flush=True)
 PY
 
@@ -154,6 +168,14 @@ bash -n "$RUNNER"
 git show --check "$EXPECTED_COMMIT" --
 
 set +e
+smoke_args=()
+if [[ -n "${SMOKE_EPOCHS:-}" ]]; then
+  smoke_args=(--smoke-epochs "$SMOKE_EPOCHS")
+fi
+exploratory_args=()
+if [[ "$EXPLORATORY_DEVELOPMENT_ACCESS" = "true" ]]; then
+  exploratory_args=(--exploratory-development-access)
+fi
 container_python -B -m prototype.graph_encoder.stage6_structure_only_producer \
   --train-root "$TRAIN_ROOT" \
   --train-index "$TRAIN_INDEX" \
@@ -166,7 +188,10 @@ container_python -B -m prototype.graph_encoder.stage6_structure_only_producer \
   --expected-commit "$EXPECTED_COMMIT" \
   --job-id "$SLURM_JOB_ID" \
   --allow-fallback \
-  --require-selected-device cpu
+  --require-selected-device cpu \
+  --node-generation-identity "$NODE_GENERATION_IDENTITY" \
+  "${exploratory_args[@]}" \
+  "${smoke_args[@]}"
 producer_status=$?
 set -e
 if [[ "$producer_status" -eq 42 ]]; then
@@ -202,10 +227,10 @@ print(json.dumps({"event":"stage6_structure_only_producer_verified", **verificat
                   "interpretation_category":summary["interpretation_category"]},
                  sort_keys=True, separators=(",", ":")), flush=True)
 if summary["interpretation_category"] == "inconclusive":
-    print('{"event":"stage6_structure_only_producer_scientific_failure"}', flush=True)
+    print('{"event":"stage6_structure_only_producer_exploratory_inconclusive"}', flush=True)
 PY
 
 test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
 test -z "$(git status --porcelain=v1 --untracked-files=all)"
-printf '{"event":"stage6_structure_only_producer_terminal_success","commit":"%s","job_id":"%s","artifact":"%s","checkpoint_bundle":"%s"}\n' \
-  "$EXPECTED_COMMIT" "$SLURM_JOB_ID" "$OUTPUT_DIR" "$CHECKPOINT_BUNDLE_DIR"
+printf '{"event":"stage6_structure_only_producer_terminal_success","commit":"%s","job_id":"%s","artifact":"%s","checkpoint_bundle":"%s","exploratory_development_access":"%s","smoke_epochs":"%s"}\n' \
+  "$EXPECTED_COMMIT" "$SLURM_JOB_ID" "$OUTPUT_DIR" "$CHECKPOINT_BUNDLE_DIR" "$EXPLORATORY_DEVELOPMENT_ACCESS" "${SMOKE_EPOCHS:-none}"

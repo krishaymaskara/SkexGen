@@ -26,7 +26,9 @@ except ImportError:  # Pure contracts and artifact verification remain usable.
 from .errors import GraphEncoderError
 from .decoder_contract import (
     AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY,
-    GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    LEGACY_NODE_GENERATION_IDENTITY,
+    NODE_GENERATION_IDENTITIES,
 )
 from .stage6_structure_only import (
     ARMS,
@@ -66,6 +68,7 @@ CHECKPOINT_IDENTITY_FIELDS = {
 }
 
 EPOCHS = 200
+SMOKE_EPOCHS = 2
 BATCH_SIZE = 8
 LEARNING_RATE = 0.001
 WEIGHT_DECAY = 0.0
@@ -104,7 +107,28 @@ FORBIDDEN_INPUT_TOKENS = (
 )
 
 
-def producer_config():
+def _validate_node_generation_identity(value):
+    if value not in NODE_GENERATION_IDENTITIES:
+        raise GraphEncoderError(
+            "invalid_stage6_node_generation_identity",
+            "node-generation identity differs",
+        )
+    return value
+
+
+def producer_config(node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+                    *, exploratory_development_access=False,
+                    smoke_protocol=False):
+    node_generation_identity = _validate_node_generation_identity(
+        node_generation_identity
+    )
+    if not isinstance(exploratory_development_access, bool) or not isinstance(
+        smoke_protocol, bool
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_exploratory_mode", "exploratory markers differ"
+        )
+    protocol_final_epoch = SMOKE_EPOCHS if smoke_protocol else EPOCHS
     return {
         "producer_version": PRODUCER_VERSION,
         "execution_record_version": EXECUTION_RECORD_VERSION,
@@ -114,13 +138,13 @@ def producer_config():
         "default_seeds": list(FULL_SEEDS),
         "fallback_seeds": list(FALLBACK_SEEDS),
         "arms": list(ARMS),
-        "epochs": EPOCHS,
+        "epochs": protocol_final_epoch,
         "batch_size": BATCH_SIZE,
         "optimizer": "AdamW",
         "learning_rate": LEARNING_RATE,
         "weight_decay": WEIGHT_DECAY,
         "gradient_clip_norm": CLIP_NORM,
-        "fixed_checkpoint_epoch": EPOCHS,
+        "fixed_checkpoint_epoch": protocol_final_epoch,
         "capacity_difference_max": CAPACITY_DIFFERENCE_MAX,
         "plateau_window_epochs": 5,
         "plateau_relative_improvement_threshold": 0.01,
@@ -129,10 +153,14 @@ def producer_config():
         "train_ceiling_cross_arm_gate_applied": False,
         "train_ceiling_cross_arm_difference_role": "diagnostic_only",
         "operation_magnitude_parameterization": (
-            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
-        "node_generation_identity": (
-            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+        "node_generation_identity": node_generation_identity,
+        "exploratory_development_access": exploratory_development_access,
+        "smoke_protocol": smoke_protocol,
+        "protocol_final_epoch": protocol_final_epoch,
+        "stage6_result_eligible": not (
+            exploratory_development_access or smoke_protocol
         ),
         "geometry_can_determine_optimization_reliability": False,
         "complete_geometric_validity_can_determine_optimization_reliability": False,
@@ -364,11 +392,19 @@ def capacity_gate(flat_count, graph_count):
     }
 
 
-def optimization_reliability(training_runs, train_scores, retained_seeds):
+def optimization_reliability(training_runs, train_scores, retained_seeds, *,
+                             protocol_final_epoch=EPOCHS,
+                             smoke_protocol=False):
     """Apply arm-internal checks; report cross-arm train scores diagnostically."""
 
     from .training import plateau_state
 
+    if protocol_final_epoch not in (EPOCHS, SMOKE_EPOCHS) or (
+        smoke_protocol is not (protocol_final_epoch == SMOKE_EPOCHS)
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_optimization", "protocol epoch marker differs"
+        )
     runs = {(row["arm"], row["seed"]): row for row in training_runs}
     expected = {(arm, seed) for arm in ARMS for seed in retained_seeds}
     if set(runs) != expected or len(training_runs) != len(expected):
@@ -379,12 +415,21 @@ def optimization_reliability(training_runs, train_scores, retained_seeds):
         losses = tuple(row.get("epoch_losses", ()))
         gradients = tuple(row.get("epoch_gradient_norms", ()))
         finite = (
-            len(losses) == EPOCHS and len(gradients) == EPOCHS
+            len(losses) == protocol_final_epoch
+            and len(gradients) == protocol_final_epoch
             and all(math.isfinite(float(value)) for value in losses + gradients)
         )
         plateau = plateau_state(losses) if finite else None
-        plateau_by_200 = finite and plateau.first_plateau_epoch is not None
-        fixed = row.get("completed_epoch") == EPOCHS and row.get("checkpoint_epoch") == EPOCHS
+        plateau_by_200 = (
+            not smoke_protocol
+            and finite
+            and plateau.first_plateau_epoch is not None
+        )
+        fixed = (
+            row.get("completed_epoch") == protocol_final_epoch
+            and row.get("checkpoint_epoch") == protocol_final_epoch
+            and not smoke_protocol
+        )
         per_run.append({
             "arm": arm, "seed": seed, "finite_losses_and_gradients": finite,
             "first_plateau_epoch": None if plateau is None else plateau.first_plateau_epoch,
@@ -411,6 +456,8 @@ def optimization_reliability(training_runs, train_scores, retained_seeds):
         })
     overall = all(row["pass_before_train_ceiling"] for row in per_run)
     return {
+        "protocol_final_epoch": protocol_final_epoch,
+        "smoke_protocol": smoke_protocol,
         "runs": per_run,
         "train_ceiling_comparisons": ceilings,
         "geometry_used": False,
@@ -423,6 +470,8 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
                         model_config, partition_identity,
                         partition_hashes, parameter_count,
                         training_arithmetic, checkpoint_sha256,
+                        protocol_final_epoch=EPOCHS,
+                        node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
                         execution_device="cpu", runtime_identity=None,
                         timing_hardware_identity=None,
                         cuda_rng_preserved=False):
@@ -440,6 +489,13 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
             "execution_device": execution_device,
             "historical_fixture_default": True,
         }
+    node_generation_identity = _validate_node_generation_identity(
+        node_generation_identity
+    )
+    if protocol_final_epoch not in (EPOCHS, SMOKE_EPOCHS):
+        raise GraphEncoderError(
+            "invalid_stage6_checkpoint", "protocol epoch differs"
+        )
     record = {
         "version": CHECKPOINT_VERSION,
         "protocol_version": PROTOCOL_VERSION,
@@ -447,14 +503,12 @@ def checkpoint_identity(*, arm, seed, source_commit, source_digest,
         "source_digest": source_digest,
         "arm": arm,
         "seed": seed,
-        "epoch": EPOCHS,
+        "epoch": protocol_final_epoch,
         "model_config": model_config,
         "operation_magnitude_parameterization": (
-            GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
         ),
-        "node_generation_identity": (
-            AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
-        ),
+        "node_generation_identity": node_generation_identity,
         "training_partition_identity": partition_identity,
         "training_partition_hashes": partition_hashes,
         "training_arithmetic": training_arithmetic,
@@ -483,11 +537,22 @@ def validate_checkpoint_identity(record, *, expected):
     if (
         record.get("version") != CHECKPOINT_VERSION
         or record.get("protocol_version") != PROTOCOL_VERSION
-        or record.get("epoch") != EPOCHS
+        or record.get("epoch") not in (EPOCHS, SMOKE_EPOCHS)
         or record.get("operation_magnitude_parameterization")
-        != GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
-        or record.get("node_generation_identity")
-        != AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
+        != GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        or record.get("node_generation_identity") not in NODE_GENERATION_IDENTITIES
+        or record.get("model_config", {}).get(
+            "operation_magnitude_parameterization",
+            record.get("operation_magnitude_parameterization"),
+        ) != record.get("operation_magnitude_parameterization")
+        or record.get("model_config", {}).get(
+            "node_generation_identity", record.get("node_generation_identity")
+        )
+        != record.get("node_generation_identity")
+        or record.get("training_arithmetic", {}).get("epochs")
+        != record.get("epoch")
+        or record.get("training_arithmetic", {}).get("smoke_protocol", False)
+        is not (record.get("epoch") == SMOKE_EPOCHS)
         or record.get("external_checkpoint") is not False
         or record.get("warm_start") is not False
         or record.get("checkpoint_reuse") is not False
@@ -714,6 +779,13 @@ def create_producer_artifact(payload, checkpoint_identities, output_dir, *,
         raise GraphEncoderError("unsafe_stage6_producer_output", str(staging))
     scored, summary = summarize_execution(payload)
     del scored, summary  # Validation is outcome-independent.
+    config = producer_config(
+        payload.get("node_generation_identity"),
+        exploratory_development_access=payload.get(
+            "exploratory_development_access"
+        ),
+        smoke_protocol=payload.get("smoke_protocol"),
+    )
     staging.mkdir()
     try:
         resolved = {
@@ -724,7 +796,7 @@ def create_producer_artifact(payload, checkpoint_identities, output_dir, *,
             "producer_version": PRODUCER_VERSION,
             "execution_record_version": EXECUTION_RECORD_VERSION,
             "producer_artifact_version": PRODUCER_ARTIFACT_VERSION,
-            "producer_config": producer_config(),
+            "producer_config": config,
             "checkpoint_identity_count": len(checkpoint_identities),
             "checkpoint_bundle_reference": checkpoint_bundle_reference,
             "job_id": job_id,
@@ -743,6 +815,11 @@ def create_producer_artifact(payload, checkpoint_identities, output_dir, *,
         ordinary = PRODUCER_FILES[:4]
         manifest = {
             "schema_version": PRODUCER_ARTIFACT_VERSION,
+            "exploratory_development_access": payload[
+                "exploratory_development_access"
+            ],
+            "smoke_protocol": payload["smoke_protocol"],
+            "stage6_result_eligible": payload["stage6_result_eligible"],
             "artifacts": [{
                 "path": name,
                 "byte_size": (staging / name).stat().st_size,
@@ -815,9 +892,17 @@ def verify_producer_artifact(path, *, return_payload=False):
     manifest = _load_json_file(
         root / "artifact_manifest.json", "invalid_stage6_producer_artifact"
     )
+    resolved = _load_json_file(
+        root / "resolved_config.json", "invalid_stage6_producer_artifact"
+    )
     ordinary = PRODUCER_FILES[:4]
     if (
         manifest.get("schema_version") != PRODUCER_ARTIFACT_VERSION
+        or manifest.get("exploratory_development_access")
+        is not resolved.get("exploratory_development_access")
+        or manifest.get("smoke_protocol") is not resolved.get("smoke_protocol")
+        or manifest.get("stage6_result_eligible")
+        is not resolved.get("stage6_result_eligible")
         or tuple(row.get("path") for row in manifest.get("artifacts", ())) != ordinary
     ):
         raise GraphEncoderError("invalid_stage6_producer_artifact", "manifest differs")
@@ -834,9 +919,6 @@ def verify_producer_artifact(path, *, return_payload=False):
     for digest, name in lines:
         if _sha(root / name) != digest:
             raise GraphEncoderError("invalid_stage6_producer_artifact", "checksum differs")
-    resolved = _load_json_file(
-        root / "resolved_config.json", "invalid_stage6_producer_artifact"
-    )
     training = _read_jsonl(root / "training_histories.jsonl")
     checkpoints = _read_jsonl(root / "checkpoint_identities.jsonl")
     families = _read_jsonl(root / "family_records.jsonl")
@@ -844,7 +926,13 @@ def verify_producer_artifact(path, *, return_payload=False):
         resolved.get("producer_version") != PRODUCER_VERSION
         or resolved.get("execution_record_version") != EXECUTION_RECORD_VERSION
         or resolved.get("producer_artifact_version") != PRODUCER_ARTIFACT_VERSION
-        or resolved.get("producer_config") != producer_config()
+        or resolved.get("producer_config") != producer_config(
+            resolved.get("node_generation_identity"),
+            exploratory_development_access=resolved.get(
+                "exploratory_development_access"
+            ),
+            smoke_protocol=resolved.get("smoke_protocol"),
+        )
         or resolved.get("checkpoint_identity_count") != len(checkpoints)
         or not isinstance(resolved.get("checkpoint_bundle_reference"), dict)
         or not str(resolved.get("job_id", "")).isdigit()
@@ -958,10 +1046,39 @@ def verify_producer_artifact(path, *, return_payload=False):
                     "invalid_stage6_producer_artifact", "train ceiling matrix"
                 )
             train_scores[(arm, seed)] = sum(values) / float(len(values))
-    reliability = optimization_reliability(training, train_scores, retained)
+    reliability = optimization_reliability(
+        training,
+        train_scores,
+        retained,
+        protocol_final_epoch=payload.get("protocol_final_epoch", EPOCHS),
+        smoke_protocol=payload.get("smoke_protocol", False),
+    )
     if reliability != payload.get("optimization_reliability"):
         raise GraphEncoderError(
             "invalid_stage6_producer_artifact", "optimization evidence differs"
+        )
+    from .stage6_structure_only import structure_memory_gate_for_cohort
+    train_memory = structure_memory_gate_for_cohort(scored, retained, "train")
+    train_memory_pass = all(row["pass"] for row in train_memory.values())
+    train_side_pass = reliability["pass"] and train_memory_pass
+    expected_train_side = {
+        "optimization_pass": reliability["pass"],
+        "structural_memory_pass": train_memory_pass,
+        "overall_pass": train_side_pass,
+        "exploratory_continue_applied": (
+            payload.get("exploratory_development_access") is True
+            and not train_side_pass
+        ),
+    }
+    if (
+        payload.get("train_side_gate_evidence") != expected_train_side
+        or (
+            not train_side_pass
+            and payload.get("exploratory_development_access") is not True
+        )
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_producer_artifact", "train-side evidence differs"
         )
     reliability_runs = {
         (row["arm"], row["seed"]): row for row in reliability["runs"]
@@ -996,6 +1113,11 @@ def verify_producer_artifact(path, *, return_payload=False):
         "checkpoint_identity_count": len(checkpoints),
         "family_record_count": len(families),
         "outcome_controls_validity": False,
+        "exploratory_development_access": payload.get(
+            "exploratory_development_access"
+        ),
+        "smoke_protocol": payload.get("smoke_protocol"),
+        "stage6_result_eligible": payload.get("stage6_result_eligible"),
         "producer_artifact_sha256": _sha(root / "SHA256SUMS"),
         "checkpoint_bundle_sha256": bundle["bundle_sha256"],
     }
@@ -1015,10 +1137,11 @@ def save_stage6_checkpoint(generic_checkpoint_path, stage6_path, identity):
             "invalid_stage6_checkpoint", "generic checkpoint hash differs"
         )
     generic = torch.load(str(generic_checkpoint_path), map_location="cpu")
+    final_epoch = identity["epoch"]
     if (
         not isinstance(generic, dict)
-        or generic.get("completed_epoch") != EPOCHS
-        or generic.get("selected_checkpoint_epoch") != EPOCHS
+        or generic.get("completed_epoch") != final_epoch
+        or generic.get("selected_checkpoint_epoch") != final_epoch
         or generic.get("encoder_type") != identity["arm"]
         or generic.get("seed") != identity["seed"]
         or generic.get("model_config") != identity["model_config"]
@@ -1101,7 +1224,7 @@ def load_stage6_checkpoint(path, *, expected_identity, model, optimizer,
             partition_identity=partition_identity,
             expected_code_revision=expected_identity["source_commit"],
             restore_rng=restore_rng,
-            expected_selected_checkpoint_epoch=EPOCHS,
+            expected_selected_checkpoint_epoch=expected_identity["epoch"],
             map_location=execution_device,
         )
     finally:
@@ -1109,7 +1232,7 @@ def load_stage6_checkpoint(path, *, expected_identity, model, optimizer,
             os.unlink(temporary_name)
         except OSError:
             pass
-    if resume.completed_epoch != EPOCHS:
+    if resume.completed_epoch != expected_identity["epoch"]:
         raise GraphEncoderError("invalid_stage6_checkpoint", "epoch differs")
     return resume
 
@@ -1390,7 +1513,8 @@ def generate_autonomous_records(model, examples, *, cohort, arm, seed,
 
 
 def _training_run_record(training, *, arm, seed, parameter_count,
-                         capacity_pass, execution_device="cpu"):
+                         capacity_pass, protocol_final_epoch=EPOCHS,
+                         smoke_protocol=False, execution_device="cpu"):
     losses = [float(row.mean_loss) for row in training.epoch_records]
     gradient_norms = []
     for row in training.epoch_records:
@@ -1404,13 +1528,13 @@ def _training_run_record(training, *, arm, seed, parameter_count,
         "arm": arm,
         "seed": seed,
         "fresh_initialization": True,
-        "epochs": EPOCHS,
+        "epochs": protocol_final_epoch,
         "batch_size": BATCH_SIZE,
         "optimizer": "AdamW",
         "learning_rate": LEARNING_RATE,
         "weight_decay": WEIGHT_DECAY,
         "gradient_clip_norm": CLIP_NORM,
-        "checkpoint_epoch": EPOCHS,
+        "checkpoint_epoch": protocol_final_epoch,
         "early_stopping": False,
         "development_used_for_selection": False,
         "warm_start": False,
@@ -1426,7 +1550,8 @@ def _training_run_record(training, *, arm, seed, parameter_count,
         "epoch_losses": losses,
         "epoch_gradient_norms": gradient_norms,
         "first_plateau_epoch": training.plateau_state.first_plateau_epoch,
-        "selected_checkpoint_is_fixed_epoch_200": True,
+        "selected_checkpoint_is_fixed_epoch_200": not smoke_protocol,
+        "smoke_protocol": smoke_protocol,
         "checkpoint_reuse": False,
         "execution_device": execution_device,
     }
@@ -1435,7 +1560,8 @@ def _training_run_record(training, *, arm, seed, parameter_count,
 def _train_arm(model, train_examples, *, work_root, repository_root,
                expected_commit, train_input_evidence, parameter_count,
                capacity_pass, execution_device, runtime_identity,
-               timing_hardware):
+               timing_hardware, protocol_final_epoch=EPOCHS,
+               smoke_protocol=False):
     from .config import GE1TrainingConfig
     from .model import build_ge1_model
     from .provenance import training_partition_identity
@@ -1453,17 +1579,22 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
         checkpoint_directory=checkpoint_dir,
         repository_root=repository_root,
         expected_commit=expected_commit,
-        final_epoch=EPOCHS,
+        final_epoch=protocol_final_epoch,
         engineering_smoke=False,
-        checkpoint_epochs=(EPOCHS,),
-        fixed_protocol_final_epoch=EPOCHS,
+        checkpoint_epochs=(protocol_final_epoch,),
+        fixed_protocol_final_epoch=(
+            None if smoke_protocol else protocol_final_epoch
+        ),
+        smoke_protocol_final_epoch=(
+            protocol_final_epoch if smoke_protocol else None
+        ),
         checkpoint_coordinate="epoch",
-        selected_checkpoint_epoch=EPOCHS,
+        selected_checkpoint_epoch=protocol_final_epoch,
         execution_device=execution_device,
     )
     if (
-        training.completed_epoch != EPOCHS
-        or len(training.epoch_records) != EPOCHS
+        training.completed_epoch != protocol_final_epoch
+        or len(training.epoch_records) != protocol_final_epoch
         or len(training.checkpoint_paths) != 1
         or training.selected_experimental_checkpoint != training.checkpoint_paths[0]
     ):
@@ -1475,7 +1606,8 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
     )
     provenance = training.provenance
     arithmetic = {
-        "epochs": EPOCHS,
+        "epochs": protocol_final_epoch,
+        "smoke_protocol": smoke_protocol,
         "batch_size": BATCH_SIZE,
         "optimizer": "AdamW",
         "learning_rate": LEARNING_RATE,
@@ -1500,6 +1632,8 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
         parameter_count=parameter_count,
         training_arithmetic=arithmetic,
         checkpoint_sha256=generic_sha,
+        protocol_final_epoch=protocol_final_epoch,
+        node_generation_identity=model.config.node_generation_identity,
         execution_device=execution_device,
         runtime_identity=runtime_identity,
         timing_hardware_identity=timing_hardware,
@@ -1510,7 +1644,10 @@ def _train_arm(model, train_examples, *, work_root, repository_root,
     identity = {**identity, "stage6_wrapper_sha256": wrapper_sha}
     training_record = _training_run_record(
         training, arm=arm, seed=seed, parameter_count=parameter_count,
-        capacity_pass=capacity_pass, execution_device=execution_device,
+        capacity_pass=capacity_pass,
+        protocol_final_epoch=protocol_final_epoch,
+        smoke_protocol=smoke_protocol,
+        execution_device=execution_device,
     )
     return {
         "trained_model": model,
@@ -1544,7 +1681,7 @@ def _recover_arm(trained, *, execution_device):
         execution_device=execution_device,
         expected_wrapper_sha256=identity["stage6_wrapper_sha256"],
     )
-    if resume.completed_epoch != EPOCHS:
+    if resume.completed_epoch != identity["epoch"]:
         raise GraphEncoderError("invalid_stage6_checkpoint", "recovery differs")
     expected_state = model.state_dict()
     recovered_state = fresh.state_dict()
@@ -1604,9 +1741,25 @@ def run_stage6_producer(*, train_index, train_root, development_index,
                         development_root, timing_evidence, output_dir,
                         checkpoint_bundle_dir, repository_root, expected_commit,
                         job_id, allow_fallback=False,
-                        required_execution_device=None):
+                        required_execution_device=None,
+                        node_generation_identity=LEGACY_NODE_GENERATION_IDENTITY,
+                        exploratory_development_access=False,
+                        smoke_epochs=None):
     """Execute the governed lifecycle after all prospective gates pass."""
 
+    node_generation_identity = _validate_node_generation_identity(
+        node_generation_identity
+    )
+    if not isinstance(exploratory_development_access, bool):
+        raise GraphEncoderError(
+            "invalid_stage6_exploratory_mode", "exploratory marker differs"
+        )
+    if smoke_epochs not in (None, SMOKE_EPOCHS):
+        raise GraphEncoderError(
+            "invalid_stage6_smoke", "smoke must use exactly two epochs"
+        )
+    smoke_protocol = smoke_epochs == SMOKE_EPOCHS
+    protocol_final_epoch = SMOKE_EPOCHS if smoke_protocol else EPOCHS
     from .pilot import _source_identity, _verify_source_unchanged
 
     job_id = _job_id(job_id)
@@ -1645,6 +1798,15 @@ def run_stage6_producer(*, train_index, train_root, development_index,
         raise GraphEncoderError(
             "invalid_stage6_timing", "timing source identity differs"
         )
+    if (
+        timing_evidence.get("node_generation_identity")
+        != node_generation_identity
+        or timing_evidence.get("operation_magnitude_parameterization")
+        != GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_timing", "timed model identity differs"
+        )
     from .model import build_matched_ge1_models
     from .stage6_narrow_loader import (
         NARROW_LOADER_VERSION, load_stage6_development, load_stage6_train,
@@ -1680,11 +1842,9 @@ def run_stage6_producer(*, train_index, train_root, development_index,
         flat, graph = build_matched_ge1_models(
             seed,
             operation_magnitude_parameterization=(
-                GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
+                GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
             ),
-            node_generation_identity=(
-                AUTONOMOUS_STOP_NODE_GENERATION_IDENTITY
-            ),
+            node_generation_identity=node_generation_identity,
         )
         flat = flat.to(execution_device)
         graph = graph.to(execution_device)
@@ -1709,6 +1869,8 @@ def run_stage6_producer(*, train_index, train_root, development_index,
             execution_device=execution_device,
             runtime_identity=runtime_identity,
             timing_hardware=timing_selection["timing_hardware_identity"],
+            protocol_final_epoch=protocol_final_epoch,
+            smoke_protocol=smoke_protocol,
         )
         trained_runs.append(trained)
         training_runs.append(trained["training_record"])
@@ -1735,7 +1897,9 @@ def run_stage6_producer(*, train_index, train_root, development_index,
             ]
             train_scores[(arm, seed)] = sum(values) / float(len(values))
     reliability = optimization_reliability(
-        training_runs, train_scores, retained_seeds
+        training_runs, train_scores, retained_seeds,
+        protocol_final_epoch=protocol_final_epoch,
+        smoke_protocol=smoke_protocol,
     )
     reliability_by_run = {
         (row["arm"], row["seed"]): row for row in reliability["runs"]
@@ -1748,7 +1912,17 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     train_memory = structure_memory_gate_for_cohort(
         scored_train, retained_seeds, "train"
     )
-    if not reliability["pass"] or not all(row["pass"] for row in train_memory.values()):
+    train_memory_pass = all(row["pass"] for row in train_memory.values())
+    train_side_gate_pass = reliability["pass"] and train_memory_pass
+    train_side_gate_evidence = {
+        "optimization_pass": reliability["pass"],
+        "structural_memory_pass": train_memory_pass,
+        "overall_pass": train_side_gate_pass,
+        "exploratory_continue_applied": (
+            exploratory_development_access and not train_side_gate_pass
+        ),
+    }
+    if not train_side_gate_pass and not exploratory_development_access:
         raise GraphEncoderError(
             "stage6_train_reliability_failure",
             "development remains closed after failed train-side gates",
@@ -1784,6 +1958,17 @@ def run_stage6_producer(*, train_index, train_root, development_index,
     fallback = tuple(retained_seeds) == FALLBACK_SEEDS
     payload = {
         "schema_version": INPUT_VERSION,
+        "operation_magnitude_parameterization": (
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        ),
+        "node_generation_identity": node_generation_identity,
+        "exploratory_development_access": exploratory_development_access,
+        "smoke_protocol": smoke_protocol,
+        "protocol_final_epoch": protocol_final_epoch,
+        "stage6_result_eligible": not (
+            exploratory_development_access or smoke_protocol
+        ),
+        "train_side_gate_evidence": train_side_gate_evidence,
         "retained_seeds": list(retained_seeds),
         "timing_fallback": {
             "invoked": fallback,
@@ -1869,6 +2054,15 @@ def main(argv=None):
     parser.add_argument(
         "--require-selected-device", choices=("cpu", "cuda:0"), required=True
     )
+    parser.add_argument(
+        "--node-generation-identity",
+        choices=NODE_GENERATION_IDENTITIES,
+        default=LEGACY_NODE_GENERATION_IDENTITY,
+    )
+    parser.add_argument(
+        "--exploratory-development-access", action="store_true"
+    )
+    parser.add_argument("--smoke-epochs", type=int, choices=(SMOKE_EPOCHS,))
     args = parser.parse_args(argv)
     timing = _load_json_file(args.timing_evidence, "invalid_stage6_timing")
     try:
@@ -1885,6 +2079,11 @@ def main(argv=None):
             job_id=args.job_id,
             allow_fallback=args.allow_fallback,
             required_execution_device=args.require_selected_device,
+            node_generation_identity=args.node_generation_identity,
+            exploratory_development_access=(
+                args.exploratory_development_access
+            ),
+            smoke_epochs=args.smoke_epochs,
         )
     except GraphEncoderError as exc:
         if exc.code == "stage6_train_reliability_failure":

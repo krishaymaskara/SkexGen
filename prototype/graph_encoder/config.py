@@ -18,7 +18,6 @@ from .decoder_contract import (
     NODE_GENERATION_IDENTITIES,
     OPERATION_MAGNITUDE_PARAMETERIZATIONS,
     checkpoint_schema_for,
-    uses_autonomous_stop,
     uses_grid_magnitude,
     POSITIVE_OPERATION_MAGNITUDE_PARAMETERIZATION,
 )
@@ -272,14 +271,9 @@ class GE1Config:
                 "unauthorized_configuration",
                 "node_generation_identity is not accepted",
             )
-        if uses_autonomous_stop(self.node_generation_identity) and (
-            self.operation_magnitude_parameterization
-            != GRID_SOFTMAX_OPERATION_MAGNITUDE_PARAMETERIZATION
-        ):
-            raise GraphEncoderError(
-                "unauthorized_configuration",
-                "autonomous stop requires the grid-softmax magnitude identity",
-            )
+        # ADR-0017 exercises learned stopping with the unchanged grid-ordinal
+        # magnitude head.  Magnitude and node generation are independent
+        # identity axes; checkpoint/decoder versioning prevents unsafe loads.
         # The checkpoint schema is implied by the magnitude parameterization:
         # historical identities keep `GE1-CHECKPOINT-v1` byte-for-byte and the
         # grid identity requires `GE1-CHECKPOINT-v2`.

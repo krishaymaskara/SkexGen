@@ -1394,8 +1394,12 @@ producer and strict Stage 6 checkpoint wrapper. It validates prospective timing
 and exact narrow input hashes before its only train/development loaders, trains
 fresh matched arms through fixed epoch 200, strictly reloads into fresh models,
 and records target-free true/shuffled/mean autonomous outputs in an atomic
-six-file producer artifact. The pure finalizer now verifies and consumes that
-artifact without opening corpus or checkpoint content.
+six-file producer artifact. ADR-0017 preserves the train-side gate as the
+blocking default and adds an explicit exploratory-development option that
+records a failed gate before continuing. It also adds an exact two-epoch
+full-lifecycle smoke budget. Both modes are schema-marked and result-ineligible,
+so the pure finalizer can verify and consume their artifacts without treating
+them as confirmatory results or opening corpus or checkpoint content.
 
 Stage 6 uses only independently reviewed partition-scoped narrow indexes and
 payload-only roots through `stage6_narrow_loader.py`; it never invokes the
@@ -1403,7 +1407,8 @@ complete-corpus loaders. Shuffle is a deterministic within-batch derangement,
 grammar is computed under V5, and exact generation is required for full
 structural credit. Exact epoch-200 wrappers are retained in a separate atomic
 checkpoint bundle. Development loading is delayed until all train-side work
-and reliability checks pass, and all incomplete staging is job-specific.
+and reliability checks pass unless the prospectively authorized exploratory
+marker is present, and all incomplete staging is job-specific.
 
 `stage6_narrow_builder.py` is the separately versioned, non-overwriting
 preparation path. It exports only the frozen train and development selections,
@@ -1415,6 +1420,8 @@ has exactly the repository, authoritative-corpus, and output-parent binds.
 `stage6_timing.py` implements timing-v2. Inside one reviewed single-GPU
 allocation it measures both CPU and `cuda:0` using a five-epoch bounded
 lifecycle, one fresh warm-up and three fresh measurements per arm and device.
+The timing artifact now binds the exact operation-magnitude and node-generation
+identities used by the producer.
 The slowest measurement drives exact 200-epoch projections and the 20%
 contingency. If any device fits all three seeds, the fastest such device wins;
 only otherwise may the fastest feasible two-seed device be selected, with CPU
@@ -1426,12 +1433,10 @@ producer runner. The finalizer remains CPU-only and tensor-independent.
 Separate producer and finalizer audits reject broad/protected binds, submission
 commands, loader drift, and multiple entry-point invocation. Allocation
 directives remain unresolved pending reviewed hardware and wall-time choices.
-The remaining operational order is package creation, hash review, GPU timing,
-allocation review, the timing-selected CPU or GPU producer, producer audit,
-and CPU finalization. This implementation performs and authorizes none of
-those real preparation or execution steps. Exact future hashes, safe Adroit
-roots, resources, transfer, data access, and execution still require reviewer
-decisions and authorization.
+ADR-0017 authorizes exact-commit CPU validation, GPU re-timing, and an
+exploratory two-epoch lifecycle smoke before any separately reviewed
+epoch-200 submission. Exact hashes, safe Adroit roots, resources, transfer,
+data access, and execution remain explicit runner inputs.
 
 Producer job `3354961` stopped with `stage6_train_reliability_failure` after
 all train-side work and before development access. The separately versioned
@@ -1460,16 +1465,20 @@ and records reaching `max_nodes = 16` as a failed outcome rather than raising.
 The implementation lives in the GE1-owned `autonomous_stop.py`, derived from
 the frozen Flat V6 generator. Legacy identities still call the unchanged
 frozen generator with supplied counts and exact-length grammar masks. The new
-identity combines with grid-softmax magnitude under decoder V4, output-position
-v3, and checkpoint v4. The future Stage 6 producer reports cross-arm train
-score differences diagnostically but no longer binds them into optimization
-reliability; all arm-internal and structural-memory gates remain.
+identity combines with grid-softmax magnitude under ADR-0016 and, for the
+ADR-0017 exploratory Stage 6 path, with the unchanged grid-ordinal magnitude
+head. Both combinations use decoder V4, output-position v3, and checkpoint v4.
+The Stage 6 producer reports cross-arm train score differences diagnostically
+but no longer binds them into optimization reliability; all arm-internal and
+structural-memory gates remain.
 
 Read-only memory-to-count probe job `3355776` did not satisfy its prospective
-all-checkpoint recovery rule because typed-graph seed 2028 missed the `0.90`
-floor. Consequently no retrain or Stage 6 execution is authorized. Source
-implementation and corpus-free engineering validation remain within ADR-0016's
-separate bounded authority. See the
+all-checkpoint recovery rule because typed-graph seed 2028 reached only
+`0.751 / 0.726` against the `0.90` floor. ADR-0017 preserves that failure and
+reclassifies the proxy as informative because those checkpoints were never
+trained to encode stopping. It prospectively authorizes the bounded
+exploratory sequence without weakening the ordinary Stage 6 validity gates.
+See the
 [node-generation contract](../../docs/specifications/ge1_autonomous_stop_node_generation.md)
 and [probe record](../../docs/experiments/ge1_memory_count_probe_3355776.md).
 

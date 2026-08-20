@@ -17,6 +17,10 @@ import os
 from pathlib import Path
 
 from .errors import GraphEncoderError
+from .decoder_contract import (
+    GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+    NODE_GENERATION_IDENTITIES,
+)
 
 
 PROTOCOL_VERSION = "GE1-STAGE6-STRUCTURE-ONLY-COMPARISON-v1"
@@ -35,6 +39,7 @@ FALLBACK_SEEDS = (2026, 2027)
 TRAIN_FAMILY_COUNT = 407
 DEVELOPMENT_FAMILY_COUNT = 45
 EPOCHS = 200
+SMOKE_EPOCHS = 2
 BATCH_SIZE = 8
 LEARNING_RATE = 0.001
 WEIGHT_DECAY = 0.0
@@ -732,6 +737,31 @@ def validate_governance_evidence(payload, *, require_producer_artifact=False,
 def _validate_execution_metadata(payload):
     if payload.get("schema_version") != INPUT_VERSION:
         raise GraphEncoderError("invalid_stage6_input", "schema differs")
+    exploratory = payload.get("exploratory_development_access", False)
+    smoke = payload.get("smoke_protocol", False)
+    protocol_final_epoch = payload.get("protocol_final_epoch", EPOCHS)
+    result_eligible = payload.get(
+        "stage6_result_eligible", not (exploratory or smoke)
+    )
+    if (
+        not isinstance(exploratory, bool)
+        or not isinstance(smoke, bool)
+        or protocol_final_epoch not in (EPOCHS, SMOKE_EPOCHS)
+        or smoke is not (protocol_final_epoch == SMOKE_EPOCHS)
+        or result_eligible is not (not (exploratory or smoke))
+        or payload.get(
+            "operation_magnitude_parameterization",
+            GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+        )
+        != GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION
+        or payload.get(
+            "node_generation_identity", NODE_GENERATION_IDENTITIES[0]
+        )
+        not in NODE_GENERATION_IDENTITIES
+    ):
+        raise GraphEncoderError(
+            "invalid_stage6_exploratory_mode", "execution markers differ"
+        )
     seeds = tuple(payload.get("retained_seeds", ()))
     timing = payload.get("timing_fallback", {})
     if seeds == FULL_SEEDS:
@@ -773,13 +803,14 @@ def _validate_execution_metadata(payload):
     for row in runs:
         if (
             row.get("fresh_initialization") is not True
-            or row.get("epochs") != EPOCHS
+            or row.get("epochs") != protocol_final_epoch
             or row.get("batch_size") != BATCH_SIZE
             or row.get("optimizer") != "AdamW"
             or row.get("learning_rate") != LEARNING_RATE
             or row.get("weight_decay") != WEIGHT_DECAY
             or row.get("gradient_clip_norm") != CLIP_NORM
-            or row.get("checkpoint_epoch") != EPOCHS
+            or row.get("checkpoint_epoch") != protocol_final_epoch
+            or row.get("smoke_protocol", False) is not smoke
             or row.get("early_stopping") is not False
             or row.get("development_used_for_selection") is not False
             or row.get("warm_start") is not False
@@ -788,8 +819,17 @@ def _validate_execution_metadata(payload):
         ):
             raise GraphEncoderError("invalid_stage6_training", "frozen run differs")
         capacities[row["arm"]] = row.get("trainable_parameter_count")
-        for name in ("final_loss", "plateau_relative_improvement"):
-            _finite_number(row.get(name), name)
+        _finite_number(row.get("final_loss"), "final_loss")
+        if smoke:
+            if row.get("plateau_relative_improvement") is not None:
+                raise GraphEncoderError(
+                    "invalid_stage6_training", "smoke plateau differs"
+                )
+        else:
+            _finite_number(
+                row.get("plateau_relative_improvement"),
+                "plateau_relative_improvement",
+            )
     if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
            for value in capacities.values()):
         raise GraphEncoderError("invalid_stage6_capacity", "parameter count differs")
@@ -872,8 +912,14 @@ def summarize_execution(payload):
     optimization_pass = all(row.get("optimization_reliable") is True for row in runs)
     provenance_pass = payload.get("provenance_valid") is True
     artifact_inputs_valid = payload.get("artifact_inputs_valid") is True
-    validity = all((capacity_pass, optimization_pass, provenance_pass,
-                    artifact_inputs_valid, memory["overall_pass"]))
+    ordinary_validity = all((capacity_pass, optimization_pass, provenance_pass,
+                             artifact_inputs_valid, memory["overall_pass"]))
+    exploratory = payload.get("exploratory_development_access", False)
+    smoke = payload.get("smoke_protocol", False)
+    result_eligible = payload.get(
+        "stage6_result_eligible", not (exploratory or smoke)
+    )
+    validity = ordinary_validity and result_eligible
     category = interpretation_category(primary, validity)
     stage_counts = Counter(
         row["score"]["first_failure_stage"] for row in scored
@@ -888,8 +934,13 @@ def summarize_execution(payload):
         "optimization_pass": optimization_pass,
         "provenance_pass": provenance_pass,
         "artifact_inputs_valid": artifact_inputs_valid,
+        "ordinary_validity_gates_pass": ordinary_validity,
         "validity_gates_pass": validity,
         "interpretation_category": category,
+        "exploratory_development_access": exploratory,
+        "smoke_protocol": smoke,
+        "protocol_final_epoch": payload.get("protocol_final_epoch", EPOCHS),
+        "stage6_result_eligible": result_eligible,
         "development_first_failure_counts": dict(sorted(stage_counts.items())),
         "geometry_and_operation_magnitude_report_only": True,
         "strict_conversion_and_analytic_validity_report_only": True,
@@ -944,6 +995,24 @@ def create_artifact(payload, output_dir, expected_commit, job_id):
             "checkpoint_bundle_reference": payload.get("checkpoint_bundle_reference"),
             "producer_artifact_evidence": payload.get("producer_artifact_evidence"),
             "execution_evidence": payload.get("execution_evidence"),
+            "operation_magnitude_parameterization": payload.get(
+                "operation_magnitude_parameterization",
+                GRID_ORDINAL_OPERATION_MAGNITUDE_PARAMETERIZATION,
+            ),
+            "node_generation_identity": payload.get(
+                "node_generation_identity", NODE_GENERATION_IDENTITIES[0]
+            ),
+            "exploratory_development_access": payload.get(
+                "exploratory_development_access", False
+            ),
+            "smoke_protocol": payload.get("smoke_protocol", False),
+            "protocol_final_epoch": payload.get("protocol_final_epoch", EPOCHS),
+            "stage6_result_eligible": payload.get(
+                "stage6_result_eligible", True
+            ),
+            "train_side_gate_evidence": payload.get(
+                "train_side_gate_evidence"
+            ),
             **AUTHORITY,
         }
         _write(staging / "resolved_config.json", (_canonical(resolved) + "\n").encode())
@@ -960,6 +1029,11 @@ def create_artifact(payload, output_dir, expected_commit, job_id):
         names = ("resolved_config.json", "family_metrics.jsonl", "summary.json")
         manifest = {
             "schema_version": ARTIFACT_VERSION,
+            "exploratory_development_access": resolved[
+                "exploratory_development_access"
+            ],
+            "smoke_protocol": resolved["smoke_protocol"],
+            "stage6_result_eligible": resolved["stage6_result_eligible"],
             "artifacts": [{
                 "path": name, "byte_size": (staging / name).stat().st_size,
                 "sha256": _sha(staging / name),
@@ -1002,7 +1076,15 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         if raw != _canonical(value) + "\n":
             raise GraphEncoderError("invalid_stage6_artifact", name + " not canonical")
     manifest = json.loads((root / "artifact_manifest.json").read_text())
-    if manifest.get("schema_version") != ARTIFACT_VERSION:
+    resolved = json.loads((root / "resolved_config.json").read_text())
+    if (
+        manifest.get("schema_version") != ARTIFACT_VERSION
+        or manifest.get("exploratory_development_access")
+        is not resolved.get("exploratory_development_access")
+        or manifest.get("smoke_protocol") is not resolved.get("smoke_protocol")
+        or manifest.get("stage6_result_eligible")
+        is not resolved.get("stage6_result_eligible")
+    ):
         raise GraphEncoderError("invalid_stage6_artifact", "schema differs")
     if tuple(row.get("path") for row in manifest.get("artifacts", [])) != (
         "resolved_config.json", "family_metrics.jsonl", "summary.json"
@@ -1031,7 +1113,6 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         "family_metrics.jsonl", "summary.json",
     ):
         raise GraphEncoderError("invalid_stage6_artifact", "checksum coverage differs")
-    resolved = json.loads((root / "resolved_config.json").read_text())
     summary = json.loads((root / "summary.json").read_text())
     if (
         resolved.get("source_commit") != expected_commit
@@ -1058,6 +1139,16 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         "partition": resolved.get("partition"),
         "training_runs": resolved.get("training_runs"),
         "execution_evidence": resolved.get("execution_evidence"),
+        "operation_magnitude_parameterization": resolved.get(
+            "operation_magnitude_parameterization"
+        ),
+        "node_generation_identity": resolved.get("node_generation_identity"),
+        "exploratory_development_access": resolved.get(
+            "exploratory_development_access"
+        ),
+        "smoke_protocol": resolved.get("smoke_protocol"),
+        "protocol_final_epoch": resolved.get("protocol_final_epoch"),
+        "stage6_result_eligible": resolved.get("stage6_result_eligible"),
     })
     records = []
     raw = (root / "family_metrics.jsonl").read_text(encoding="utf-8")
@@ -1108,10 +1199,13 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         and all(row.get("capacity_parity_pass") is True for row in runs)
     )
     optimization_pass = all(row.get("optimization_reliable") is True for row in runs)
-    validity = all((capacity_pass, optimization_pass,
-                    resolved.get("provenance_valid") is True,
-                    resolved.get("artifact_inputs_valid") is True,
-                    memory["overall_pass"]))
+    ordinary_validity = all((capacity_pass, optimization_pass,
+                             resolved.get("provenance_valid") is True,
+                             resolved.get("artifact_inputs_valid") is True,
+                             memory["overall_pass"]))
+    validity = ordinary_validity and resolved.get(
+        "stage6_result_eligible"
+    ) is True
     category = interpretation_category(primary, validity)
     if (
         summary.get("primary") != primary
@@ -1121,8 +1215,16 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         or summary.get("optimization_pass") is not optimization_pass
         or summary.get("provenance_pass") is not True
         or summary.get("artifact_inputs_valid") is not True
+        or summary.get("ordinary_validity_gates_pass") is not ordinary_validity
         or summary.get("validity_gates_pass") is not validity
         or summary.get("interpretation_category") != category
+        or summary.get("exploratory_development_access")
+        is not resolved.get("exploratory_development_access")
+        or summary.get("smoke_protocol") is not resolved.get("smoke_protocol")
+        or summary.get("protocol_final_epoch")
+        != resolved.get("protocol_final_epoch")
+        or summary.get("stage6_result_eligible")
+        is not resolved.get("stage6_result_eligible")
     ):
         raise GraphEncoderError("invalid_stage6_artifact", "summary recomputation differs")
     return {
@@ -1133,6 +1235,11 @@ def verify_artifact(path, *, expected_commit, expected_job_id):
         "job_id": expected_job_id,
         "family_metric_record_count": len(records),
         "interpretation_category": summary.get("interpretation_category"),
+        "exploratory_development_access": resolved.get(
+            "exploratory_development_access"
+        ),
+        "smoke_protocol": resolved.get("smoke_protocol"),
+        "stage6_result_eligible": resolved.get("stage6_result_eligible"),
     }
 
 

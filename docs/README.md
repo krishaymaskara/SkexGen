@@ -145,8 +145,8 @@ the immediate next action changes.
 - [ADR-0017: GE1 exploratory Stage 6 at the autonomous-stop
   identity](decisions/ADR-0017-ge1-exploratory-stage6-autonomous-stop-execution.md)
   — schema-marked exploratory continuation, fresh timing, a mandatory
-  two-epoch full-lifecycle smoke, and one inconclusive epoch-200 development
-  run under the ordinal-magnitude/autonomous-stop combination.
+  two-epoch full-lifecycle smoke, and an explicit reviewer hold before any
+  epoch-200 submission under the ordinal-magnitude/autonomous-stop combination.
 - [Experimental specification](specifications/experimental_spec.md) —
   detailed structured extrude-and-revolve CAD experiment and evaluation
   contract.

@@ -81,8 +81,10 @@ cannot be reused. The frozen timing selector alone chooses CPU versus `cuda:0`
 and the three-seed versus two-seed fallback. The producer must honor that
 choice without override.
 
-The real producer allocation has four hours available. This changes only the
-resource envelope; the epoch-200 scientific budget remains fixed.
+If separately authorized after review of the validation, timing, and smoke
+evidence, the real producer allocation will have four hours available. This
+changes only the resource envelope; the epoch-200 scientific budget remains
+fixed.
 
 ### Mandatory two-epoch lifecycle smoke
 
@@ -122,10 +124,15 @@ This record authorizes, in order:
 2. one exact-commit train-only timing-v2 GPU allocation;
 3. one two-epoch smoke using the authorized narrow train and development
    packages, followed by producer audit and smoke-only finalization;
-4. only after the smoke completes end to end, one epoch-200 exploratory
-   producer allocation with up to four hours, followed by producer audit and
-   exploratory finalization; and
+4. stop and report the validation, timing selection, and finalized smoke to the
+   designated reviewer; the epoch-200 command may be prepared but submission
+   requires a separate reviewer decision; and
 5. experiment records for each completed or failed step.
+
+The designated reviewer explicitly withheld submission authority for the
+epoch-200 producer on `2026-08-20`. This operational hold supersedes the
+earlier prospective sequence: completing the smoke does not itself authorize
+the real job, and implementation agents must not submit it.
 
 The smoke and real run may access only the already governed 407-family train
 and 45-family development packages. Neither run authorizes RR, ER, IID,

@@ -132,6 +132,7 @@ it superseded by a later ADR.
   accepted prospectively by designated reviewer Krishay Maskara; reclassifies
   the failed memory-to-count probe as informative, adds schema-marked
   exploratory continuation without changing default gates, requires fresh
-  exact-commit timing and a two-epoch full-lifecycle smoke, and authorizes one
-  epoch-200 exploratory development run whose interpretation is forced
-  inconclusive. RR, ER, IID, Stage 7, C8, and confirmatory claims remain closed.
+  exact-commit timing and a two-epoch full-lifecycle smoke. The designated
+  reviewer withheld the epoch-200 submission pending review of those results;
+  any later exploratory interpretation remains forced inconclusive. RR, ER,
+  IID, Stage 7, C8, and confirmatory claims remain closed.

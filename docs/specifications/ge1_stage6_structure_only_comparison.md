@@ -19,7 +19,7 @@
 | Hardware timing | `GE1-STAGE6-STRUCTURE-ONLY-TIMING-v2` |
 | Timing selection | `GE1-STAGE6-FASTEST-FEASIBLE-DEVICE-v1` |
 | Execution devices | exactly `cpu`, `cuda:0` |
-| Current authority | ADR-0017 exploratory timing, smoke, and one epoch-200 run |
+| Current authority | ADR-0017 exploratory timing and two-epoch smoke; epoch-200 submission withheld pending separate review |
 
 ## Question and isolation
 
@@ -257,11 +257,14 @@ train-side gates and continue to the 45-family development package.
 
 Fresh timing-v2 at the exact final commit determines device and retained seeds.
 A two-epoch `smoke_protocol=true` lifecycle must then finalize cleanly as a
-non-result before the one authorized epoch-200 producer can run. Producer and
-final artifacts carry both markers in resolved configuration and manifests;
-either marker forces `stage6_result_eligible=false` and
-`interpretation_category=inconclusive`. The exploratory comparison number is
-reportable, but no confirmatory Stage 6 interpretation is permitted.
+non-result before the evidence is returned to the designated reviewer.
+Completing that smoke does not authorize the epoch-200 producer: its command
+may be prepared, but submission is withheld pending a separate reviewer
+decision. Producer and final artifacts carry both markers in resolved
+configuration and manifests; either marker forces
+`stage6_result_eligible=false` and `interpretation_category=inconclusive`.
+Any later exploratory comparison number is reportable, but no confirmatory
+Stage 6 interpretation is permitted.
 
 Job `3355776` remains a valid failed diagnostic with typed-graph seed-2028
 memory/prequant balanced accuracy `0.751/0.726` against `0.90`. ADR-0017
